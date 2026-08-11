@@ -5,13 +5,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "cd gfg-main && npm run build && rm -rf ../dist && cp -r dist ../dist",
-    "build:dev": "cd gfg-main && npm run build:dev && rm -rf ../dist && cp -r dist ../dist",
-    "frontend:dev": "cd gfg-main && npm run dev",
+    "build": "npm --prefix gfg-main run build && node scripts/sync-dist.js",
+    "build:dev": "npm --prefix gfg-main run build:dev && node scripts/sync-dist.js",
+    "frontend:dev": "npm --prefix gfg-main run dev",
     "frontend:build": "cd gfg-main && npm run build",
     "backend:dev": "node server.js",
     "dev": "npm run build && node server.js",
-    "lint": "cd gfg-main && npm run lint",
+    "lint": "npm --prefix gfg-main run lint",
     "postinstall": "npm install --prefix gfg-main"
   },
   "dependencies": {
