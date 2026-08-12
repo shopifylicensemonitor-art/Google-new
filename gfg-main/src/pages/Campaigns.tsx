@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { api, type Campaign, type CampaignRecipient, type ContactListInfo, type LogItem, type Template } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
+import { SwipeableListItem } from '@/components/SwipeableListItem';
+import { VoiceToTextButton } from '@/components/VoiceToTextButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { useUI } from '@/context/UIContext';
+import { triggerHaptic } from '@/lib/haptics';
 import { 
   Send, Plus, Trash2, Play, Pause, FileText, Info,
   Clock, Zap, CheckCircle2, ChevronRight, BarChart3, RotateCw, Pencil, Search, Filter,
@@ -23,6 +27,7 @@ const speedOptions = [
 ];
 
 export default function Campaigns({ requirePin }: CampaignsProps) {
+  const { batterySaver } = useUI();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [lists, setLists] = useState<ContactListInfo[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -199,10 +204,11 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   useEffect(() => {
     loadData();
-    // Poll progress updates every 10 seconds for active campaigns
-    const interval = setInterval(loadData, 10000);
+    // Poll progress updates every 10s (or 60s in battery saver mode) for active campaigns
+    const intervalMs = batterySaver ? 60000 : 10000;
+    const interval = setInterval(loadData, intervalMs);
     return () => clearInterval(interval);
-  }, []);
+  }, [batterySaver]);
 
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplateId(templateId);
@@ -884,7 +890,17 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HTML Body</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HTML Body</label>
+                          <VoiceToTextButton
+                            size="sm"
+                            label="Voice Input"
+                            onTranscript={(text) => {
+                              setBodyHtml(prev => prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`);
+                              setBodyPlain(prev => prev ? `${prev}\n${text}` : text);
+                            }}
+                          />
+                        </div>
                         <textarea
                           placeholder="<h2>Hello!</h2><p>Writing regarding your outreach...</p>"
                           value={bodyHtml}
@@ -1157,155 +1173,163 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 filteredCampaigns.map(c => {
                   const pct = getPct(c);
                   return (
-                    <div key={c.id} className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors hover:bg-muted/5">
-                      
-                      {/* Left Side: Campaign stats & bar */}
-                      <div className="flex-1 space-y-2 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs sm:text-sm text-foreground truncate">{c.name}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                            c.content_mode === 'rotation'
-                              ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
-                              : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                          }`}>
-                            {c.content_mode === 'rotation' ? 'ROTATION' : 'SINGLE'}
-                          </span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                            c.status === 'sending'
-                              ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                              : c.status === 'paused'
-                                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                : c.status === 'completed'
-                                  ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                                  : 'bg-muted text-muted-foreground border-border/40'
-                          }`}>
-                            {c.status.toUpperCase()}
-                          </span>
-                        </div>
+                    <SwipeableListItem
+                      key={c.id}
+                      onSwipeLeft={() => handleDelete(c.id)}
+                      onSwipeRight={() => c.status === 'sending' ? handlePause(c.id) : handleResume(c.id)}
+                      leftLabel={c.status === 'sending' ? 'Pause' : 'Resume'}
+                      rightLabel="Delete"
+                    >
+                      <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors hover:bg-muted/5">
                         
-                        <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
-                          <span>List: <span className="underline">{c.contact_list}</span></span>
-                          <span>·</span>
-                          {c.content_mode === 'rotation' && (
-                            <>
-                              <span>Variations: {(() => {
-                                try {
-                                  return JSON.parse(c.content_variations || '[]').length;
-                                } catch {
-                                  return 0;
-                                }
-                              })()}</span>
-                              <span>·</span>
-                            </>
-                          )}
-                          <span>Delay: {c.delay_seconds}s</span>
-                          <span>·</span>
-                          <span>Sent: {c.sent_count}/{c.total_contacts}</span>
-                          {c.failed_count > 0 && (
-                            <>
-                              <span>·</span>
-                              <span className="text-destructive font-semibold">Failed: {c.failed_count}</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Progress Bar wrapper */}
-                        <div className="flex items-center gap-3 w-full sm:w-80">
-                          <div className="h-2 w-full bg-muted border border-border/20 rounded-full overflow-hidden shrink-0">
-                            <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+                        {/* Left Side: Campaign stats & bar */}
+                        <div className="flex-1 space-y-2 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-foreground truncate">{c.name}</span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                              c.content_mode === 'rotation'
+                                ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                                : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                            }`}>
+                              {c.content_mode === 'rotation' ? 'ROTATION' : 'SINGLE'}
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                              c.status === 'sending'
+                                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                : c.status === 'paused'
+                                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                  : c.status === 'completed'
+                                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                    : 'bg-muted text-muted-foreground border-border/40'
+                            }`}>
+                              {c.status.toUpperCase()}
+                            </span>
                           </div>
-                          <span className="text-[10px] font-bold text-foreground shrink-0">{pct}%</span>
+                          
+                          <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                            <span>List: <span className="underline">{c.contact_list}</span></span>
+                            <span>·</span>
+                            {c.content_mode === 'rotation' && (
+                              <>
+                                <span>Variations: {(() => {
+                                  try {
+                                    return JSON.parse(c.content_variations || '[]').length;
+                                  } catch {
+                                    return 0;
+                                  }
+                                })()}</span>
+                                <span>·</span>
+                              </>
+                            )}
+                            <span>Delay: {c.delay_seconds}s</span>
+                            <span>·</span>
+                            <span>Sent: {c.sent_count}/{c.total_contacts}</span>
+                            {c.failed_count > 0 && (
+                              <>
+                                <span>·</span>
+                                <span className="text-destructive font-semibold">Failed: {c.failed_count}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Progress Bar wrapper */}
+                          <div className="flex items-center gap-3 w-full sm:w-80">
+                            <div className="h-2 w-full bg-muted border border-border/20 rounded-full overflow-hidden shrink-0">
+                              <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] font-bold text-foreground shrink-0">{pct}%</span>
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Right Side: Action Control Buttons */}
-                      <div className="flex flex-wrap items-center gap-1.5 self-end md:self-center">
-                        {c.status === 'draft' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleLaunch(c.id)}
-                            disabled={c.total_contacts === 0}
-                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-emerald-500/10 hover:text-emerald-500 border-emerald-500/20"
-                          >
-                            <Play className="h-3.5 w-3.5" />
-                            <span>{c.total_contacts === 0 ? 'No recipients' : 'Launch'}</span>
-                          </Button>
-                        )}
-                        {c.status === 'sending' && (
-                          <>
+                        {/* Right Side: Action Control Buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5 self-end md:self-center">
+                          {c.status === 'draft' && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handlePause(c.id)}
-                              className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-amber-500/10 hover:text-amber-500 border-amber-500/20"
+                              onClick={() => handleLaunch(c.id)}
+                              disabled={c.total_contacts === 0}
+                              className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-emerald-500/10 hover:text-emerald-500 border-emerald-500/20"
                             >
-                              <Pause className="h-3.5 w-3.5" />
-                              <span>Pause</span>
+                              <Play className="h-3.5 w-3.5" />
+                              <span>{c.total_contacts === 0 ? 'No recipients' : 'Launch'}</span>
                             </Button>
+                          )}
+                          {c.status === 'sending' && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handlePause(c.id)}
+                                className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-amber-500/10 hover:text-amber-500 border-amber-500/20"
+                              >
+                                <Pause className="h-3.5 w-3.5" />
+                                <span>Pause</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRetryAll(c.id)}
+                                className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-primary/10 hover:text-primary border-primary/20"
+                              >
+                                <RotateCw className="h-3.5 w-3.5" />
+                                <span>Flush Queue</span>
+                              </Button>
+                            </>
+                          )}
+                          {c.status === 'paused' && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleRetryAll(c.id)}
-                              className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-primary/10 hover:text-primary border-primary/20"
+                              onClick={() => handleResume(c.id)}
+                              className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-emerald-500/10 hover:text-emerald-500 border-emerald-500/20"
                             >
-                              <RotateCw className="h-3.5 w-3.5" />
-                              <span>Flush Queue</span>
+                              <Play className="h-3.5 w-3.5" />
+                              <span>Resume</span>
                             </Button>
-                          </>
-                        )}
-                        {c.status === 'paused' && (
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleResume(c.id)}
-                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-emerald-500/10 hover:text-emerald-500 border-emerald-500/20"
+                            onClick={() => handleOpenEdit(c)}
+                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-primary/10 hover:text-primary border-primary/20"
                           >
-                            <Play className="h-3.5 w-3.5" />
-                            <span>Resume</span>
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Edit</span>
                           </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenEdit(c)}
-                          className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-primary/10 hover:text-primary border-primary/20"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          <span>Edit</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenDetails(c.id)}
-                          disabled={loadingDetails}
-                          className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-slate-500/10 hover:text-foreground border-border/20"
-                        >
-                          <Info className="h-3.5 w-3.5" />
-                          <span>Details</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handlePreview(c.id)}
-                          disabled={loadingPreview}
-                          className="h-8 gap-1 rounded-lg text-xs font-semibold"
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          <span>Preview</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDelete(c.id)}
-                          className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-destructive/10 hover:text-destructive border-destructive/20 text-destructive/90"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>Delete</span>
-                        </Button>
-                      </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenDetails(c.id)}
+                            disabled={loadingDetails}
+                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-slate-500/10 hover:text-foreground border-border/20"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                            <span>Details</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handlePreview(c.id)}
+                            disabled={loadingPreview}
+                            className="h-8 gap-1 rounded-lg text-xs font-semibold"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>Preview</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDelete(c.id)}
+                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-destructive/10 hover:text-destructive border-destructive/20 text-destructive/90"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>Delete</span>
+                          </Button>
+                        </div>
 
-                    </div>
+                      </div>
+                    </SwipeableListItem>
                   );
                 })
               )}

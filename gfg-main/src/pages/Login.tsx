@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Logo } from "@/components/Logo";
 import { navigateToRoute } from "../lib/router";
 import { BASE_URL as API_BASE } from "../api";
 import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -70,14 +71,9 @@ export default function Login() {
       {/* Container */}
       <div className="w-full max-w-md space-y-6">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#635bff] text-white shadow-lg shadow-[#635bff]/20 mb-2">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-foreground">
-            OutreachFlow Pro
-          </h1>
-          <p className="text-xs text-muted-foreground">
+        <div className="flex flex-col items-center text-center space-y-2">
+          <Logo size="xl" subtitle="Campaign Console" />
+          <p className="text-xs text-muted-foreground pt-1">
             Sign in to access your cold email campaign console.
           </p>
         </div>

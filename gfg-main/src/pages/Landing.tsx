@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Logo } from '@/components/Logo';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -126,15 +127,9 @@ export default function Landing() {
       {/* Header / Navbar */}
       <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-card/80 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#635bff] text-white shadow-xs">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col -space-y-0.5">
-              <span className="font-heading text-base font-bold tracking-tight text-foreground">Peak Xender</span>
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Outreach Console</span>
-            </div>
-          </div>
+          <Link to="/" className="flex items-center">
+            <Logo size="md" subtitle="Outreach Console" />
+          </Link>
 
           <nav className="hidden md:flex items-center gap-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <a href="#about" className="hover:text-foreground transition-colors">About</a>
@@ -569,13 +564,7 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             {/* Brand */}
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#635bff] text-white">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-foreground font-heading">Peak Xender</span>
-                <span className="text-[10px] text-muted-foreground font-mono">Automated Email Outreach Platform</span>
-              </div>
+              <Logo size="sm" subtitle="Automated Outreach" />
             </div>
 
             {/* Links */}

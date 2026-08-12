@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   LayoutDashboard, Send, Users, Flame, Layout, Inbox,
@@ -73,16 +74,7 @@ export const Sidebar = memo(function Sidebar({ isOpen, onClose, collapsed, onTog
     <div className="flex flex-col h-full">
       {/* Brand Logo */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-5 border-b border-border/60`}>
-        <div className="h-9 w-9 rounded-xl overflow-hidden bg-muted/20 shrink-0 flex items-center justify-center border border-border/60">
-          <img src="/logo-light.jpg" alt="Peak Xender" className="h-full w-full object-contain dark:hidden" />
-          <img src="/logo-dark.jpg" alt="Peak Xender" className="h-full w-full object-contain hidden dark:block" />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col -space-y-0.5 min-w-0">
-            <span className="font-heading text-base font-bold tracking-tight text-foreground">Peak Xender</span>
-            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Outreach Console</span>
-          </div>
-        )}
+        <Logo size="md" iconOnly={collapsed} subtitle="Peak Console" />
       </div>
 
       {/* Main Navigation */}

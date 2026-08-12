@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, type Template } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
+import { VoiceToTextButton } from '@/components/VoiceToTextButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
@@ -440,16 +441,27 @@ export default function Templates({ requirePin }: TemplatesProps) {
           <DialogHeader className="space-y-1 text-left pb-2 border-b border-border/60 shrink-0">
             <DialogTitle className="font-heading text-lg font-bold text-foreground flex items-center justify-between">
               <span>{editingTemplate ? 'Edit Template' : 'Create New Template'}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleAiImprove}
-                disabled={aiLoading}
-                className="h-8 px-2.5 text-xs font-bold gap-1.5 text-[#635bff] hover:bg-[#635bff]/10"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>{aiLoading ? 'Polishing...' : 'AI Polish'}</span>
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <VoiceToTextButton
+                  size="sm"
+                  variant="outline"
+                  label="Voice Dictation"
+                  onTranscript={(text) => {
+                    setBodyHtml((prev) => (prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`));
+                    setBodyPlain((prev) => (prev ? `${prev}\n${text}` : text));
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAiImprove}
+                  disabled={aiLoading}
+                  className="h-8 px-2.5 text-xs font-bold gap-1.5 text-[#635bff] hover:bg-[#635bff]/10"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>{aiLoading ? 'Polishing...' : 'AI Polish'}</span>
+                </Button>
+              </div>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               Design email layouts with dynamic tag variables like {"{{first_name}}"} and {"{{company_name}}"}.

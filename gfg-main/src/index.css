@@ -22,6 +22,7 @@
 html, body {
   /* Prevent rubber-band scrolling on native */
   overscroll-behavior: none;
+  scroll-padding-bottom: calc(var(--safe-area-bottom, 0px) + var(--keyboard-height, 0px) + 24px);
 }
 
 #root {
@@ -31,6 +32,30 @@ html, body {
   padding-bottom: calc(var(--safe-area-bottom) + var(--keyboard-height));
   padding-left: var(--safe-area-left);
   padding-right: var(--safe-area-right);
+  transition: padding-bottom 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Ensure form input fields remain fully visible when software keyboard opens */
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  scroll-margin-bottom: calc(var(--keyboard-height, 0px) + 36px);
+  scroll-margin-top: 20px;
+}
+
+form,
+.form-container,
+[role="dialog"] {
+  scroll-padding-bottom: calc(var(--keyboard-height, 0px) + 24px);
+}
+
+@media (max-width: 767px) {
+  form:focus-within,
+  .form-container:focus-within,
+  [role="dialog"]:focus-within {
+    padding-bottom: calc(var(--keyboard-height, 0px) + 16px);
+  }
 }
 
 /* ── Peak Xender Design System: Slate & Indigo ────────────── */
@@ -145,6 +170,13 @@ html, body {
     @apply bg-background text-foreground antialiased font-sans;
     font-size: 14px;
     letter-spacing: -0.01em;
+  }
+
+  /* WCAG compliance: Icon buttons touch target hit area minimum of 48x48px using padding rather than min-width/min-height */
+  .icon-button,
+  .icon-btn {
+    padding: 1rem;
+    box-sizing: border-box;
   }
 }
 
@@ -453,6 +485,14 @@ html, body {
   animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+/* Safe area inset bottom padding for iOS home indicator on fixed bottom navigation bars */
+.fixed.bottom-0,
+nav.fixed.bottom-0,
+.mobile-bottom-nav,
+.fixed-bottom-bar {
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+
 /* ── Mobile-First Optimizations ──────────────────────────── */
 
 @media (max-width: 1023px) {
@@ -469,19 +509,15 @@ html, body {
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Larger touch targets on mobile (min 44px) */
-  button, a, [role="button"] {
+  /* Touch targets for buttons on mobile (min 44px) */
+  button, [role="button"], .btn-touch {
     min-height: 44px;
-    min-width: 44px;
   }
 
-  /* Except inline text links and tiny badge links */
-  a.inline-link,
-  span > a,
-  p > a,
-  .text-\[9px\] a,
-  .text-\[10px\] a,
-  nav a {
+  /* Icon buttons: minimum 48x48px hit area using padding rather than min-width/min-height for WCAG compliance */
+  .icon-button,
+  .icon-btn {
+    padding: 1rem !important;
     min-height: unset;
     min-width: unset;
   }
@@ -530,4 +566,22 @@ html, body {
   .mobile-full-width {
     width: 100% !important;
   }
+}
+
+/* ── Battery Saver Mode Styles ────────────── */
+html.battery-saver *,
+html.battery-saver *::before,
+html.battery-saver *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+html.battery-saver .animate-spin,
+html.battery-saver .animate-pulse,
+html.battery-saver .animate-bounce,
+html.battery-saver .animate-float-slow,
+html.battery-saver .animate-ping {
+  animation: none !important;
 }

@@ -18,13 +18,13 @@ export const SEO = ({
   canonicalUrl,
   noindex = false,
   ogType = 'website',
-  ogImage = '/peak-xender-logo.svg',
+  ogImage = '/logo-light.jpg',
   schema,
 }: SEOProps) => {
   useEffect(() => {
     // 1. Title Update
-    const defaultTitle = 'Peak Xender - Free Bulk Email Outreach & Personalization Console';
-    document.title = title ? `${title} | Peak Xender` : defaultTitle;
+    const defaultTitle = 'Peakconix - Cold Email Outreach & Personalization Console';
+    document.title = title ? `${title} | Peakconix` : defaultTitle;
 
     // Helper to get or create head tags
     const getOrCreateMeta = (nameOrProperty: string, valueAttribute: 'content' | 'href' = 'content'): HTMLMetaElement | HTMLLinkElement => {

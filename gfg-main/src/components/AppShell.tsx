@@ -3,6 +3,8 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { AIChatBot } from './AIChatBot';
+import { FloatingSendWidget } from './FloatingSendWidget';
+import { InstallAppPrompt } from './InstallAppPrompt';
 import { useUI } from '@/context/UIContext';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -55,8 +57,14 @@ export function AppShell({ children }: AppShellProps) {
       {/* Gemini AI Assistant Floating Widget */}
       <AIChatBot />
 
+      {/* Movable Floating Direct Send Current Widget */}
+      <FloatingSendWidget />
+
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav />
+
+      {/* PWA Install App Prompt */}
+      <InstallAppPrompt />
     </div>
   );
 }

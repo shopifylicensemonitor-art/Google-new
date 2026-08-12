@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type Campaign, type Account } from '../api';
 import { SEO } from '@/components/SEO';
 import { AppShell } from '@/components/AppShell';
+import { PullToRefresh } from '@/components/PullToRefresh';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { Button } from '@/components/ui/button';
 import { 
   Send, Users, Mail, MessageSquare, AlertTriangle, CheckCircle2, Clock, 
@@ -10,9 +12,11 @@ import {
   Lock, AlertCircle, Calendar, ArrowRight, ShieldCheck, Sparkles, Inbox
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useUI } from '@/context/UIContext';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { batterySaver } = useUI();
   const [serverData, setServerData] = useState<{
     stats: {
       today_sent: number;
@@ -55,9 +59,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData().finally(() => setLoading(false));
-    const interval = setInterval(fetchDashboardData, 10000);
+    const intervalMs = batterySaver ? 60000 : 10000;
+    const interval = setInterval(fetchDashboardData, intervalMs);
     return () => clearInterval(interval);
-  }, [fetchDashboardData]);
+  }, [fetchDashboardData, batterySaver]);
 
   // Load user profile name if stored
   useEffect(() => {
@@ -108,7 +113,11 @@ export default function Dashboard() {
         noindex={true}
       />
 
-      <div className="space-y-6 max-w-[1440px] mx-auto pb-6">
+      <PullToRefresh onRefresh={fetchDashboardData}>
+        {loading && !serverData ? (
+          <DashboardSkeleton />
+        ) : (
+        <div className="space-y-6 max-w-[1440px] mx-auto pb-6">
         {/* Header Section */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
@@ -558,6 +567,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      )}
+      </PullToRefresh>
     </AppShell>
   );
 }

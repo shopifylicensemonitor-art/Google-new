@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense, useEffect, useCallback } from "react";
 import Landing from "./pages/Landing";
+import Index from "./pages/Index";
 import { initCapacitor, isNativePlatform } from "./lib/capacitor";
 import { navigateToRoute } from "./lib/router";
 import clarity from "@microsoft/clarity";
@@ -36,7 +37,6 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 }
 
 // Lazy-load non-critical routes with automatic retry handling
-const Index = lazyWithRetry(() => import("./pages/Index"));
 const Help = lazyWithRetry(() => import("./pages/Help"));
 const Privacy = lazyWithRetry(() => import("./pages/Privacy"));
 const Terms = lazyWithRetry(() => import("./pages/Terms"));
@@ -116,7 +116,7 @@ const App = () => {
       <TooltipProvider>
         <Toaster />
 
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <ErrorBoundary>
             <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted-foreground bg-background">Loading...</div>}>
               <Routes>

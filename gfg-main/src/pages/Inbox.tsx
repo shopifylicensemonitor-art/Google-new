@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { api, type InboxMessage } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
+import { PullToRefresh } from '@/components/PullToRefresh';
+import { SwipeableListItem } from '@/components/SwipeableListItem';
+import { InboxSkeleton } from '@/components/InboxSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -104,6 +108,26 @@ export default function Inbox() {
     } finally {
       setSendingReply(false);
     }
+  };
+
+  const handleDeleteMsg = (id: number) => {
+    setMessages(prev => prev.filter(m => m.id !== id));
+    if (selectedMsg?.id === id) {
+      setSelectedMsg(null);
+      setShowMobileDetail(false);
+    }
+    toast({
+      title: 'Conversation Deleted',
+      description: 'Message removed from your inbox view.',
+    });
+  };
+
+  const handleArchiveMsg = (id: number) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, is_read: 1 } : m));
+    toast({
+      title: 'Conversation Archived',
+      description: 'Marked as read and archived.',
+    });
   };
 
   const filteredMessages = messages.filter(m => {
@@ -258,62 +282,84 @@ export default function Inbox() {
 
             {/* List Items */}
             <div className="flex-1 overflow-y-auto divide-y divide-border/30">
-              {loading ? (
-                <div className="flex items-center justify-center p-8 text-xs text-muted-foreground">
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2 text-primary" /> Loading messages...
-                </div>
-              ) : filteredMessages.length === 0 ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">
-                  No replies found.
-                </div>
-              ) : (
-                filteredMessages.map((msg) => {
-                  const isSelected = selectedMsg?.id === msg.id;
-                  return (
-                    <div
-                      key={msg.id}
-                      onClick={() => handleSelectMsg(msg)}
-                      className={`p-3 cursor-pointer transition-colors relative ${
-                        isSelected
-                          ? 'bg-primary/10 border-l-4 border-l-primary'
-                          : !msg.is_read
-                          ? 'bg-primary/5 hover:bg-primary/10'
-                          : 'hover:bg-muted/40'
-                      }`}
-                    >
-                      {!msg.is_read && (
-                        <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary" />
-                      )}
-
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={`text-xs truncate pr-2 ${!msg.is_read ? 'font-bold text-foreground' : 'font-medium text-foreground/90'}`}>
-                          {msg.sender_email}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+              <PullToRefresh onRefresh={async () => { await handleSync(); loadInbox(); }}>
+                {loading ? (
+                  <div className="p-3 space-y-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className="p-3 space-y-2 rounded-lg border border-border/40 bg-card">
+                        <div className="flex items-center justify-between">
+                          <Skeleton className="h-4 w-32 rounded" />
+                          <Skeleton className="h-3 w-12 rounded" />
+                        </div>
+                        <Skeleton className="h-3.5 w-44 rounded" />
+                        <Skeleton className="h-3 w-full rounded" />
+                        <div className="flex items-center justify-between pt-1">
+                          <Skeleton className="h-4 w-16 rounded-full" />
+                          <Skeleton className="h-3.5 w-20 rounded" />
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                ) : filteredMessages.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-muted-foreground">
+                    No replies found.
+                  </div>
+                ) : (
+                  filteredMessages.map((msg) => {
+                    const isSelected = selectedMsg?.id === msg.id;
+                    return (
+                      <SwipeableListItem
+                        key={msg.id}
+                        onSwipeLeft={() => handleDeleteMsg(msg.id)}
+                        onSwipeRight={() => handleArchiveMsg(msg.id)}
+                        leftLabel="Archive"
+                        rightLabel="Delete"
+                      >
+                        <div
+                          onClick={() => handleSelectMsg(msg)}
+                          className={`p-3 cursor-pointer transition-colors relative ${
+                            isSelected
+                              ? 'bg-primary/10 border-l-4 border-l-primary'
+                              : !msg.is_read
+                              ? 'bg-primary/5 hover:bg-primary/10'
+                              : 'hover:bg-muted/40'
+                          }`}
+                        >
+                          {!msg.is_read && (
+                            <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary" />
+                          )}
 
-                      <p className={`text-xs truncate mb-1 ${!msg.is_read ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
-                        {msg.subject || 'No Subject'}
-                      </p>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-xs truncate pr-2 ${!msg.is_read ? 'font-bold text-foreground' : 'font-medium text-foreground/90'}`}>
+                              {msg.sender_email}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
 
-                      <p className="text-[11px] text-muted-foreground line-clamp-1 mb-2">
-                        {msg.body_text || msg.body_html || 'Empty body text'}
-                      </p>
+                          <p className={`text-xs truncate mb-1 ${!msg.is_read ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                            {msg.subject || 'No Subject'}
+                          </p>
 
-                      <div className="flex items-center justify-between">
-                        {getSentimentBadge(msg.sentiment)}
-                        {msg.contact_list && (
-                          <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
-                            {msg.contact_list}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+                          <p className="text-[11px] text-muted-foreground line-clamp-1 mb-2">
+                            {msg.body_text || msg.body_html || 'Empty body text'}
+                          </p>
+
+                          <div className="flex items-center justify-between">
+                            {getSentimentBadge(msg.sentiment)}
+                            {msg.contact_list && (
+                              <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
+                                {msg.contact_list}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </SwipeableListItem>
+                    );
+                  })
+                )}
+              </PullToRefresh>
             </div>
           </div>
 

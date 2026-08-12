@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Logo } from '@/components/Logo';
 import { Mail, MessageCircle, HelpCircle, Shield, FileText, Info, Home, Instagram, Facebook, BarChart3, BookOpen } from 'lucide-react';
 
 export function Footer() {
@@ -6,8 +7,8 @@ export function Footer() {
     <footer className="w-full py-12 mt-20 border-t border-border/40 bg-card/30 backdrop-blur-sm">
       <div className="mx-auto max-w-4xl px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
         {/* Brand Column */}
-        <div className="space-y-3 text-center md:text-left">
-          <p className="text-sm font-semibold tracking-tight text-foreground/90">Peak Xender</p>
+        <div className="space-y-3 flex flex-col items-center md:items-start text-center md:text-left">
+          <Logo size="sm" subtitle="Accelerated Outreach" />
           <p className="text-xs text-muted-foreground max-w-xs mx-auto md:mx-0 leading-relaxed">
             Lightning-fast bulk email outreach tool designed for speed and simplicity. 100% client-side and privacy-focused.
           </p>

@@ -681,20 +681,20 @@ export function GeneratedEmails({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm h-[600px] flex flex-col relative overflow-hidden">
+    <div className="space-y-3 rounded-xl border border-border bg-card p-3.5 sm:p-5 shadow-sm h-[520px] sm:h-[600px] flex flex-col relative overflow-hidden">
       {/* Header row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold">Generated Emails</h2>
-            <Badge variant="secondary" className="text-[10px] font-normal">
+        <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm sm:text-base font-semibold">Generated Emails</h2>
+            <Badge variant="secondary" className="text-[10px] font-normal shrink-0">
               {isBatchMode 
                 ? `${filteredBatches.length} ${filteredBatches.length === 1 ? 'Batch' : 'Batches'}` 
                 : `${filteredEmails.length} ${filteredEmails.length === 1 ? 'Email' : 'Emails'}`}
             </Badge>
 
             {/* Mode Switcher: Send Emails vs Open Store URLs */}
-            <div className="flex bg-muted/40 p-0.5 rounded-lg border border-border/20 ml-1">
+            <div className="flex bg-muted/40 p-0.5 rounded-lg border border-border/20 shrink-0">
               <Button
                 variant={actionMode === 'email' ? 'secondary' : 'ghost'}
                 size="sm"

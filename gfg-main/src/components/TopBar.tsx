@@ -6,6 +6,7 @@ import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { toast } from '@/hooks/use-toast';
 import { navigateToRoute } from '@/lib/router';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
 import { useUI } from '@/context/UIContext';
 
 interface TopBarProps {
@@ -213,9 +214,9 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         </button>
 
         {/* Mobile page title — visible on small screens */}
-        <span className="text-sm font-black tracking-tight text-foreground truncate shrink-0 sm:hidden">
-          Peak Xender
-        </span>
+        <div className="shrink-0 sm:hidden">
+          <Logo size="sm" subtitle="" />
+        </div>
 
         <div className="relative w-full max-w-xs md:max-w-sm hidden sm:block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />

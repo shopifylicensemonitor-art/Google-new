@@ -1119,6 +1119,52 @@ const Index = () => {
     }
   }, [emails, subject, body]);
 
+  // Sync email counts with FloatingSendWidget
+  useEffect(() => {
+    const pendingCount = emails.filter(e => !sentStatus[`${e.listName || 'default'}:${e.email.toLowerCase()}`]).length;
+    window.dispatchEvent(
+      new CustomEvent('peak_email_count_update', {
+        detail: { total: emails.length, pending: pendingCount }
+      })
+    );
+  }, [emails, sentStatus]);
+
+  // Handle direct manual send event from FloatingSendWidget
+  useEffect(() => {
+    const handleDirectSendEvent = () => {
+      const pending = emails.filter(e => !sentStatus[`${e.listName || 'default'}:${e.email.toLowerCase()}`]);
+      if (pending.length > 0) {
+        const batchToOpen = pending.slice(0, bccBatchSize || 10).map(e => e.email);
+        handleSendBatchClick(batchToOpen);
+        toast({
+          title: "Direct Send Triggered",
+          description: `Opening batch of ${batchToOpen.length} pending email(s)...`,
+        });
+        const section = document.getElementById('generated-emails-section');
+        if (section) section.scrollIntoView({ behavior: 'smooth' });
+      } else if (emails.length > 0) {
+        toast({
+          title: "All Emails Sent",
+          description: "All generated emails in the current list have already been sent.",
+        });
+      } else {
+        if (handleSendViaBackend) {
+          handleSendViaBackend();
+        } else {
+          const inputSection = document.getElementById('main-input-section');
+          if (inputSection) inputSection.scrollIntoView({ behavior: 'smooth' });
+          toast({
+            title: "No Email List Generated",
+            description: "Please enter or paste recipient list to generate and send emails.",
+          });
+        }
+      }
+    };
+
+    window.addEventListener('peak_trigger_direct_send', handleDirectSendEvent);
+    return () => window.removeEventListener('peak_trigger_direct_send', handleDirectSendEvent);
+  }, [emails, sentStatus, bccBatchSize, handleSendBatchClick, handleSendViaBackend]);
+
   const handleFileUpload = (file: File) => {
     setIsProcessing(true);
     const isCSV = file.name.toLowerCase().endsWith('.csv');

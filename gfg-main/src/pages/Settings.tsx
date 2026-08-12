@@ -7,11 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
+import { useUI } from '@/context/UIContext';
 import { 
   CreditCard, Download, Edit, Lock, Bell, Shield, User, Sparkles, 
   AlertTriangle, Plus, Save, Building, Mail, FileText, Globe, Clock, 
   Key, Check, CheckCircle2, RefreshCw, ChevronRight, Laptop, Smartphone,
-  Zap, ArrowUpRight, Sun, Moon, Keyboard
+  Zap, ArrowUpRight, Sun, Moon, Keyboard, BatteryCharging, ZapOff
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
@@ -31,6 +32,7 @@ const INITIAL_INVOICES: Invoice[] = [
 
 export default function Settings() {
   const { theme, setTheme, toggleTheme } = useTheme();
+  const { batterySaver, toggleBatterySaver } = useUI();
   const [activeTab, setActiveTab] = useState<'billing' | 'general' | 'security' | 'notifications'>('general');
 
   // General state
@@ -345,6 +347,61 @@ export default function Settings() {
                     <p className="text-[11px] text-muted-foreground mt-0.5">Low-glare dark luxury console</p>
                   </div>
                 </button>
+              </div>
+            </div>
+
+            {/* Battery Saver & Performance Optimization Card */}
+            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                    <BatteryCharging className="h-4 w-4 text-amber-500" /> Battery Saver Mode
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Reduces UI animations, CSS transitions, and throttles background email sync polling to extend battery life on mobile devices.
+                  </p>
+                </div>
+                <Badge className={batterySaver ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 font-mono text-[10px] uppercase font-bold" : "bg-muted text-muted-foreground border-border font-mono text-[10px] uppercase font-bold"}>
+                  {batterySaver ? 'ACTIVE' : 'OFF'}
+                </Badge>
+              </div>
+
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg shrink-0 ${batterySaver ? 'bg-amber-500 text-slate-950' : 'bg-muted text-muted-foreground'}`}>
+                    {batterySaver ? <ZapOff className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-foreground">
+                      Power Optimization &amp; Reduced Motion
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {batterySaver
+                        ? 'Animations disabled • Slowed background sync polling (60s)'
+                        : 'Full smooth 60fps animations • High-frequency background sync (10s)'}
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant={batterySaver ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    toggleBatterySaver();
+                    toast({
+                      title: !batterySaver ? '⚡ Battery Saver Enabled' : '🔋 Standard Performance Restored',
+                      description: !batterySaver
+                        ? 'UI animations reduced and background email sync rate throttled.'
+                        : 'Restored standard animations and high-frequency sync.',
+                    });
+                  }}
+                  className={`h-9 px-4 text-xs font-bold shrink-0 ${
+                    batterySaver ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold border-none' : ''
+                  }`}
+                >
+                  {batterySaver ? 'Disable Battery Saver' : 'Enable Battery Saver'}
+                </Button>
               </div>
             </div>
 

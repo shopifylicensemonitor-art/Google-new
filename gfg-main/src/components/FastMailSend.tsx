@@ -526,7 +526,7 @@ export function FastMailSend({
         >
           <div className="flex items-center gap-2.5">
             <Settings className="h-4 w-4 text-primary animate-spin-slow" />
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Outreach &amp; Anti-Spam Settings</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Settings</span>
             {(((cc && cc.trim()) || (bcc && bcc.trim()) || (myInboxTo && myInboxTo.trim()) || enableRandomization)) && (
               <Badge variant="secondary" className="text-[9px] scale-95 px-2 py-0 h-4 bg-primary/10 text-primary border-none font-semibold">
                 Active Settings
@@ -702,21 +702,21 @@ export function FastMailSend({
         )}
       </div>
 
-      <div className="flex gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         <Button 
           onClick={handleGenerate} 
           disabled={isUploading} 
-          className="flex-1 h-11 text-xs sm:text-sm font-bold uppercase tracking-wider peak-gradient-bg text-white shadow-lg border-none hover:opacity-95 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 rounded-xl"
+          className="col-span-2 sm:col-span-1 w-full h-11 text-xs sm:text-sm font-bold uppercase tracking-wider peak-gradient-bg text-white shadow-lg border-none hover:opacity-95 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 rounded-xl flex items-center justify-center"
         >
           {isUploading ? (
             <>
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Processing List...
+              <RefreshCw className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
+              <span>Processing</span>
             </>
           ) : (
             <>
-              <Send className="mr-2 h-4 w-4" />
-              Compile &amp; Generate Emails
+              <Send className="mr-1.5 h-4 w-4 shrink-0" />
+              <span>Compile Emails</span>
             </>
           )}
         </Button>
@@ -724,7 +724,7 @@ export function FastMailSend({
           <Button
             onClick={onSendViaBackend}
             disabled={isSendingBackend}
-            className={`h-11 px-3 sm:px-4 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center gap-2 transition-all duration-200 ${
+            className={`col-span-1 w-full h-11 px-2.5 sm:px-4 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-all duration-200 shrink-0 ${
               schedulerEnabled
                 ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg border-none'
                 : 'bg-muted text-muted-foreground border border-border'
@@ -732,23 +732,21 @@ export function FastMailSend({
             title={!schedulerEnabled ? 'Background scheduler is disabled — backend will attempt immediate processing' : 'Send via backend campaign scheduler'}
           >
             {isSendingBackend ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
             ) : (
-              <Cloud className="h-4 w-4" />
+              <Cloud className="h-4 w-4 shrink-0" />
             )}
-            <span className="hidden sm:inline">{isSendingBackend ? 'Sending...' : 'Send via Backend'}</span>
-            <span className="inline sm:hidden">{isSendingBackend ? '...' : 'Backend'}</span>
+            <span className="truncate">{isSendingBackend ? 'Sending' : 'Send Queue'}</span>
           </Button>
         )}
         <Button
           variant="outline"
           onClick={() => setIsTestDialogOpen(true)}
-          className="px-3 sm:px-4 h-11 rounded-xl border-primary/20 text-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 flex items-center gap-2 font-bold text-xs uppercase tracking-wider"
+          className="col-span-1 w-full h-11 px-2.5 sm:px-4 rounded-xl border-primary/20 text-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs uppercase tracking-wider shrink-0"
           title="Send Test Email"
         >
-          <FlaskConical className="h-5 w-5 animate-float-slow" />
-          <span className="inline sm:hidden">Test</span>
-          <span className="hidden sm:inline">Test Draft</span>
+          <FlaskConical className="h-4 w-4 animate-float-slow shrink-0" />
+          <span className="truncate">Test Draft</span>
         </Button>
       </div>
       <div className="flex items-center justify-center gap-3 text-[9px] font-mono text-muted-foreground -mt-2">

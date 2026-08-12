@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,24 +51,9 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
   return (
     <header className="w-full border-b border-border/60 bg-card/50 backdrop-blur-md px-3 sm:px-4 py-3 sm:py-4">
       <div className="mx-auto flex max-w-4xl items-center justify-between">
-        <div className="bg-card/80 border border-border/60 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-2xs">
-          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center shrink-0 rounded-xl overflow-hidden bg-muted/30">
-            <img 
-              src="/logo-light.jpg" 
-              alt="Peak Xender Logo" 
-              className="h-full w-full object-contain dark:hidden" 
-            />
-            <img 
-              src="/logo-dark.jpg" 
-              alt="Peak Xender Logo" 
-              className="h-full w-full object-contain hidden dark:block" 
-            />
-          </div>
-          <div className="flex flex-col -space-y-1">
-            <span className="font-heading text-lg font-bold tracking-tight text-foreground">Peak Xender</span>
-            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Outreach Console</span>
-          </div>
-        </div>
+        <Link to="/send" className="bg-card/80 border border-border/60 rounded-2xl px-3.5 py-2 flex items-center shadow-2xs hover:bg-card hover:border-primary/40 transition-colors">
+          <Logo size="md" subtitle="Outreach Console" />
+        </Link>
 
         <div className="flex items-center gap-2 sm:gap-3">
           {canInstall && (
@@ -111,22 +97,7 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
               <div className="space-y-4 pt-2">
                 {/* Brand Header */}
                 <div className="flex items-center gap-3 pb-3 border-b border-border/40">
-                  <div className="flex h-9 w-9 items-center justify-center shrink-0 rounded-lg overflow-hidden bg-card">
-                    <img 
-                      src="/logo-light.jpg" 
-                      alt="Peak Xender Logo" 
-                      className="h-full w-full object-contain dark:hidden" 
-                    />
-                    <img 
-                      src="/logo-dark.jpg" 
-                      alt="Peak Xender Logo" 
-                      className="h-full w-full object-contain hidden dark:block" 
-                    />
-                  </div>
-                  <div className="flex flex-col -space-y-1">
-                    <span className="text-base font-bold tracking-tight gradient-text">Peak Xender Console</span>
-                    <span className="text-[8px] font-semibold text-muted-foreground uppercase tracking-widest">Outreach Console Menu</span>
-                  </div>
+                  <Logo size="sm" subtitle="Console Menu" />
                 </div>
 
                 {/* Dashboard / Main Actions */}
