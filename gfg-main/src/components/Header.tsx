@@ -48,10 +48,10 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
   };
 
   return (
-    <header className="w-full border-b border-border/10 bg-background/0 px-3 sm:px-4 py-3 sm:py-4">
+    <header className="w-full border-b border-border/60 bg-card/50 backdrop-blur-md px-3 sm:px-4 py-3 sm:py-4">
       <div className="mx-auto flex max-w-4xl items-center justify-between">
-        <div className="glass-card rounded-2xl px-4 py-2 flex items-center gap-3">
-          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center shrink-0 rounded-lg overflow-hidden bg-card">
+        <div className="bg-card/80 border border-border/60 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-2xs">
+          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center shrink-0 rounded-xl overflow-hidden bg-muted/30">
             <img 
               src="/logo-light.jpg" 
               alt="Peak Xender Logo" 
@@ -64,8 +64,8 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
             />
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-lg font-bold tracking-tight gradient-text">Peak Xender</span>
-            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Sender</span>
+            <span className="font-heading text-lg font-bold tracking-tight text-foreground">Peak Xender</span>
+            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Outreach Console</span>
           </div>
         </div>
 
@@ -74,7 +74,7 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
             <Button
               size="sm"
               onClick={onInstall}
-              className="h-8 gap-1.5 rounded-xl peak-gradient-bg border-none text-white font-medium px-3 shadow-md shadow-primary/20 hover:opacity-90 transition-opacity text-[11px]"
+              className="h-8 gap-1.5 rounded-xl bg-[#635bff] text-white font-bold px-3 shadow-2xs hover:bg-[#493ee5] transition-colors text-[11px]"
             >
               <Download className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Install App</span>
@@ -82,13 +82,13 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
             </Button>
           )}
           <Link to="/help" title="Detailed System Guide" className="hidden sm:inline-block">
-            <Button variant="ghost" size="sm" className="h-8 gap-2 text-muted-foreground hover:text-primary transition-colors pr-3 opacity-90 hover:opacity-100">
+            <Button variant="ghost" size="sm" className="h-8 gap-2 text-muted-foreground hover:text-[#635bff] transition-colors pr-3">
               <HelpCircle className="h-4.5 w-4.5" />
               <span className="hidden sm:inline text-[11px] font-bold uppercase tracking-wider">Full Guide</span>
             </Button>
           </Link>
-          <Badge className="glass-card bg-primary/5 text-primary border-primary/20 text-[9px] px-2 h-6 sm:text-[10px] sm:px-3 sm:h-7 hidden sm:inline-flex">v3.4.0</Badge>
-          <div className="h-8 w-px bg-border/50 mx-1 hidden sm:block" />
+          <Badge className="bg-[#635bff]/10 text-[#635bff] border-[#635bff]/20 font-mono text-[9px] px-2 h-6 sm:text-[10px] sm:px-3 sm:h-7 hidden sm:inline-flex">v3.4.0</Badge>
+          <div className="h-8 w-px bg-border/60 mx-1 hidden sm:block" />
           <ThemeToggle />
 
           {/* Navigation Hamburger Menu */}
@@ -334,7 +334,7 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
       {/* Horizontally scrollable navigation row - hidden on mobile (under 640px) */}
       <div className="mx-auto max-w-4xl mt-3.5 hidden sm:block">
         <div 
-          className="flex items-center gap-1 overflow-x-auto py-1.5 bg-muted/40 dark:bg-muted/15 backdrop-blur-md rounded-2xl border border-border/20 shadow-sm px-1.5 scrollbar-none"
+          className="flex items-center gap-1 overflow-x-auto py-1.5 bg-card/60 backdrop-blur-md rounded-2xl border border-border/60 shadow-2xs px-1.5 scrollbar-none"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           <style>{`
@@ -349,9 +349,9 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 select-none cursor-pointer border ${
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-200 shrink-0 select-none cursor-pointer border ${
                   isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20 border-primary scale-[1.02]'
+                    ? 'bg-[#635bff] text-white shadow-2xs border-[#635bff] scale-[1.02]'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 border-transparent'
                 }`}
               >
@@ -360,8 +360,8 @@ export const Header = memo(function Header({ canInstall, onInstall }: HeaderProp
                 {item.path === '/tracker' && dailyCount > 0 && (
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
                     isActive 
-                      ? 'bg-primary-foreground text-primary' 
-                      : 'bg-primary/10 text-primary border border-primary/20'
+                      ? 'bg-white text-[#635bff]' 
+                      : 'bg-[#635bff]/10 text-[#635bff] border border-[#635bff]/20'
                   }`}>
                     {dailyCount}
                   </span>

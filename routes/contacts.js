@@ -14,9 +14,21 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { getDb } = require('../db');
+const { syncContactListsToActiveCampaigns } = require('../scheduler');
 
 // Multer: store uploads in memory (CSVs are small)
 const upload = multer({ storage: multer.memoryStorage() });
+
+/** Force trigger background contact list queue synchronization. */
+router.post('/sync', async (req, res) => {
+  try {
+    const db = await getDb();
+    const result = await syncContactListsToActiveCampaigns(db);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /** List the current user's distinct contact list names with counts. */
 router.get('/lists', async (req, res) => {
@@ -129,7 +141,7 @@ router.get('/history/:email', async (req, res) => {
   }
 });
 
-/** Get all contacts in a specific list, with optional pagination. */
+/** Get all contacts in a specific list, with optional pagination and status indicators. */
 router.get('/:listName', async (req, res) => {
   try {
     const db = await getDb();
@@ -158,6 +170,70 @@ router.get('/:listName', async (req, res) => {
       }
       return c;
     });
+
+    // Run background sync fire-and-forget to keep active campaign queues mapped
+    syncContactListsToActiveCampaigns(db).catch(() => {});
+
+    // Compute status indicators for retrieved contacts
+    const emails = parsedContacts.map(c => c.email).filter(Boolean);
+    if (emails.length > 0) {
+      const statusMap = new Map();
+      const chunkSize = 200;
+
+      for (let i = 0; i < emails.length; i += chunkSize) {
+        const chunk = emails.slice(i, i + chunkSize);
+        const placeholders = chunk.map(() => '?').join(',');
+        const queueRows = await db.prepare(`
+          SELECT q.recipient_email, q.status, q.sent_at, q.error, c.name as campaign_name
+          FROM queue q
+          LEFT JOIN campaigns c ON q.campaign_id = c.id
+          WHERE q.recipient_email IN (${placeholders})
+        `).all(...chunk);
+
+        for (const row of queueRows) {
+          const emailLower = (row.recipient_email || '').toLowerCase();
+          const existing = statusMap.get(emailLower);
+
+          let rank = 0;
+          let mappedStatus = 'pending';
+          if (row.status === 'sent') {
+            rank = 4;
+            mappedStatus = 'sent';
+          } else if (row.status === 'sending') {
+            rank = 3;
+            mappedStatus = 'sending';
+          } else if (row.status === 'pending') {
+            rank = 2;
+            mappedStatus = 'queued';
+          } else if (row.status === 'failed') {
+            rank = 1;
+            mappedStatus = 'failed';
+          }
+
+          if (!existing || rank > existing.rank) {
+            statusMap.set(emailLower, {
+              status: mappedStatus,
+              campaign_name: row.campaign_name || 'Active Campaign',
+              sent_at: row.sent_at,
+              error: row.error,
+              rank
+            });
+          }
+        }
+      }
+
+      parsedContacts.forEach(c => {
+        const info = statusMap.get((c.email || '').toLowerCase());
+        if (info) {
+          c.status = info.status;
+          c.campaign_name = info.campaign_name;
+          c.sent_at = info.sent_at;
+          c.error = info.error;
+        } else {
+          c.status = 'pending';
+        }
+      });
+    }
 
     res.json(parsedContacts);
   } catch (err) {
@@ -222,6 +298,9 @@ router.post('/import-bulk', async (req, res) => {
       });
       await insertTransaction();
     }
+
+    // Trigger background sync to immediately enqueue new contacts for active campaigns
+    syncContactListsToActiveCampaigns(db).catch(() => {});
 
     res.json({
       success: true,
@@ -553,6 +632,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       await insertTransaction();
     }
 
+    // Trigger background sync to immediately enqueue new contacts for active campaigns
+    syncContactListsToActiveCampaigns(db).catch(() => {});
+
     res.json({
       success: true,
       added,
@@ -584,6 +666,10 @@ router.post('/', async (req, res) => {
     const result = await db.prepare(
       'INSERT INTO contacts (list_name, email, user_id) VALUES (?, ?, ?)'
     ).run(list_name, email, req.userId);
+
+    // Trigger background sync
+    syncContactListsToActiveCampaigns(db).catch(() => {});
+
     res.json({ success: true, id: result.lastInsertRowid });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * routes/ai.js â€” Universal OpenAI-compatible AI API router for Peak Xender.
  *
  * Supports 10+ providers (OpenRouter, Nvidia NIM, OpenAI, Gemini, Groq, DeepSeek, Together, Ollama, etc.)
@@ -9,6 +9,20 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const logger = require('../logger');
+const { GoogleGenAI, Modality } = require('@google/genai');
+
+// Initialize Gemini SDK with process.env.GEMINI_API_KEY
+let genAI = null;
+if (process.env.GEMINI_API_KEY) {
+  genAI = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+}
 
 // Secure AES-256-GCM encryption helpers for API keys stored in DB
 const crypto = require('crypto');
@@ -73,12 +87,9 @@ async function getActiveAIConfig() {
   };
 }
 
-/** Helper: Call the configured AI completions endpoint */
+/** Helper: Call the configured AI completions endpoint or fallback to Gemini */
 async function callAI(messages, systemOverride = null) {
   const config = await getActiveAIConfig();
-  if (!config || !config.apiKey) {
-    throw new Error('AI Provider is not configured yet. Please configure your API key in AI Settings.');
-  }
 
   // Fetch AI Rules & Knowledge Base context to append to system instructions
   const db = await getDb();
@@ -92,48 +103,57 @@ async function callAI(messages, systemOverride = null) {
   const defaultSystem = 'You are Peak Xender AI, an elite cold email outreach assistant and high-converting copywriter.' + rulesContext;
   const systemPrompt = systemOverride ? systemOverride + rulesContext : defaultSystem;
 
-  let baseUrl = (config.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  if (!baseUrl.endsWith('/v1') && !baseUrl.includes('/v1/') && !baseUrl.endsWith('/chat/completions')) {
-    baseUrl = `${baseUrl}/v1`;
-  }
-  const endpointUrl = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-  const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
+  // Try custom configured endpoint if available
+  if (config && config.apiKey) {
+    let baseUrl = (config.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+    if (!baseUrl.endsWith('/v1') && !baseUrl.includes('/v1/') && !baseUrl.endsWith('/chat/completions')) {
+      baseUrl = `${baseUrl}/v1`;
+    }
+    const endpointUrl = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+    const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
-  
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`,
+      ...(config.provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+    };
 
-    // Build headers explicitly and safely
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${config.apiKey}`,
-    ...(config.provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
-  };
-
-  const res = await fetch(endpointUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: config.model || 'openai/gpt-4o-mini',
-      messages: fullMessages,
-      temperature: 0.7,
-      max_tokens: 1500,
-    })
-  });
-
-  if (!res.ok) {
-    let errText = await res.text();
     try {
-      const parsed = JSON.parse(errText);
-      errText = parsed.error?.message || parsed.message || errText;
-    } catch (_) {}
-    throw new Error(`AI API Error (${res.status}): ${errText}`);
+      const res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: config.model || 'openai/gpt-4o-mini',
+          messages: fullMessages,
+          temperature: 0.7,
+          max_tokens: 1500,
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return content.trim();
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Custom AI call failed, trying Gemini fallback');
+    }
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('AI returned an empty response.');
+  // Fallback to Gemini via process.env.GEMINI_API_KEY
+  if (genAI) {
+    const userPrompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+      }
+    });
+    if (response.text) return response.text.trim();
   }
-  return content.trim();
+
+  throw new Error('AI Provider is not configured yet. Please configure your API key in AI Settings or system environment.');
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +382,350 @@ router.post('/reply-draft', async (req, res) => {
 
     res.json({ success: true, replyDraft: draft });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** POST /api/ai/chat — Multi-turn Gemini chatbot with deep app integration via Function Calling */
+router.post('/chat', async (req, res) => {
+  const { messages, systemInstruction, currentPage } = req.body;
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({ error: 'Messages array is required.' });
+  }
+
+  try {
+    const sysPrompt = (systemInstruction || 
+      'You are Peak Xender AI Operating System Advisor, an autonomous AI assistant deeply integrated into Peak Xender cold email platform. You can inspect campaigns, launch/pause outreach, list prospect lists, analyze inbox replies & hot leads, check deliverability sending accounts, create templates, and navigate users across the interface. Be proactive, crisp, professional, and actionable.') +
+      (currentPage ? `\n[User is currently viewing page: ${currentPage}]` : '');
+
+    if (genAI) {
+      const contents = messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
+
+      // Define App-wide Gemini Function Declarations
+      const appTools = [{
+        functionDeclarations: [
+          {
+            name: 'get_app_overview',
+            description: 'Fetch real-time stats of active campaigns, unread inbox messages, hot leads, prospect lists, and sending accounts.',
+            parameters: { type: 'OBJECT', properties: {} }
+          },
+          {
+            name: 'list_campaigns',
+            description: 'List all campaigns in Peak Xender with status, recipient count, and performance metrics.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                status: { type: 'STRING', description: 'Filter status: draft, sending, paused, completed, or all' }
+              }
+            }
+          },
+          {
+            name: 'create_campaign',
+            description: 'Create a new email outreach campaign.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING', description: 'Campaign title/name' },
+                subject: { type: 'STRING', description: 'Subject line' },
+                body_html: { type: 'STRING', description: 'HTML message body' },
+                contact_list: { type: 'STRING', description: 'Assigned prospect list name' }
+              },
+              required: ['name', 'subject', 'body_html']
+            }
+          },
+          {
+            name: 'control_campaign',
+            description: 'Start, pause, or resume an existing campaign by ID.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                campaign_id: { type: 'NUMBER', description: 'Campaign ID' },
+                action: { type: 'STRING', description: 'Action: start, pause, resume' }
+              },
+              required: ['campaign_id', 'action']
+            }
+          },
+          {
+            name: 'list_prospect_lists',
+            description: 'Get all prospect contact lists and recipient counts.',
+            parameters: { type: 'OBJECT', properties: {} }
+          },
+          {
+            name: 'search_inbox_messages',
+            description: 'Search or view recent inbox replies and sentiment badges (hot_lead, question, etc.).',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                sentiment: { type: 'STRING', description: 'Filter: hot_lead, question, neutral, unsubscribe, or all' }
+              }
+            }
+          },
+          {
+            name: 'get_sending_accounts',
+            description: 'Get list of configured sending accounts, daily limits, and deliverability status.',
+            parameters: { type: 'OBJECT', properties: {} }
+          },
+          {
+            name: 'create_template',
+            description: 'Save a reusable email template.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING', description: 'Template name' },
+                subject: { type: 'STRING', description: 'Email subject' },
+                body_html: { type: 'STRING', description: 'HTML body' }
+              },
+              required: ['name', 'subject', 'body_html']
+            }
+          },
+          {
+            name: 'navigate_to_page',
+            description: 'Direct or navigate the user interface to a specific app screen.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                page: { type: 'STRING', description: 'Destination route: /campaigns, /contacts, /inbox, /accounts, /templates, /ai-settings, /tracker' },
+                reason: { type: 'STRING', description: 'Reason for navigation' }
+              },
+              required: ['page']
+            }
+          }
+        ]
+      }];
+
+      // Function execution dispatcher
+      const executeToolCall = async (call) => {
+        const db = await getDb();
+        const args = call.args || {};
+
+        if (call.name === 'get_app_overview') {
+          const totalCampaigns = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM campaigns', (e, r) => res(r?.cnt || 0)));
+          const activeCampaigns = await new Promise(res => db.get("SELECT COUNT(*) as cnt FROM campaigns WHERE status='sending'", (e, r) => res(r?.cnt || 0)));
+          const unreadInbox = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM inbox_messages WHERE is_read=0', (e, r) => res(r?.cnt || 0)));
+          const hotLeads = await new Promise(res => db.get("SELECT COUNT(*) as cnt FROM inbox_messages WHERE sentiment='hot_lead'", (e, r) => res(r?.cnt || 0)));
+          const accountsCount = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM sending_accounts', (e, r) => res(r?.cnt || 0)));
+          const lists = await new Promise(res => db.all('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name', (e, r) => res(r || [])));
+          return { totalCampaigns, activeCampaigns, unreadInbox, hotLeads, accountsCount, lists };
+        }
+
+        if (call.name === 'list_campaigns') {
+          const query = args.status && args.status !== 'all' ? 'SELECT * FROM campaigns WHERE status = ?' : 'SELECT * FROM campaigns';
+          const params = args.status && args.status !== 'all' ? [args.status] : [];
+          const campaigns = await new Promise(res => db.all(query, params, (e, r) => res(r || [])));
+          return { campaigns };
+        }
+
+        if (call.name === 'create_campaign') {
+          let totalContacts = 0;
+          if (args.contact_list) {
+            const cntRow = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM contacts WHERE list_name = ?', [args.contact_list], (e, r) => res(r)));
+            totalContacts = cntRow?.cnt || 0;
+          }
+          const stmt = db.prepare('INSERT INTO campaigns (name, subject, body_html, body_plain, contact_list, total_contacts, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const id = await new Promise((res, rej) => stmt.run([args.name, args.subject, args.body_html, args.body_html.replace(/<[^>]+>/g, ''), args.contact_list || null, totalContacts, 'draft'], function(err) {
+            if (err) rej(err); else res(this.lastID);
+          }));
+          return { success: true, campaign_id: id, name: args.name, status: 'draft', total_contacts: totalContacts, navigate: '/campaigns' };
+        }
+
+        if (call.name === 'control_campaign') {
+          let newStatus = 'draft';
+          if (args.action === 'start' || args.action === 'resume') newStatus = 'sending';
+          if (args.action === 'pause') newStatus = 'paused';
+          await new Promise(res => db.run('UPDATE campaigns SET status = ? WHERE id = ?', [newStatus, args.campaign_id], (e) => res()));
+          return { success: true, campaign_id: args.campaign_id, status: newStatus };
+        }
+
+        if (call.name === 'list_prospect_lists') {
+          const lists = await new Promise(res => db.all('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name', (e, r) => res(r || [])));
+          return { lists };
+        }
+
+        if (call.name === 'search_inbox_messages') {
+          let query = 'SELECT * FROM inbox_messages ORDER BY id DESC LIMIT 10';
+          let params = [];
+          if (args.sentiment && args.sentiment !== 'all') {
+            query = 'SELECT * FROM inbox_messages WHERE sentiment = ? ORDER BY id DESC LIMIT 10';
+            params = [args.sentiment];
+          }
+          const messages = await new Promise(res => db.all(query, params, (e, r) => res(r || [])));
+          return { messages };
+        }
+
+        if (call.name === 'get_sending_accounts') {
+          const accounts = await new Promise(res => db.all('SELECT id, email, status, daily_limit, daily_sent, warmup_enabled FROM sending_accounts', (e, r) => res(r || [])));
+          return { accounts };
+        }
+
+        if (call.name === 'create_template') {
+          const stmt = db.prepare('INSERT INTO templates (name, subject, body_html) VALUES (?, ?, ?)');
+          const id = await new Promise((res, rej) => stmt.run([args.name, args.subject, args.body_html], function(err) {
+            if (err) rej(err); else res(this.lastID);
+          }));
+          return { success: true, template_id: id, name: args.name, navigate: '/templates' };
+        }
+
+        if (call.name === 'navigate_to_page') {
+          return { success: true, action: 'navigate', page: args.page, reason: args.reason };
+        }
+
+        return { error: 'Unknown function' };
+      };
+
+      // Turn 1
+      let response = await genAI.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents,
+        config: {
+          systemInstruction: sysPrompt,
+          temperature: 0.7,
+          tools: appTools,
+        }
+      });
+
+      let clientAction = null;
+
+      // Handle function execution turns (up to 3 turns)
+      for (let turn = 0; turn < 3; turn++) {
+        const functionCalls = response.candidates?.[0]?.content?.parts?.filter(p => p.functionCall).map(p => p.functionCall);
+        if (!functionCalls || functionCalls.length === 0) break;
+
+        // Add candidate output
+        contents.push(response.candidates[0].content);
+
+        // Execute function calls
+        const functionResponses = [];
+        for (const call of functionCalls) {
+          const result = await executeToolCall(call);
+          if (result && result.navigate) clientAction = { action: 'navigate', page: result.navigate };
+          if (result && result.action === 'navigate') clientAction = { action: 'navigate', page: result.page };
+
+          functionResponses.push({
+            functionResponse: {
+              name: call.name,
+              response: result,
+            }
+          });
+        }
+
+        contents.push({
+          role: 'user',
+          parts: functionResponses,
+        });
+
+        // Get final answer
+        response = await genAI.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents,
+          config: {
+            systemInstruction: sysPrompt,
+            temperature: 0.7,
+            tools: appTools,
+          }
+        });
+      }
+
+      const reply = response.text ? response.text.trim() : 'I have performed your request across the application.';
+      return res.json({ success: true, reply, clientAction });
+    } else {
+      // Fallback via callAI
+      const reply = await callAI(messages, sysPrompt);
+      return res.json({ success: true, reply });
+    }
+  } catch (err) {
+    logger.error({ err }, 'AI Chat endpoint failed');
+    try {
+      const fallbackReply = await callAI(messages, systemInstruction || 'You are Peak Xender AI Advisor. Be helpful and concise.');
+      return res.json({ success: true, reply: fallbackReply });
+    } catch (fErr) {
+      res.status(500).json({ error: 'AI Service is temporarily busy. Please try again in a moment.' });
+    }
+  }
+});
+
+/** POST /api/ai/search-grounding — Grounded real-time Google search for company/lead research */
+router.post('/search-grounding', async (req, res) => {
+  const { query, topic = 'Lead & Company Outreach Research' } = req.body;
+  if (!query) {
+    return res.status(400).json({ error: 'Search query is required.' });
+  }
+
+  try {
+    if (!genAI) {
+      // Fallback if genAI not initialized
+      const fallbackText = await callAI([
+        { role: 'user', content: `Research and summarize key insights about: ${query} for ${topic}.` }
+      ]);
+      return res.json({ success: true, text: fallbackText, sources: [] });
+    }
+
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Perform up-to-date real-time research on: "${query}". Provide a crisp, structured dossier containing company summary, recent developments, target angles for cold email outreach, and personalizing hooks.`,
+      config: {
+        tools: [{ googleSearch: {} }],
+        systemInstruction: 'You are a real-time intelligence agent providing grounded facts and insights for cold email personalization.',
+      }
+    });
+
+    const text = response.text ? response.text.trim() : '';
+    
+    // Extract grounding URLs and sources
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = groundingChunks
+      .filter(c => c.web)
+      .map(c => ({ title: c.web.title, uri: c.web.uri }));
+
+    res.json({ success: true, text, sources });
+  } catch (err) {
+    logger.error({ err }, 'Search Grounding failed');
+    try {
+      const fallbackText = await callAI([
+        { role: 'user', content: `Research and summarize key insights about: ${query} for ${topic}.` }
+      ]);
+      return res.json({ success: true, text: fallbackText, sources: [] });
+    } catch (fErr) {
+      res.status(500).json({ error: 'Search grounding failed.' });
+    }
+  }
+});
+
+/** POST /api/ai/tts — Speech audio generation using Gemini TTS */
+router.post('/tts', async (req, res) => {
+  const { text, voice = 'Kore' } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: 'Text prompt is required.' });
+  }
+
+  try {
+    if (!genAI) {
+      return res.status(400).json({ error: 'Gemini API is required for voice synthesis.' });
+    }
+
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ parts: [{ text: `Say clearly: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voice },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      throw new Error('No audio output returned from Gemini TTS.');
+    }
+
+    res.json({ success: true, audioBase64: base64Audio });
+  } catch (err) {
+    logger.error({ err }, 'TTS generation failed');
     res.status(500).json({ error: err.message });
   }
 });

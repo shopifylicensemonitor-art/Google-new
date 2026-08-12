@@ -132,24 +132,33 @@ const Row = memo(
       .replace(/{sname}/g, pSname)
       .replace(/{brand}/g, userName);
 
-    // Double curly brace {{variable}} replacements with built-in fallbacks
+    // Single and double curly brace variable replacements with built-in fallbacks
     const resolveVar = (key: string): string => {
-      const normKey = key.toLowerCase();
+      const normKey = key.trim().toLowerCase();
       // Built-in fallbacks (mirror scheduler.js)
       if (normKey === 'email') return entry.email;
-      if (normKey === 'name' || normKey === 'first_name') return displayName;
-      if (normKey === 'store' || normKey === 'store_name') return entry.fields?.store_name || domainPart || '';
+      if (normKey === 'name' || normKey === 'first_name' || normKey === 'firstname') return displayName;
+      if (normKey === 'store' || normKey === 'store_name' || normKey === 'storename') return entry.fields?.store_name || domainPart || '';
       if (normKey === 'sname') return pSname;
       if (normKey === 'brand') return userName;
       if (normKey === 'niche') return entry.fields?.niche || '';
       if (normKey === 'pain_point') return entry.fields?.pain_point || '';
       // Custom fields from CSV
-      if (entry.fields?.[key] !== undefined) return entry.fields[key];
-      if (entry.fields?.[normKey] !== undefined) return entry.fields[normKey];
+      if (entry.fields?.[key] !== undefined && entry.fields[key] !== null) return String(entry.fields[key]);
+      if (entry.fields?.[normKey] !== undefined && entry.fields[normKey] !== null) return String(entry.fields[normKey]);
+      if (entry.fields && typeof entry.fields === 'object') {
+        const matchKey = Object.keys(entry.fields).find(k => k.toLowerCase() === normKey);
+        if (matchKey && entry.fields[matchKey] !== undefined) return String(entry.fields[matchKey]);
+      }
       return '';
     };
-    processedSubject = processedSubject.replace(/\{\{(\w+)\}\}/g, (_, key) => resolveVar(key));
-    processedBody = processedBody.replace(/\{\{(\w+)\}\}/g, (_, key) => resolveVar(key));
+    processedSubject = processedSubject
+      .replace(/\{\{([^{}]+)\}\}/g, (_, key) => resolveVar(key))
+      .replace(/\{([a-zA-Z0-9_\-\s]+)\}/g, (_, key) => resolveVar(key));
+
+    processedBody = processedBody
+      .replace(/\{\{([^{}]+)\}\}/g, (_, key) => resolveVar(key))
+      .replace(/\{([a-zA-Z0-9_\-\s]+)\}/g, (_, key) => resolveVar(key));
 
     const mailtoLink = isValid
       ? buildMailtoLink({

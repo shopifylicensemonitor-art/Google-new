@@ -191,14 +191,28 @@ function injectTracking(bodyHtml, queueItemId) {
 // Send one email
 // ---------------------------------------------------------------------------
 
-async function sendEmail(account, to, subject, bodyHtml) {
+async function sendEmail(account, to, subject, bodyHtml, campaignId = 0) {
   const fromAddr = account.display_name
     ? `"${account.display_name}" <${account.email}>`
     : account.email;
 
-  // RFC 8058 List-Unsubscribe headers (required by Gmail for bulk senders)
+  // RFC 8058 List-Unsubscribe headers (required by Gmail & Yahoo for bulk senders)
+  const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:3000';
+  const unsubToken = Buffer.from(`${to}|${campaignId}`).toString('base64url');
+  const unsubUrl = `${baseUrl}/api/unsubscribe?token=${unsubToken}`;
   const unsubEmail = `unsubscribe+${to.replace('@', '=')}@${account.email.split('@')[1]}`;
-  const unsubHeader = `<mailto:${unsubEmail}?subject=unsubscribe>`;
+  const unsubHeader = `<${unsubUrl}>, <mailto:${unsubEmail}?subject=unsubscribe>`;
+
+  // Append compliant unsubscribe footer if not already present
+  let finalHtml = bodyHtml;
+  if (!finalHtml.toLowerCase().includes('unsubscribe')) {
+    const unsubFooter = `<p style="font-size:11px; color:#888888; margin-top:32px; border-top:1px solid #e2e8f0; padding-top:12px; font-family:sans-serif;">If you no longer wish to receive these emails, you can <a href="${unsubUrl}" style="color:#635bff; text-decoration:underline;">unsubscribe here</a>.</p>`;
+    if (finalHtml.includes('</body>')) {
+      finalHtml = finalHtml.replace('</body>', `${unsubFooter}</body>`);
+    } else {
+      finalHtml += unsubFooter;
+    }
+  }
 
   if (account.type === 'smtp') {
     // Send via Nodemailer SMTP transport
@@ -207,7 +221,7 @@ async function sendEmail(account, to, subject, bodyHtml) {
       from: fromAddr,
       to,
       subject,
-      html: bodyHtml,
+      html: finalHtml,
       headers: {
         'List-Unsubscribe': unsubHeader,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -220,7 +234,7 @@ async function sendEmail(account, to, subject, bodyHtml) {
     oauth2.setCredentials({ access_token: accessToken });
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2 });
-    const raw = makeRawEmail(account.email, to, subject, bodyHtml, {
+    const raw = makeRawEmail(account.email, to, subject, finalHtml, {
       'List-Unsubscribe': unsubHeader,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     });
@@ -229,6 +243,107 @@ async function sendEmail(account, to, subject, bodyHtml) {
       userId: 'me',
       requestBody: { raw },
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Background Contact List Sync
+// ---------------------------------------------------------------------------
+
+/**
+ * Background Synchronization Service:
+ * Automatically maps contact list entries to active campaign send queues.
+ * If new contacts are added to a list while a campaign is sending/paused,
+ * this function automatically maps them into the queue.
+ */
+async function syncContactListsToActiveCampaigns(db) {
+  try {
+    const activeCampaigns = await db.prepare(`
+      SELECT c.id, c.contact_list, c.user_id, c.status
+      FROM campaigns c
+      WHERE c.status IN ('sending', 'paused') AND c.contact_list IS NOT NULL AND c.contact_list != ''
+    `).all();
+
+    if (!activeCampaigns || activeCampaigns.length === 0) return { syncedCampaigns: 0, newlyQueuedContacts: 0 };
+
+    let totalNewlyQueued = 0;
+    let syncedCampaignsCount = 0;
+
+    for (const campaign of activeCampaigns) {
+      let contacts = [];
+      if (campaign.user_id) {
+        contacts = await db.prepare(`
+          SELECT email, fields
+          FROM contacts
+          WHERE list_name = ? AND user_id = ?
+        `).all(campaign.contact_list, campaign.user_id);
+      } else {
+        contacts = await db.prepare(`
+          SELECT email, fields
+          FROM contacts
+          WHERE list_name = ?
+        `).all(campaign.contact_list);
+      }
+
+      if (!contacts || contacts.length === 0) continue;
+
+      const existingQueueRows = await db.prepare(`
+        SELECT recipient_email
+        FROM queue
+        WHERE campaign_id = ?
+      `).all(campaign.id);
+
+      const existingEmailsSet = new Set(
+        existingQueueRows.map(r => (r.recipient_email || '').toLowerCase())
+      );
+
+      const missingContacts = contacts.filter(
+        c => c.email && !existingEmailsSet.has(c.email.toLowerCase())
+      );
+
+      if (missingContacts.length > 0) {
+        const accounts = await db.prepare(`
+          SELECT id FROM accounts WHERE status = 'active'
+        `).all();
+
+        let accountIdx = 0;
+        for (const contact of missingContacts) {
+          const assignedAccountId = accounts.length > 0 ? accounts[accountIdx % accounts.length].id : null;
+          accountIdx++;
+
+          const fieldsJson = typeof contact.fields === 'string'
+            ? contact.fields
+            : JSON.stringify(contact.fields || {});
+
+          await db.prepare(`
+            INSERT INTO queue (campaign_id, recipient_email, account_id, fields, status, scheduled_at)
+            VALUES (?, ?, ?, ?, 'pending', datetime('now'))
+          `).run(campaign.id, contact.email, assignedAccountId, fieldsJson);
+        }
+
+        totalNewlyQueued += missingContacts.length;
+        syncedCampaignsCount++;
+
+        const totalRows = await db.prepare(`
+          SELECT COUNT(*) as count FROM queue WHERE campaign_id = ?
+        `).all(campaign.id);
+        const totalCount = totalRows[0]?.count || 0;
+
+        await db.prepare(`
+          UPDATE campaigns SET total_contacts = ? WHERE id = ?
+        `).run(totalCount, campaign.id);
+
+        logger.info(
+          { campaignId: campaign.id, listName: campaign.contact_list, newlyQueued: missingContacts.length },
+          'Background sync mapped contact list entries into active campaign queue'
+        );
+      }
+    }
+
+    return { syncedCampaigns: syncedCampaignsCount, newlyQueuedContacts: totalNewlyQueued };
+  } catch (err) {
+    logger.error({ err }, 'Error during background contact list sync');
+    return { syncedCampaigns: 0, newlyQueuedContacts: 0, error: err.message };
   }
 }
 
@@ -244,6 +359,9 @@ async function processNextItem() {
     logger.error({ err }, 'DB not ready');
     return;
   }
+
+  // Synchronize contact list changes to active campaign queues on worker tick
+  await syncContactListsToActiveCampaigns(db);
 
   const BATCH_SIZE = parseInt(process.env.SCHEDULER_BATCH_SIZE, 10) || 10;
   const nowIso = new Date().toISOString();
@@ -321,6 +439,24 @@ async function processNextItem() {
         continue;
       }
 
+      // Check global master suppression list (by exact email or domain)
+      const cleanRecipientEmail = (item.recipient_email || '').toLowerCase().trim();
+      const cleanRecipientDomain = cleanRecipientEmail.includes('@') ? cleanRecipientEmail.split('@')[1] : '';
+
+      const suppressedRow = await db.prepare(`
+        SELECT * FROM suppression_list
+        WHERE (type = 'email' AND LOWER(value) = ?)
+           OR (type = 'domain' AND LOWER(value) = ?)
+      `).get(cleanRecipientEmail, cleanRecipientDomain);
+
+      if (suppressedRow) {
+        await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE id = ?").run(item.id);
+        logger.info({ recipient: cleanRecipientEmail, reason: suppressedRow.reason }, 'Skipped sending: Recipient is in master suppression list');
+        await logEvent(db, item.campaign_id, item.account_id, item.recipient_email, 'cancelled', `Suppressed: ${suppressedRow.reason}`, item.id);
+        await completeCampaignIfNoActiveQueue(db, item.campaign_id);
+        continue;
+      }
+
       // Reserve a send slot atomically and mark as sending in the same DB transaction.
       // This prevents race conditions under high concurrency.
       let reserved = false;
@@ -374,7 +510,7 @@ async function processNextItem() {
         const personalisedBody = personalise(body_html, item.recipient_email, item.fields, account.display_name);
         const finalBody = injectTracking(personalisedBody, item.id);
 
-        await sendEmail(account, item.recipient_email, finalSubject, finalBody);
+        await sendEmail(account, item.recipient_email, finalSubject, finalBody, item.campaign_id);
 
         // Mark as sent
         await db.prepare("UPDATE queue SET status = 'sent', sent_at = ?, final_subject = ?, final_body = ? WHERE id = ?")
@@ -576,16 +712,18 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
 })();
 
 // ---------------------------------------------------------------------------
-// Cron: every 30 seconds
+// Cron: every 15 seconds (Continuous Server-Side Background Worker)
 // ---------------------------------------------------------------------------
 
-const schedulerEnabled = process.env.NODE_ENV === 'production' || process.env.ENABLE_SCHEDULER === 'true';
+const schedulerEnabled = process.env.DISABLE_SCHEDULER !== 'true';
 let sendTask;
 let resetTask;
+let lastTickAt = null;
 
 if (schedulerEnabled) {
-  sendTask = cron.schedule('*/30 * * * * *', async () => {
+  sendTask = cron.schedule('*/15 * * * * *', async () => {
     try {
+      lastTickAt = new Date().toISOString();
       await processNextItem();
     } catch (err) {
       logger.error({ err }, 'Unexpected error in cron send task');
@@ -603,7 +741,7 @@ if (schedulerEnabled) {
     }
   });
 
-  logger.info('Email worker started (every 30s)');
+  logger.info('Email worker started (every 15s continuous background dispatch)');
 } else {
   sendTask = { stop: () => {} };
   resetTask = { stop: () => {} };
@@ -616,5 +754,35 @@ function stopScheduler() {
   logger.info('Email worker stopped');
 }
 
-module.exports = { processNextItem, personalise, completeCampaignIfNoActiveQueue, stopScheduler };
+async function getWorkerStatus() {
+  try {
+    const db = await getDb();
+    const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending'").get();
+    const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue WHERE status = 'pending'").get();
+    return {
+      active: schedulerEnabled,
+      interval: '15s',
+      lastTickAt,
+      activeCampaigns: activeCampaigns ? activeCampaigns.count : 0,
+      pendingQueue: pendingQueue ? pendingQueue.count : 0,
+      mode: 'Server-Side Continuous Worker (Independent of Browser)'
+    };
+  } catch (err) {
+    return {
+      active: schedulerEnabled,
+      interval: '15s',
+      lastTickAt,
+      error: err.message
+    };
+  }
+}
+
+module.exports = {
+  processNextItem,
+  personalise,
+  completeCampaignIfNoActiveQueue,
+  stopScheduler,
+  syncContactListsToActiveCampaigns,
+  getWorkerStatus
+};
 

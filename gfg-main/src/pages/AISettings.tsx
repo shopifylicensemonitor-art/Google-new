@@ -3,7 +3,6 @@ import { api, type AIConfig, type AIRules } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +28,7 @@ const PROVIDERS: AIProviderPreset[] = [
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     defaultModel: 'meta/llama-3.3-70b-instruct',
     getKeyUrl: 'https://build.nvidia.com/explore/discover',
-    badge: 'Enterprise Performance'
+    badge: 'Enterprise'
   },
   {
     id: 'openrouter',
@@ -74,7 +73,7 @@ const PROVIDERS: AIProviderPreset[] = [
     baseUrl: 'http://localhost:11434/v1',
     defaultModel: 'llama3:latest',
     getKeyUrl: '',
-    badge: 'Ollama / Local'
+    badge: 'Local / Ollama'
   }
 ];
 
@@ -153,7 +152,7 @@ export default function AISettings() {
     try {
       const res = await api.saveAIConfig({
         provider: selectedProvider,
-        apiKey: apiKey || maskedKey, // Fallback if unmodified
+        apiKey: apiKey || maskedKey,
         baseUrl,
         model
       });
@@ -210,62 +209,68 @@ export default function AISettings() {
 
   return (
     <AppShell>
-      <SEO title="AI Settings & Rules | Peak Xender" description="Configure AI providers and automated outreach stage rules." />
-      
+      <SEO title="AI Settings & Rules | OutreachFlow" description="Configure AI provider connections and automated outreach SOP rules." />
+
       <div className="max-w-6xl mx-auto space-y-6 pb-12">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-5">
+        <header className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 pb-4 border-b border-border/60">
           <div>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-primary animate-pulse" />
-              <h1 className="text-2xl font-extrabold tracking-tight">AI Settings & Autonomous Rules</h1>
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="h-6 w-6 text-[#635bff]" />
+              <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                AI &amp; SOP Rules
+              </h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              Connect any OpenAI-compatible AI API (Nvidia NIM, OpenRouter, OpenAI, Gemini, Groq, DeepSeek) and set your outreach SOP guidelines.
+            <p className="text-sm text-muted-foreground">
+              Connect OpenAI-compatible AI models and train automated outreach SOP guidelines.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 bg-muted p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/40">
             <button
               onClick={() => setActiveTab('connection')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'connection' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'connection'
+                  ? 'bg-card text-[#635bff] shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               API Connections
             </button>
             <button
               onClick={() => setActiveTab('rules')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'rules' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'rules'
+                  ? 'bg-card text-[#635bff] shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Outreach Rules & SOPs
+              Outreach SOPs
             </button>
           </div>
-        </div>
+        </header>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading AI Configuration...</span>
+          <div className="p-12 text-center text-muted-foreground text-xs">
+            <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-[#635bff]" />
+            Loading AI Engine Configurations...
           </div>
         ) : activeTab === 'connection' ? (
           /* TAB 1: API Connection & Provider Hub */
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Presets Column */}
             <div className="space-y-4">
-              <Card className="border-border">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-primary" />
-                    Supported AI Providers
-                  </CardTitle>
-                  <CardDescription className="text-xs">
+              <div className="bg-card rounded-xl border border-border/60 p-5 shadow-2xs space-y-3">
+                <div className="space-y-1">
+                  <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                    <Bot className="h-4 w-4 text-[#635bff]" /> Supported AI Providers
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
                     Select a preset to auto-configure server URLs and default models.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-2">
                   {PROVIDERS.map((preset) => {
                     const isSelected = selectedProvider === preset.id;
                     return (
@@ -275,8 +280,8 @@ export default function AISettings() {
                         onClick={() => handleSelectPreset(preset)}
                         className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between ${
                           isSelected
-                            ? 'border-primary bg-primary/10 font-semibold'
-                            : 'border-border hover:border-muted-foreground/40 bg-card'
+                            ? 'border-[#635bff] bg-[#635bff]/10 font-semibold shadow-2xs'
+                            : 'border-border/60 hover:border-border bg-background'
                         }`}
                       >
                         <div>
@@ -286,231 +291,227 @@ export default function AISettings() {
                           </div>
                         </div>
                         {preset.badge && (
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0.5 border-primary/40 text-primary">
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0.5 border-[#635bff]/30 text-[#635bff] font-bold">
                             {preset.badge}
                           </Badge>
                         )}
                       </button>
                     );
                   })}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
 
             {/* Config Form Column */}
             <div className="lg:col-span-2 space-y-6">
-              <Card className="border-border shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg font-bold flex items-center gap-2">
-                    <Globe className="h-5 w-5 text-primary" />
-                    Provider Configuration
-                  </CardTitle>
-                  <CardDescription>
-                    Configure server endpoints and API key. Keys are encrypted server-side and never exposed to the client.
-                  </CardDescription>
-                </CardHeader>
+              <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
+                <div className="space-y-1 border-b border-border/60 pb-3">
+                  <h3 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-[#635bff]" /> Provider Configuration
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Keys are encrypted server-side and proxy requests securely without client exposure.
+                  </p>
+                </div>
 
-                <CardContent>
-                  <form onSubmit={handleSaveConnection} className="space-y-5">
-                    {/* API Key */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <Key className="h-3.5 w-3.5 text-primary" />
-                          API Key
-                        </span>
-                        {PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl && (
-                          <a
-                            href={PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-primary hover:underline flex items-center gap-1"
-                          >
-                            Get Key <ExternalLink className="h-3 w-3" />
-                          </a>
-                        )}
+                <form onSubmit={handleSaveConnection} className="space-y-4">
+                  {/* API Key */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Key className="h-3.5 w-3.5 text-[#635bff]" /> API Key
                       </label>
-                      <Input
-                        type="password"
-                        placeholder={maskedKey ? `Configured (${maskedKey}) — Paste new key to update` : 'Paste your API key here...'}
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        className="font-mono text-xs"
-                      />
+                      {PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl && (
+                        <a
+                          href={PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-bold text-[#635bff] hover:underline flex items-center gap-1"
+                        >
+                          Get Key <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
                     </div>
-
-                    {/* Base / Server URL */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold flex items-center gap-1.5">
-                        <Globe className="h-3.5 w-3.5 text-primary" />
-                        Server / Base URL
-                      </label>
-                      <Input
-                        type="text"
-                        placeholder="https://openrouter.ai/api/v1"
-                        value={baseUrl}
-                        onChange={(e) => setBaseUrl(e.target.value)}
-                        className="font-mono text-xs"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Must point to an OpenAI-compatible `/v1` base endpoint.
-                      </p>
-                    </div>
-
-                    {/* Model Selector / Custom String */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold flex items-center gap-1.5">
-                        <Cpu className="h-3.5 w-3.5 text-primary" />
-                        Model Identifier String
-                      </label>
-                      <Input
-                        type="text"
-                        placeholder="meta/llama-3.3-70b-instruct or gpt-4o-mini"
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        className="font-mono text-xs"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Type any custom model string supported by your provider (e.g. <code className="bg-muted px-1 rounded">meta/llama-3.3-70b-instruct</code>, <code className="bg-muted px-1 rounded">gpt-4o-mini</code>, <code className="bg-muted px-1 rounded">deepseek-chat</code>).
-                      </p>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-3 pt-3 border-t border-border">
-                      <Button type="submit" disabled={saving} className="font-semibold text-xs gap-1.5">
-                        {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                        Save Configuration
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleTestConnection}
-                        disabled={testing}
-                        className="text-xs gap-1.5"
-                      >
-                        {testing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-primary" />}
-                        Test Connection
-                      </Button>
-                    </div>
-                  </form>
-
-                  {/* Test Result Display */}
-                  {testResult && (
-                    <div className={`mt-4 p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
-                      testResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' : 'bg-destructive/10 border-destructive/30 text-destructive'
-                    }`}>
-                      {testResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />}
-                      <div>
-                        <div className="font-bold">{testResult.success ? 'Connection Successful!' : 'Connection Failed'}</div>
-                        <div className="mt-0.5 text-[11px] opacity-90">{testResult.message}</div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        ) : (
-          /* TAB 2: AI Rules & SOP Roadmap Engine */
-          <div className="space-y-6">
-            <Card className="border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-primary" />
-                  Knowledge Base & Campaign Stage Guidelines
-                </CardTitle>
-                <CardDescription>
-                  Train your AI assistant on your company offer, brand voice, and stage-by-stage follow-up roadmaps. The AI will strictly follow these guidelines when writing copy and drafting replies.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent>
-                <form onSubmit={handleSaveRules} className="space-y-6">
-                  {/* Knowledge Base */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Layers className="h-3.5 w-3.5 text-primary" />
-                      1. Brand Knowledge Base & Offer Context
-                    </label>
-                    <Textarea
-                      rows={3}
-                      placeholder="Describe your company, main value proposition, key offer, target audience, and pricing/demo URLs..."
-                      value={rules.knowledge || ''}
-                      onChange={(e) => setRules({ ...rules, knowledge: e.target.value })}
-                      className="text-xs font-sans"
+                    <Input
+                      type="password"
+                      placeholder={maskedKey ? `Configured (${maskedKey}) — Paste new key to update` : 'Paste your API key here...'}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="font-mono text-xs h-10 bg-background"
                     />
                   </div>
 
-                  {/* Initial Outreach SOP */}
-                  <div className="space-y-2">
+                  {/* Base / Server URL */}
+                  <div className="space-y-1.5">
                     <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Bot className="h-3.5 w-3.5 text-primary" />
-                      2. Initial Cold Email Stage Rule
+                      <Globe className="h-3.5 w-3.5 text-[#635bff]" /> Server / Base URL
                     </label>
-                    <Textarea
-                      rows={2}
-                      placeholder="e.g. Keep under 100 words, start with a personalized compliment about {store_name}, focus on low-friction CTA (asking for opinion or feedback)."
-                      value={rules.initial || ''}
-                      onChange={(e) => setRules({ ...rules, initial: e.target.value })}
-                      className="text-xs font-sans"
+                    <Input
+                      type="text"
+                      placeholder="https://openrouter.ai/api/v1"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      className="font-mono text-xs h-10 bg-background"
                     />
+                    <p className="text-[10px] text-muted-foreground font-mono">
+                      Must point to an OpenAI-compatible `/v1` endpoint.
+                    </p>
                   </div>
 
-                  {/* Follow-up 1 SOP */}
-                  <div className="space-y-2">
+                  {/* Model Selector / Custom String */}
+                  <div className="space-y-1.5">
                     <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Bot className="h-3.5 w-3.5 text-primary" />
-                      3. First Follow-Up Stage Rule
+                      <Cpu className="h-3.5 w-3.5 text-[#635bff]" /> Model Identifier String
                     </label>
-                    <Textarea
-                      rows={2}
-                      placeholder="e.g. Send 2-3 days after initial. Provide a short 1-line case study or social proof angle. Do not sound pushy."
-                      value={rules.followup_1 || ''}
-                      onChange={(e) => setRules({ ...rules, followup_1: e.target.value })}
-                      className="text-xs font-sans"
+                    <Input
+                      type="text"
+                      placeholder="meta/llama-3.3-70b-instruct or gpt-4o-mini"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="font-mono text-xs h-10 bg-background"
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      Supported model string (e.g. <code className="bg-muted/60 px-1 rounded font-mono">meta/llama-3.3-70b-instruct</code>, <code className="bg-muted/60 px-1 rounded font-mono">gpt-4o-mini</code>, <code className="bg-muted/60 px-1 rounded font-mono">deepseek-chat</code>).
+                    </p>
                   </div>
 
-                  {/* Follow-up 2 SOP */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Bot className="h-3.5 w-3.5 text-primary" />
-                      4. Second / Breakup Follow-Up Stage Rule
-                    </label>
-                    <Textarea
-                      rows={2}
-                      placeholder="e.g. Final push. Friendly permission to close the file. Ask if now is a bad time."
-                      value={rules.followup_2 || ''}
-                      onChange={(e) => setRules({ ...rules, followup_2: e.target.value })}
-                      className="text-xs font-sans"
-                    />
-                  </div>
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 pt-3 border-t border-border/60">
+                    <Button
+                      type="submit"
+                      disabled={saving}
+                      className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                    >
+                      {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      Save Configuration
+                    </Button>
 
-                  {/* Objection Handling SOP */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <HelpCircle className="h-3.5 w-3.5 text-primary" />
-                      5. Objection & Inquiry Handling Guidelines
-                    </label>
-                    <Textarea
-                      rows={2}
-                      placeholder="e.g. If prospect asks for pricing, explain ROI first. If prospect says not interested, thank them gracefully and ask if we can check back in Q4."
-                      value={rules.objection || ''}
-                      onChange={(e) => setRules({ ...rules, objection: e.target.value })}
-                      className="text-xs font-sans"
-                    />
-                  </div>
-
-                  <div className="pt-3 border-t border-border">
-                    <Button type="submit" disabled={savingRules} className="font-semibold text-xs gap-1.5">
-                      {savingRules ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      Save AI Rules & SOPs
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleTestConnection}
+                      disabled={testing}
+                      className="h-9 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] gap-1.5"
+                    >
+                      {testing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-[#635bff]" />}
+                      Test Connection
                     </Button>
                   </div>
                 </form>
-              </CardContent>
-            </Card>
+
+                {/* Test Result Display */}
+                {testResult && (
+                  <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                    testResult.success 
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-500'
+                  }`}>
+                    {testResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />}
+                    <div>
+                      <div className="font-bold">{testResult.success ? 'Connection Verified' : 'Connection Failed'}</div>
+                      <div className="mt-0.5 text-[11px] opacity-90 leading-relaxed">{testResult.message}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* TAB 2: AI Rules & SOP Engine */
+          <div className="space-y-6 max-w-4xl">
+            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
+              <div className="space-y-1 border-b border-border/60 pb-3">
+                <h3 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-[#635bff]" /> Knowledge Base &amp; Campaign Stage Guidelines
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Train your AI assistant on your offer context, value prop, and stage-by-stage follow-up rules.
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveRules} className="space-y-5">
+                {/* Knowledge Base */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-[#635bff]" /> 1. Brand Knowledge Base &amp; Offer Context
+                  </label>
+                  <Textarea
+                    rows={3}
+                    placeholder="Describe your company, main value proposition, key offer, target audience, and demo URLs..."
+                    value={rules.knowledge || ''}
+                    onChange={(e) => setRules({ ...rules, knowledge: e.target.value })}
+                    className="text-xs bg-background leading-relaxed"
+                  />
+                </div>
+
+                {/* Initial Outreach SOP */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-[#635bff]" /> 2. Initial Cold Email Stage Rule
+                  </label>
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. Keep under 100 words, start with personalized observation about {{company_name}}, low-friction CTA."
+                    value={rules.initial || ''}
+                    onChange={(e) => setRules({ ...rules, initial: e.target.value })}
+                    className="text-xs bg-background leading-relaxed"
+                  />
+                </div>
+
+                {/* Follow-up 1 SOP */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-[#635bff]" /> 3. First Follow-Up Stage Rule
+                  </label>
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. Send 2-3 days after initial. Provide a short 1-line case study or social proof angle."
+                    value={rules.followup_1 || ''}
+                    onChange={(e) => setRules({ ...rules, followup_1: e.target.value })}
+                    className="text-xs bg-background leading-relaxed"
+                  />
+                </div>
+
+                {/* Follow-up 2 SOP */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-[#635bff]" /> 4. Second / Breakup Follow-Up Stage Rule
+                  </label>
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. Final push. Friendly permission to close the file."
+                    value={rules.followup_2 || ''}
+                    onChange={(e) => setRules({ ...rules, followup_2: e.target.value })}
+                    className="text-xs bg-background leading-relaxed"
+                  />
+                </div>
+
+                {/* Objection Handling SOP */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <HelpCircle className="h-3.5 w-3.5 text-[#635bff]" /> 5. Objection &amp; Inquiry Handling Guidelines
+                  </label>
+                  <Textarea
+                    rows={2}
+                    placeholder="e.g. If prospect asks for pricing, explain ROI first. If prospect says not interested, thank them gracefully."
+                    value={rules.objection || ''}
+                    onChange={(e) => setRules({ ...rules, objection: e.target.value })}
+                    className="text-xs bg-background leading-relaxed"
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-border/60">
+                  <Button
+                    type="submit"
+                    disabled={savingRules}
+                    className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                  >
+                    {savingRules ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    Save AI Rules &amp; SOPs
+                  </Button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </div>

@@ -521,6 +521,15 @@ const SQLITE_DDL = `
     is_read INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS suppression_list (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL DEFAULT 'email',
+    value TEXT NOT NULL UNIQUE,
+    reason TEXT DEFAULT 'unsubscribed',
+    user_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `;
 
 const PG_DDL = `
@@ -685,6 +694,15 @@ const PG_DDL = `
     is_read INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
+
+  CREATE TABLE IF NOT EXISTS suppression_list (
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL DEFAULT 'email',
+    value TEXT NOT NULL UNIQUE,
+    reason TEXT DEFAULT 'unsubscribed',
+    user_id INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
 `;
 
 // ============================================================================
@@ -692,7 +710,7 @@ const PG_DDL = `
 // ============================================================================
 
 /** Tables whose rows belong to a single application user. */
-const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates'];
+const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list'];
 
 const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);

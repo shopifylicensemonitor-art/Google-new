@@ -40,6 +40,10 @@ export interface Contact {
   email: string;
   fields?: Record<string, string>;
   created_at: string;
+  status?: 'pending' | 'queued' | 'sending' | 'sent' | 'failed';
+  campaign_name?: string;
+  sent_at?: string;
+  error?: string;
 }
 
 export interface ContactListInfo {
@@ -407,6 +411,9 @@ export const api = {
   deleteContact: (listName: string, id: number) => apiFetch<{ success: boolean }>(`/api/contacts/${encodeURIComponent(listName)}/${id}`, {
     method: 'DELETE'
   }),
+  syncContacts: () => apiFetch<{ success: boolean; syncedCampaigns: number; newlyQueuedContacts: number }>('/api/contacts/sync', {
+    method: 'POST'
+  }),
 
   // Queue & Logs
   getQueueItems: (campaignId: number, status?: string) => {
@@ -414,9 +421,13 @@ export const api = {
     return apiFetch<QueueItem[]>(`/api/queue/${campaignId}${query}`);
   },
   getQueueStats: (campaignId: number) => apiFetch<QueueStats>(`/api/queue/${campaignId}/stats`),
-  getRecentLogs: (limit?: number) => {
-    const query = limit ? `?limit=${limit}` : '';
-    return apiFetch<LogItem[]>(`/api/queue/logs/recent${query}`);
+  getRecentLogs: async (limit?: number): Promise<LogItem[]> => {
+    try {
+      const query = limit ? `?limit=${limit}` : '';
+      return await apiFetch<LogItem[]>(`/api/queue/logs/recent${query}`);
+    } catch {
+      return [];
+    }
   },
 
   // Templates
@@ -520,6 +531,18 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+  aiChat: (messages: { role: 'user' | 'assistant' | 'system'; content: string }[], systemInstruction?: string, currentPage?: string) => apiFetch<{ success: boolean; reply: string; clientAction?: { action: string; page?: string } }>('/api/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({ messages, systemInstruction, currentPage })
+  }),
+  aiSearchGrounding: (query: string, topic?: string) => apiFetch<{ success: boolean; text: string; sources: { title?: string; uri?: string }[] }>('/api/ai/search-grounding', {
+    method: 'POST',
+    body: JSON.stringify({ query, topic })
+  }),
+  aiTTS: (text: string, voice?: string) => apiFetch<{ success: boolean; audioBase64: string }>('/api/ai/tts', {
+    method: 'POST',
+    body: JSON.stringify({ text, voice })
+  }),
 
   // Inbox & Two-Way Receiving
   getInboxMessages: (limit?: number) => apiFetch<InboxMessage[]>(`/api/inbox${limit ? `?limit=${limit}` : ''}`),
@@ -528,5 +551,33 @@ export const api = {
   replyToInboxMessage: (id: number, replyBody: string) => apiFetch<{ success: boolean; message: string }>(`/api/inbox/${id}/reply`, {
     method: 'POST',
     body: JSON.stringify({ replyBody })
+  }),
+
+  // Master Suppression & Do-Not-Contact List
+  getSuppressionList: (q?: string, type?: string) => apiFetch<{ items: { id: number; type: string; value: string; reason: string; created_at: string }[] }>(`/api/suppression${q || type ? `?${q ? `q=${encodeURIComponent(q)}&` : ''}${type ? `type=${type}` : ''}` : ''}`),
+  getSuppressionStats: () => apiFetch<{ total: number; emails: number; domains: number }>('/api/suppression/stats'),
+  addSuppression: (data: { value: string; type?: 'email' | 'domain'; reason?: string }) => apiFetch<{ success: boolean; message: string }>('/api/suppression', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  bulkAddSuppression: (data: { entries: string[] | string; defaultReason?: string }) => apiFetch<{ success: boolean; message: string; addedCount: number; skippedCount: number }>('/api/suppression/bulk', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  deleteSuppression: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/suppression/${id}`, {
+    method: 'DELETE'
+  }),
+
+  // Background Dispatch Worker Controls
+  getWorkerStatus: () => apiFetch<{
+    active: boolean;
+    interval: string;
+    lastTickAt: string | null;
+    activeCampaigns: number;
+    pendingQueue: number;
+    mode: string;
+  }>('/api/queue/worker/status'),
+  triggerWorker: () => apiFetch<{ success: boolean; message: string }>('/api/queue/worker/trigger', {
+    method: 'POST'
   }),
 };

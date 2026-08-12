@@ -3,37 +3,54 @@ import { api, type Template } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { Layout, Plus, Trash2, Edit, ChevronDown, ChevronUp, Save, Eye, Sparkles, FileText, Info } from 'lucide-react';
+import { 
+  Plus, Trash2, Edit, Copy, Eye, Sparkles, FileText, Search, 
+  MoreVertical, Check, RefreshCw, X, Save, Clock, ArrowUpRight, Code
+} from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 interface TemplatesProps {
   requirePin?: (label: string, action: () => void) => void;
 }
 
-const defaultHtml = `<h2 style="color:#111;">Hello there!</h2>
-<p>This is your email content. You can use HTML to style it.</p>
-<p>Add images, buttons, links and more.</p>
-<a href="https://yoursite.com" style="display:inline-block;padding:10px 20px;background:#111;color:#fff;border-radius:6px;text-decoration:none;">Click here</a>
-<p style="color:#888;font-size:12px;margin-top:24px;">To unsubscribe, reply to this email.</p>`;
+const defaultHtml = `<h2 style="color:#151c27;font-family:sans-serif;margin-top:0;">Hi {{first_name}},</h2>
+<p style="color:#464555;font-family:sans-serif;line-height:1.6;">I noticed that your team at <strong>{{company_name}}</strong> is scaling rapidly. Often, fast-growing teams struggle with maintaining clean outreach data.</p>
+<p style="color:#464555;font-family:sans-serif;line-height:1.6;">We built a platform specifically to solve deliverability and automated follow-ups without manual overhead.</p>
+<div style="margin:24px 0;">
+  <a href="https://example.com" style="display:inline-block;padding:12px 24px;background-color:#635bff;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-family:sans-serif;">Book 15-Min Demo</a>
+</div>
+<p style="color:#777587;font-size:12px;font-family:sans-serif;">Best regards,<br/>Alex Miller</p>`;
 
-const defaultPlain = `Hello there!\n\nThis is your email content.\n\nTo unsubscribe, reply to this email.`;
+const defaultPlain = `Hi {{first_name}},\n\nI noticed that your team at {{company_name}} is scaling rapidly. Often, fast-growing teams struggle with maintaining clean outreach data.\n\nWe built a platform specifically to solve deliverability and automated follow-ups without manual overhead.\n\nBest regards,\nAlex Miller`;
+
+// Mock initial category tags and stats for enhanced visual representation
+const TEMPLATE_CATEGORIES = ['All Templates', 'Cold Outreach', 'Follow-up', 'Networking', 'Welcome Series'];
 
 export default function Templates({ requirePin }: TemplatesProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [showForm, setShowForm] = useState<boolean>(false);
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All Templates');
 
-  // Form State
+  // Modal / Form state
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+
+  // Form Fields
   const [name, setName] = useState<string>('');
+  const [category, setCategory] = useState<string>('Cold Outreach');
   const [subject, setSubject] = useState<string>('');
   const [bodyHtml, setBodyHtml] = useState<string>('');
   const [bodyPlain, setBodyPlain] = useState<string>('');
-  
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
   const previewRef = useRef<HTMLIFrameElement | null>(null);
 
   const loadTemplates = async () => {
+    setLoading(true);
     try {
       const data = await api.getTemplates();
       setTemplates(data);
@@ -43,6 +60,8 @@ export default function Templates({ requirePin }: TemplatesProps) {
         title: 'Error loading templates',
         description: e.message || 'Could not fetch templates.'
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,34 +69,43 @@ export default function Templates({ requirePin }: TemplatesProps) {
     loadTemplates();
   }, []);
 
-  // Sync iframe preview
+  // Update live preview iframe
   useEffect(() => {
-    if (previewRef.current && (showForm || editingTemplate)) {
+    if (previewRef.current && showModal) {
       previewRef.current.srcdoc = `
+        <!DOCTYPE html>
         <html>
-          <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:16px;margin:0;font-size:13px;line-height:1.7;color:#111;">
-            ${bodyHtml || '<p style="color:#888;font-style:italic">Email preview content goes here...</p>'}
+          <head>
+            <meta charset="utf-8">
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; margin: 0; font-size: 14px; line-height: 1.6; color: #151c27; background-color: #ffffff; }
+            </style>
+          </head>
+          <body>
+            ${bodyHtml || '<p style="color:#777587;font-style:italic">Email HTML preview will render here in real-time...</p>'}
           </body>
         </html>`;
     }
-  }, [bodyHtml, showForm, editingTemplate]);
+  }, [bodyHtml, showModal]);
 
-  const handleOpenNewForm = () => {
+  const handleOpenNew = () => {
     setName('');
-    setSubject('');
+    setCategory('Cold Outreach');
+    setSubject('Quick question regarding {{company_name}}\'s tech stack');
     setBodyHtml(defaultHtml);
     setBodyPlain(defaultPlain);
     setEditingTemplate(null);
-    setShowForm(true);
+    setShowModal(true);
   };
 
-  const handleOpenEditForm = (t: Template) => {
+  const handleOpenEdit = (t: Template) => {
     setName(t.name);
+    setCategory('Cold Outreach');
     setSubject(t.subject);
-    setBodyHtml(t.body_html);
-    setBodyPlain(t.body_plain);
+    setBodyHtml(t.body_html || '');
+    setBodyPlain(t.body_plain || '');
     setEditingTemplate(t);
-    setShowForm(true);
+    setShowModal(true);
   };
 
   const handleSave = () => {
@@ -85,8 +113,8 @@ export default function Templates({ requirePin }: TemplatesProps) {
       if (!name || !subject) {
         toast({
           variant: 'destructive',
-          title: 'Missing fields',
-          description: 'Template name and email subject line are required.'
+          title: 'Missing Required Fields',
+          description: 'Template title and email subject line are required.'
         });
         return;
       }
@@ -94,22 +122,28 @@ export default function Templates({ requirePin }: TemplatesProps) {
       try {
         if (editingTemplate) {
           await api.updateTemplate(editingTemplate.id, {
-            name, subject, body_html: bodyHtml, body_plain: bodyPlain
+            name,
+            subject,
+            body_html: bodyHtml,
+            body_plain: bodyPlain
           });
           toast({
-            title: 'Template updated',
-            description: `Changes to "${name}" were saved.`
+            title: 'Template Updated',
+            description: `"${name}" changes have been saved.`
           });
         } else {
           await api.createTemplate({
-            name, subject, body_html: bodyHtml, body_plain: bodyPlain
+            name,
+            subject,
+            body_html: bodyHtml,
+            body_plain: bodyPlain
           });
           toast({
-            title: 'Template saved',
-            description: `"${name}" was created successfully.`
+            title: 'Template Saved',
+            description: `"${name}" was added to your library.`
           });
         }
-        setShowForm(false);
+        setShowModal(false);
         loadTemplates();
       } catch (e: any) {
         toast({
@@ -121,20 +155,20 @@ export default function Templates({ requirePin }: TemplatesProps) {
     };
 
     if (requirePin) {
-      requirePin('save templates changes', action);
+      requirePin('save template', action);
     } else {
       action();
     }
   };
 
-  const handleDelete = (id: number, name: string) => {
+  const handleDelete = (id: number, templateName: string) => {
     const action = async () => {
-      if (!window.confirm(`Permanently delete template "${name}"?`)) return;
+      if (!window.confirm(`Permanently delete template "${templateName}"?`)) return;
       try {
         await api.deleteTemplate(id);
         toast({
-          title: 'Template deleted',
-          description: `"${name}" was deleted successfully.`
+          title: 'Template Deleted',
+          description: `"${templateName}" was removed.`
         });
         loadTemplates();
       } catch (e: any) {
@@ -147,234 +181,372 @@ export default function Templates({ requirePin }: TemplatesProps) {
     };
 
     if (requirePin) {
-      requirePin('delete outreach templates', action);
+      requirePin('delete template', action);
     } else {
       action();
     }
   };
 
+  const handleDuplicate = (t: Template) => {
+    const action = async () => {
+      try {
+        await api.createTemplate({
+          name: `${t.name} (Copy)`,
+          subject: t.subject,
+          body_html: t.body_html,
+          body_plain: t.body_plain
+        });
+        toast({
+          title: 'Template Duplicated',
+          description: `Created copy of "${t.name}".`
+        });
+        loadTemplates();
+      } catch (e: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Error duplicating template',
+          description: e.message
+        });
+      }
+    };
+
+    if (requirePin) {
+      requirePin('duplicate template', action);
+    } else {
+      action();
+    }
+  };
+
+  const handleAiImprove = async () => {
+    if (!bodyHtml && !subject) return;
+    try {
+      setAiLoading(true);
+      toast({
+        title: 'Generating AI Optimizations...',
+        description: 'Polishing subject line and persuasive call to action.'
+      });
+      const res = await api.aiRewrite({
+        subject,
+        body: bodyHtml || bodyPlain,
+        instruction: 'Make this cold outreach email concise, punchy, and highly converting with a clear call to action.'
+      });
+      if (res.success) {
+        if (res.subject) setSubject(res.subject);
+        if (res.body_html) setBodyHtml(res.body_html);
+        toast({
+          title: 'AI Polish Complete!',
+          description: 'Subject line and body updated.'
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'AI Generator Error',
+        description: e.message || 'Could not connect to AI service.'
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Filter templates
+  const filteredTemplates = templates.filter(t => {
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      const matchName = t.name.toLowerCase().includes(q);
+      const matchSub = t.subject.toLowerCase().includes(q);
+      const matchBody = (t.body_plain || '').toLowerCase().includes(q);
+      if (!matchName && !matchSub && !matchBody) return false;
+    }
+    return true;
+  });
+
   return (
     <AppShell>
       <SEO
-        title="Email Outreach Templates - Peak Xender"
-        description="Design reusable cold outreach HTML layouts with live preview frames and plain-text fallbacks."
-        noindex={true}
+        title="Message Templates | Outreach Marketing Workspace"
+        description="Manage and organize your reusable outreach message templates with live HTML preview and variable insertion."
       />
-      <div className="space-y-6 font-sans">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl flex items-center gap-2">
-                Outreach Templates Library
-              </h1>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                Design responsive, highly-converting HTML and plain-text layouts.
-              </p>
-            </div>
-            {!showForm && (
+
+      <div className="max-w-7xl mx-auto space-y-6 pb-12">
+        {/* Page Header */}
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+          <div>
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Message Templates
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage and organize your reusable outreach content.
+            </p>
+          </div>
+
+          <Button
+            onClick={handleOpenNew}
+            className="h-10 px-5 text-xs font-semibold gap-2 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Create Template
+          </Button>
+        </header>
+
+        {/* Search & Category Filter Bar */}
+        <div className="bg-card rounded-xl border border-border/60 p-3 flex flex-col md:flex-row gap-3 items-center justify-between shadow-2xs">
+          <div className="relative w-full md:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search templates by name or subject..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto no-scrollbar py-1">
+            {TEMPLATE_CATEGORIES.map((cat) => {
+              const isActive = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'bg-[#635bff] text-white border border-[#635bff] shadow-2xs'
+                      : 'bg-background border border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Templates Grid */}
+        {loading ? (
+          <div className="p-12 text-center text-muted-foreground text-xs">
+            <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-[#635bff]" />
+            Loading template library...
+          </div>
+        ) : filteredTemplates.length === 0 ? (
+          <div className="p-12 text-center text-muted-foreground text-xs bg-card rounded-xl border border-border/60 space-y-3">
+            <FileText className="h-8 w-8 mx-auto opacity-30 text-muted-foreground" />
+            <p className="font-medium text-foreground">No message templates found.</p>
+            <p className="text-muted-foreground">Create reusable outreach content with dynamic tags like {"{{first_name}}"} and {"{{company_name}}"}.</p>
+            <Button
+              onClick={handleOpenNew}
+              className="mt-2 text-xs font-semibold bg-[#635bff] text-white hover:bg-[#493ee5]"
+            >
+              Create First Template
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {filteredTemplates.map((t, index) => {
+              // Assign color dot indicator based on index
+              const dotColors = ['bg-[#635bff]', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500'];
+              const dotColor = dotColors[index % dotColors.length];
+
+              return (
+                <div
+                  key={t.id}
+                  className="bg-card rounded-xl border border-border/60 p-5 flex flex-col hover:border-border transition-all duration-200 shadow-2xs group"
+                >
+                  {/* Card Header */}
+                  <div className="flex justify-between items-start mb-3 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`w-2 h-2 rounded-full ${dotColor}`}></span>
+                        <h3 className="font-heading text-sm sm:text-base font-bold text-foreground">
+                          {t.name}
+                        </h3>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border border-border/40">
+                        Cold Outreach
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(t)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/40 transition-colors"
+                        title="Edit Template"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDuplicate(t)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/40 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(t.id, t.name)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive rounded-lg hover:bg-destructive/10 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Subject Box */}
+                  <div className="mb-3">
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">
+                      Subject
+                    </label>
+                    <div className="text-xs font-mono text-foreground bg-muted/30 rounded-lg p-2.5 border border-border/50 truncate">
+                      {t.subject || 'No subject line'}
+                    </div>
+                  </div>
+
+                  {/* Body Preview */}
+                  <div className="mb-4 flex-1">
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-wider">
+                      Preview
+                    </label>
+                    <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed bg-background p-2.5 rounded-lg border border-border/30">
+                      {t.body_plain || t.body_html?.replace(/<[^>]+>/g, '') || 'No content preview available...'}
+                    </p>
+                  </div>
+
+                  {/* Card Footer */}
+                  <div className="flex items-center justify-between pt-3 border-t border-border/40 mt-auto">
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1 font-mono">
+                      <Clock className="h-3.5 w-3.5" />
+                      Updated {new Date(t.created_at).toLocaleDateString()}
+                    </div>
+
+                    <Button
+                      onClick={() => handleOpenEdit(t)}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff]"
+                    >
+                      Use / Edit
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Template Composer Modal */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] rounded-2xl border border-border/80 bg-card p-6 shadow-2xl flex flex-col overflow-hidden">
+          <DialogHeader className="space-y-1 text-left pb-2 border-b border-border/60 shrink-0">
+            <DialogTitle className="font-heading text-lg font-bold text-foreground flex items-center justify-between">
+              <span>{editingTemplate ? 'Edit Template' : 'Create New Template'}</span>
               <Button
-                onClick={handleOpenNewForm}
-                className="h-10 gap-2 rounded-xl peak-gradient-bg border-none text-white font-semibold shadow-md shadow-primary/20 hover:opacity-90 transition-opacity"
+                variant="ghost"
+                size="sm"
+                onClick={handleAiImprove}
+                disabled={aiLoading}
+                className="h-8 px-2.5 text-xs font-bold gap-1.5 text-[#635bff] hover:bg-[#635bff]/10"
               >
-                <Plus className="h-4 w-4" />
-                <span>New Template</span>
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>{aiLoading ? 'Polishing...' : 'AI Polish'}</span>
               </Button>
-            )}
-          </div>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Design email layouts with dynamic tag variables like {"{{first_name}}"} and {"{{company_name}}"}.
+            </DialogDescription>
+          </DialogHeader>
 
-          {/* Guidelines Banner */}
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex gap-3 text-xs text-primary leading-relaxed shadow-sm">
-            <Info className="h-5 w-5 shrink-0 mt-0.5 text-primary" />
-            <div className="space-y-1">
-              <p className="font-bold">Avoid spam folders using rotating content</p>
-              <p>
-                When launching campaign flows, you can specify multiple templates. Peak Xender dynamically rotates these layouts so that each recipient receives a slightly randomized version, disrupting signature filters and increasing inbox rates.
-              </p>
-            </div>
-          </div>
-
-          {/* Form Composer (Show when creating/editing) */}
-          {showForm && (
-            <Card className="glass-card border-border/10 shadow-2xl p-6 space-y-4 animate-in slide-in-from-top duration-300">
-              <div className="flex justify-between items-center pb-3 border-b border-border/10">
-                <h3 className="text-base font-bold text-foreground">
-                  {editingTemplate ? 'Edit Template Details' : 'Design New Template'}
-                </h3>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleSave} className="gap-1.5 font-semibold">
-                    <Save className="h-4 w-4" />
-                    <span>Save Template</span>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Title & Subject */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Template Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Sales Intro - Type A"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="w-full bg-muted text-xs sm:text-sm rounded-xl border border-input px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Email Subject Line</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Quick question about {{email}}"
-                    value={subject}
-                    onChange={e => setSubject(e.target.value)}
-                    className="w-full bg-muted text-xs sm:text-sm rounded-xl border border-input px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                </div>
-              </div>
-
-              {/* Editor Workspace */}
+          <div className="space-y-4 py-4 overflow-y-auto pr-1 text-xs">
+            {/* Title & Subject */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  HTML Content &amp; Realtime Visualizer
-                </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-input rounded-xl overflow-hidden bg-card">
-                  {/* Left: Code Editor */}
-                  <div className="flex flex-col border-b md:border-b-0 md:border-r border-input">
-                    <div className="bg-muted px-4 py-2 border-b border-input text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      HTML Source Editor
-                    </div>
-                    <textarea
-                      value={bodyHtml}
-                      onChange={e => setBodyHtml(e.target.value)}
-                      placeholder="Enter HTML layout..."
-                      spellCheck={false}
-                      className="w-full p-4 font-mono text-[11px] sm:text-xs leading-relaxed resize-y h-64 focus:outline-none bg-background text-foreground"
-                    />
-                  </div>
-                  {/* Right: IFrame Preview */}
-                  <div className="flex flex-col">
-                    <div className="bg-muted px-4 py-2 border-b border-input text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Eye className="h-3 w-3 text-primary" />
-                      Live Sandbox Preview
-                    </div>
-                    <iframe
-                      ref={previewRef}
-                      title="visual-preview"
-                      sandbox="allow-same-origin"
-                      className="w-full h-64 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Plain Text Fallback */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Plain-Text Alternative Quota (Spam Guard Fallback)
-                </label>
-                <textarea
-                  value={bodyPlain}
-                  onChange={e => setBodyPlain(e.target.value)}
-                  placeholder="Enter fallback text email content..."
-                  className="w-full bg-muted text-xs sm:text-sm rounded-xl border border-input p-3.5 min-h-[90px] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary leading-relaxed"
+                <label className="font-bold text-foreground">Template Name*</label>
+                <Input
+                  placeholder="e.g. SaaS Intro - Value Prop"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="rounded-lg h-9 border-border/80"
                 />
               </div>
-            </Card>
-          )}
+              <div className="space-y-1">
+                <label className="font-bold text-foreground">Subject Line*</label>
+                <Input
+                  placeholder="e.g. Quick question regarding {{company_name}}"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="rounded-lg h-9 border-border/80"
+                />
+              </div>
+            </div>
 
-          {/* Saved Templates List */}
-          <Card className="glass-card border-border/10 shadow-lg">
-            <CardHeader className="border-b border-border/10 pb-4">
-              <CardTitle className="text-base font-bold text-foreground">Saved Templates ({templates.length})</CardTitle>
-              <CardDescription className="text-xs">Browse templates or click on them to preview code structures.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0 divide-y divide-border/10">
-              {templates.length === 0 ? (
-                <div className="text-center p-12 text-muted-foreground text-xs space-y-2">
-                  <Layout className="h-8 w-8 mx-auto opacity-30" />
-                  <p>No template layouts created. Add one to design reusable templates.</p>
+            {/* HTML Editor & Live Preview */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-foreground flex items-center gap-1.5">
+                <Code className="h-4 w-4 text-[#635bff]" /> HTML Content &amp; Live Visual Preview
+              </label>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-border/80 rounded-xl overflow-hidden bg-background">
+                {/* Editor */}
+                <div className="flex flex-col border-b md:border-b-0 md:border-r border-border/80">
+                  <div className="bg-muted/40 px-3 py-1.5 border-b border-border/60 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    HTML Source
+                  </div>
+                  <textarea
+                    value={bodyHtml}
+                    onChange={(e) => setBodyHtml(e.target.value)}
+                    placeholder="Enter HTML body content..."
+                    spellCheck={false}
+                    className="w-full p-3 font-mono text-xs leading-relaxed resize-y h-52 focus:outline-none bg-background text-foreground"
+                  />
                 </div>
-              ) : (
-                templates.map(t => {
-                  const isExpanded = expandedId === t.id;
-                  return (
-                    <div key={t.id} className="transition-colors hover:bg-muted/5">
-                      {/* Row Header */}
-                      <div className="p-4 flex items-center justify-between gap-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : t.id)}>
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="h-10 w-10 bg-primary/10 text-primary border border-primary/20 rounded-xl flex items-center justify-center shrink-0">
-                            <FileText className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-xs sm:text-sm text-foreground truncate">{t.name}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">
-                              Subject: {t.subject} · Created: {new Date(t.created_at).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Actions & Chevron */}
-                        <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleOpenEditForm(t)}
-                            className="h-8 w-8 text-muted-foreground hover:text-primary rounded-lg border border-border/20"
-                            title="Edit"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDelete(t.id, t.name)}
-                            className="h-8 w-8 text-destructive/80 hover:text-destructive hover:bg-destructive/10 rounded-lg border border-destructive/20"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                            className="h-8 w-8 text-muted-foreground rounded-lg border border-border/20"
-                          >
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
+                {/* Live Preview */}
+                <div className="flex flex-col">
+                  <div className="bg-muted/40 px-3 py-1.5 border-b border-border/60 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                    <Eye className="h-3 w-3 text-[#635bff]" /> Live Preview Frame
+                  </div>
+                  <iframe
+                    ref={previewRef}
+                    title="Live Preview"
+                    sandbox="allow-same-origin"
+                    className="w-full h-52 bg-white"
+                  />
+                </div>
+              </div>
+            </div>
 
-                      {/* Expanded Preview Sandbox */}
-                      {isExpanded && (
-                        <div className="px-4 pb-4 animate-in fade-in duration-200">
-                          <div className="rounded-xl border border-border bg-white overflow-hidden shadow-inner">
-                            <div className="bg-muted border-b border-border px-3.5 py-1.5 text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                              Visual Live Sandbox Frame
-                            </div>
-                            <iframe
-                              srcDoc={`
-                                <html>
-                                  <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:16px;margin:0;font-size:13px;line-height:1.7;color:#111;">
-                                    ${t.body_html}
-                                  </body>
-                                </html>`}
-                              title={`preview-${t.id}`}
-                              sandbox="allow-same-origin"
-                              className="w-full h-48 bg-white border-none"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-      </div>
+            {/* Plain Text Fallback */}
+            <div className="space-y-1">
+              <label className="font-bold text-foreground">
+                Plain-Text Fallback (Spam Guard Backup)
+              </label>
+              <textarea
+                value={bodyPlain}
+                onChange={(e) => setBodyPlain(e.target.value)}
+                placeholder="Enter plain text fallback version..."
+                className="w-full bg-background text-xs rounded-xl border border-border/80 p-3 min-h-[70px] focus:outline-none focus:ring-1 focus:ring-[#635bff] leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2 pt-3 border-t border-border/60 shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowModal(false)}
+              className="rounded-lg h-9 text-xs font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              className="rounded-lg bg-[#635bff] hover:bg-[#493ee5] text-white h-9 px-5 text-xs font-bold gap-2"
+            >
+              <Save className="h-4 w-4" />
+              <span>Save Template</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

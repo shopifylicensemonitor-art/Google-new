@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { api, type LogItem } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { FileText, RefreshCw, Send, CheckCircle, XCircle, AlertCircle, Filter, Calendar } from 'lucide-react';
+import { 
+  FileText, RefreshCw, Send, CheckCircle2, XCircle, AlertCircle, Filter, 
+  Clock, Eye, Terminal, Check
+} from 'lucide-react';
 
 export default function Logs() {
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -44,194 +46,188 @@ export default function Logs() {
   return (
     <AppShell>
       <SEO
-        title="Outreach Dispatch Logs - Peak Xender"
-        description="Verify delivery audits, track Gmail rotating records, and inspect error details for cold email sends."
+        title="Outreach Dispatch Logs | OutreachFlow"
+        description="Verify delivery audits, track account rotating records, and inspect error details for outreach sends."
         noindex={true}
       />
-      <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl flex items-center gap-2">
-                Outreach Audit Logs
-              </h1>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                Trace real-time email transactions, delivery receipts, and error messages.
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <select
-                value={limit}
-                onChange={e => setLimit(Number(e.target.value))}
-                className="bg-muted text-xs rounded-xl border border-input px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-              >
-                <option value={20}>Show 20</option>
-                <option value={50}>Show 50</option>
-                <option value={100}>Show 100</option>
-              </select>
-              <Button
-                variant="outline"
-                onClick={loadLogs}
-                disabled={loading}
-                className="h-9 gap-1.5 rounded-xl border-border/40 text-xs font-semibold"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Refresh Logs</span>
-              </Button>
+      <div className="max-w-7xl mx-auto space-y-6 pb-12">
+        {/* Header */}
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-border/60">
+          <div>
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Audit Logs
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Trace real-time email transactions, delivery receipts, and system responses.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={limit}
+              onChange={e => setLimit(Number(e.target.value))}
+              className="h-10 px-3 text-xs rounded-lg border border-border/60 bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff]"
+            >
+              <option value={20}>Show 20</option>
+              <option value={50}>Show 50</option>
+              <option value={100}>Show 100</option>
+            </select>
+
+            <Button
+              variant="outline"
+              onClick={loadLogs}
+              disabled={loading}
+              className="h-10 px-4 text-xs font-bold border-border/60 bg-card hover:bg-muted/40 gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-[#635bff] ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh Logs</span>
+            </Button>
+          </div>
+        </header>
+
+        {/* Filters */}
+        <div className="flex gap-2 bg-card p-1.5 rounded-xl border border-border/60 w-fit">
+          {['all', 'sent', 'failed'].map(status => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                statusFilter === status
+                  ? 'bg-[#635bff] text-white shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {status.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {/* Logs Table Card */}
+        <div className="bg-card rounded-xl border border-border/60 shadow-2xs overflow-hidden">
+          <div className="p-4 border-b border-border/60 bg-muted/20 flex justify-between items-center">
+            <div>
+              <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-[#635bff]" /> Transaction Trace Logs ({filteredLogs.length})
+              </h3>
+              <p className="text-xs text-muted-foreground">Detailed audit trace of sending API requests and status responses.</p>
             </div>
           </div>
 
-          {/* Filtering row */}
-          <div className="flex gap-2">
-            {['all', 'sent', 'failed'].map(status => (
-              <Button
-                key={status}
-                size="sm"
-                variant={statusFilter === status ? 'default' : 'outline'}
-                onClick={() => setStatusFilter(status)}
-                className={`h-8 rounded-lg text-xs font-semibold ${
-                  statusFilter === status 
-                    ? '' 
-                    : 'text-muted-foreground border-border/40 hover:bg-muted/40'
-                }`}
-              >
-                <span>{status.toUpperCase()}</span>
-              </Button>
-            ))}
+          <div>
+            {filteredLogs.length === 0 ? (
+              <div className="text-center p-12 text-muted-foreground text-xs space-y-2">
+                <FileText className="h-8 w-8 mx-auto opacity-30 text-muted-foreground" />
+                <p className="font-medium text-foreground">No recent email logs recorded.</p>
+                <p className="text-muted-foreground">Active campaign dispatches and direct sends populate trace entries here.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="bg-muted/40 border-b border-border/60 text-muted-foreground font-bold uppercase tracking-wider text-[10px]">
+                      <th className="p-3 w-12 text-center">Status</th>
+                      <th className="p-3">Recipient</th>
+                      <th className="p-3">Sender (Account)</th>
+                      <th className="p-3">Campaign / Details</th>
+                      <th className="p-3 w-32 text-right">Timestamp</th>
+                      <th className="p-3 w-16 text-center">Audit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {filteredLogs.map(log => {
+                      const isSent = log.status.toLowerCase() === 'sent';
+                      return (
+                        <tr key={log.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="p-3 text-center">
+                            {isSent ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-rose-500 mx-auto" />
+                            )}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-foreground">
+                            {log.recipient_email}
+                          </td>
+                          <td className="p-3 text-muted-foreground font-mono truncate max-w-[160px]">
+                            {log.sender_email || '—'}
+                          </td>
+                          <td className="p-3 space-y-0.5">
+                            <div className="text-foreground font-bold">
+                              {log.campaign_name || 'Direct Send'}
+                            </div>
+                            {log.error_message && (
+                              <div className="text-[11px] text-rose-500 font-mono truncate max-w-[280px]">
+                                {log.error_message}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-right text-muted-foreground font-mono text-[11px]">
+                            {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => {
+                                setSelectedLog(log);
+                                setIsPreviewOpen(true);
+                              }}
+                              className="p-1.5 text-muted-foreground hover:text-[#635bff] hover:bg-muted/40 rounded-lg transition-colors"
+                              title="Inspect Payload"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-
-          {/* Logs Table Card */}
-          <Card className="glass-card border-border/10 shadow-lg overflow-hidden">
-            <CardHeader className="border-b border-border/10 pb-4">
-              <CardTitle className="text-base font-bold text-foreground">Transaction Trace Logs ({filteredLogs.length})</CardTitle>
-              <CardDescription className="text-xs">
-                Detailed audit trace of Gmail API rotating requests.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {filteredLogs.length === 0 ? (
-                <div className="text-center p-12 text-muted-foreground text-xs space-y-2">
-                  <FileText className="h-8 w-8 mx-auto opacity-30 text-muted-foreground" />
-                  <p>No recent email logs recorded. Active campaigns populate entries here.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="bg-muted/40 border-b border-border/10 text-muted-foreground font-bold uppercase tracking-wider text-[9px]">
-                        <th className="p-3 w-10 text-center">Status</th>
-                        <th className="p-3 w-40">Recipient</th>
-                        <th className="p-3 w-40">Sender (Account)</th>
-                        <th className="p-3">Campaign / Details</th>
-                        <th className="p-3 w-28 text-right">Timestamp</th>
-                        <th className="p-3 w-12 text-center">Audit</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/5">
-                      {filteredLogs.map(log => {
-                        const isSent = log.status.toLowerCase() === 'sent';
-                        return (
-                          <tr key={log.id} className="hover:bg-muted/5 font-medium transition-colors">
-                            <td className="p-3 text-center">
-                              {isSent ? (
-                                <CheckCircle className="h-4.5 w-4.5 text-emerald-500 mx-auto" />
-                              ) : (
-                                <XCircle className="h-4.5 w-4.5 text-destructive mx-auto" />
-                              )}
-                            </td>
-                            <td className="p-3 font-semibold text-foreground break-all">
-                              {log.recipient_email}
-                            </td>
-                            <td className="p-3 text-muted-foreground truncate max-w-[160px]">
-                              {log.sender_email || '—'}
-                            </td>
-                            <td className="p-3 space-y-0.5">
-                              <div className="text-foreground font-bold">
-                                {log.campaign_name || 'Individual Send'}
-                              </div>
-                              <div className={`text-[10px] ${isSent ? 'text-muted-foreground' : 'text-destructive font-semibold'}`}>
-                                {log.message}
-                              </div>
-                            </td>
-                            <td className="p-3 text-right text-muted-foreground whitespace-nowrap text-[10px]">
-                              <span className="flex items-center justify-end gap-1.5 font-mono">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              {log.final_subject ? (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedLog(log);
-                                    setIsPreviewOpen(true);
-                                  }}
-                                  className="h-7 w-7 text-primary hover:bg-primary/10 rounded-md"
-                                  title="View Sent Email"
-                                >
-                                  <FileText className="h-3.5 w-3.5" />
-                                </Button>
-                              ) : (
-                                <span className="text-muted-foreground/30">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        </div>
       </div>
 
-      {/* Audit Log Email Preview Modal */}
+      {/* Log Inspection Modal */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-3xl bg-background border-border p-6 rounded-2xl animate-in zoom-in-95 duration-200">
-          <DialogHeader className="pb-3 border-b border-border/40">
-            <DialogTitle className="flex items-center gap-2 text-lg font-black tracking-tight">
-              <FileText className="h-5 w-5 text-primary" />
-              <span>Sent Email Audit Log</span>
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              Below is the exact email content as rendered and dispatched to the recipient.
-            </p>
+        <DialogContent className="sm:max-w-lg rounded-2xl border border-border/80 bg-card p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-base font-bold text-foreground">Transaction Trace Detail</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Complete metadata and response payload for log entry.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedLog && (
-            <div className="space-y-4 pt-4">
-              <div className="border border-border/60 bg-muted/5 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-4 py-2.5 bg-muted/40 border-b border-border/40 grid grid-cols-2 gap-2 text-[10px] font-mono text-muted-foreground">
-                  <div>
-                    <span className="font-bold text-foreground">To: </span>
-                    <span>{selectedLog.recipient_email}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-foreground">From: </span>
-                    <span>{selectedLog.sender_email || '—'}</span>
-                  </div>
+            <div className="space-y-3 py-2 text-xs font-mono">
+              <div className="bg-muted/40 p-3 rounded-xl border border-border/60 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Recipient:</span>
+                  <span className="font-bold text-foreground">{selectedLog.recipient_email}</span>
                 </div>
-
-                <div className="px-4 py-2.5 border-b border-border/20 text-xs font-bold text-foreground">
-                  <span className="text-muted-foreground font-mono mr-2">Subject:</span>
-                  {selectedLog.final_subject}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Sender:</span>
+                  <span className="text-foreground">{selectedLog.sender_email || 'System'}</span>
                 </div>
-
-                <div className="p-4 text-xs text-foreground bg-card overflow-x-auto min-h-[150px] leading-relaxed">
-                  <div dangerouslySetInnerHTML={{ __html: selectedLog.final_body || '<p class="text-muted-foreground italic">No HTML content recorded.</p>' }} />
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Status:</span>
+                  <span className={`font-bold ${selectedLog.status.toLowerCase() === 'sent' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    {selectedLog.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Time:</span>
+                  <span className="text-foreground">{new Date(selectedLog.created_at).toISOString()}</span>
                 </div>
               </div>
+
+              {selectedLog.error_message && (
+                <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl text-rose-500 text-[11px] leading-relaxed">
+                  <div className="font-bold mb-1">Error Trace:</div>
+                  {selectedLog.error_message}
+                </div>
+              )}
             </div>
           )}
-
-          <div className="pt-3 border-t border-border/40 flex justify-end">
-            <Button onClick={() => setIsPreviewOpen(false)} className="text-xs">
-              Close Audit Log
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </AppShell>

@@ -17,6 +17,7 @@ const moreItems = [
   { path: '/contacts', label: 'Prospects', icon: Users },
   { path: '/accounts', label: 'Warm-up', icon: Flame },
   { path: '/templates', label: 'Templates', icon: Layout },
+  { path: '/settings', label: 'Settings', icon: Settings },
   { path: '/ai-settings', label: 'AI & SOP', icon: Sparkles },
   { path: '/tracker', label: 'Reports', icon: BarChart3 },
   { path: '/', label: 'Home', icon: Home },
@@ -74,7 +75,7 @@ export const MobileBottomNav = memo(function MobileBottomNav() {
                       onClick={() => setShowMore(false)}
                       className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all active:scale-95 ${
                         isActive
-                          ? 'bg-primary/10 text-primary'
+                          ? 'bg-[#635bff]/10 text-[#635bff] font-bold'
                           : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                       }`}
                     >
@@ -94,7 +95,7 @@ export const MobileBottomNav = memo(function MobileBottomNav() {
 
       {/* Bottom Tab Bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-[80] lg:hidden">
-        <div className="bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+        <div className="bg-card/95 backdrop-blur-md border-t border-border/60 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
           <div className="flex items-stretch justify-around px-1 pt-1">
             {primaryTabs.map(tab => {
               const Icon = tab.icon;
@@ -105,13 +106,13 @@ export const MobileBottomNav = memo(function MobileBottomNav() {
                   to={tab.path}
                   className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 px-1 min-w-0 relative transition-all active:scale-95 ${
                     isActive
-                      ? 'text-primary'
+                      ? 'text-[#635bff]'
                       : 'text-muted-foreground'
                   }`}
                 >
                   {/* Active indicator dot */}
                   {isActive && (
-                    <div className="absolute top-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-primary rounded-full animate-scale-in" />
+                    <div className="absolute top-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#635bff] rounded-full animate-scale-in" />
                   )}
                   <Icon className={`h-[18px] w-[18px] transition-all ${isActive ? 'scale-110' : ''}`} />
                   <span className={`text-[10px] leading-tight font-medium truncate max-w-full ${isActive ? 'font-bold' : ''}`}>
@@ -126,12 +127,12 @@ export const MobileBottomNav = memo(function MobileBottomNav() {
               onClick={() => setShowMore(true)}
               className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 px-1 min-w-0 relative transition-all active:scale-95 ${
                 isMoreActive
-                  ? 'text-primary'
+                  ? 'text-[#635bff]'
                   : 'text-muted-foreground'
               }`}
             >
               {isMoreActive && (
-                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-primary rounded-full animate-scale-in" />
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#635bff] rounded-full animate-scale-in" />
               )}
               <MoreHorizontal className={`h-[18px] w-[18px] transition-all ${isMoreActive ? 'scale-110' : ''}`} />
               <span className={`text-[10px] leading-tight font-medium ${isMoreActive ? 'font-bold' : ''}`}>

@@ -21,8 +21,9 @@ const mainNavItems = [
   { path: '/campaigns', label: 'Campaigns', icon: RefreshCw },
   { path: '/contacts', label: 'Prospects', icon: Users },
   { path: '/inbox', label: 'Inbox & Replies', icon: Inbox },
-  { path: '/accounts', label: 'Warm-up', icon: Flame },
+  { path: '/accounts', label: 'Deliverability & Warmup', icon: Flame },
   { path: '/templates', label: 'Templates', icon: Layout },
+  { path: '/settings', label: 'Settings & Billing', icon: Settings },
   { path: '/ai-settings', label: 'AI & SOP Rules', icon: Sparkles },
   { path: '/tracker', label: 'Reports', icon: BarChart3 },
 ];
@@ -48,19 +49,19 @@ export const Sidebar = memo(function Sidebar({ isOpen, onClose, collapsed, onTog
         to={item.path}
         onClick={onClose}
         title={collapsed ? item.label : undefined}
-        className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 relative ${
+        className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium transition-all duration-200 relative ${
           isActive
-            ? 'bg-primary/10 text-primary font-semibold'
+            ? 'bg-[#635bff]/10 text-[#635bff] font-bold'
             : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
         }`}
       >
         {isActive && (
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full" />
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#635bff] rounded-r-full" />
         )}
-        <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'} transition-colors`} />
+        <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-[#635bff]' : 'text-muted-foreground group-hover:text-foreground'} transition-colors`} />
         {!collapsed && <span className="truncate">{item.label}</span>}
         {isActive && !collapsed && item.path === '/dashboard' && (
-          <span className="ml-auto text-[9px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+          <span className="ml-auto text-[9px] font-bold bg-[#635bff] text-white px-1.5 py-0.5 rounded-md uppercase tracking-wider">
             Active
           </span>
         )}
@@ -71,15 +72,15 @@ export const Sidebar = memo(function Sidebar({ isOpen, onClose, collapsed, onTog
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Brand Logo */}
-      <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-5 border-b border-sidebar-border`}>
-        <div className="h-9 w-9 rounded-lg overflow-hidden bg-card shrink-0 flex items-center justify-center">
+      <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-5 border-b border-border/60`}>
+        <div className="h-9 w-9 rounded-xl overflow-hidden bg-muted/20 shrink-0 flex items-center justify-center border border-border/60">
           <img src="/logo-light.jpg" alt="Peak Xender" className="h-full w-full object-contain dark:hidden" />
           <img src="/logo-dark.jpg" alt="Peak Xender" className="h-full w-full object-contain hidden dark:block" />
         </div>
         {!collapsed && (
           <div className="flex flex-col -space-y-0.5 min-w-0">
-            <span className="text-base font-extrabold tracking-tight text-foreground">Peak Xender</span>
-            <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">Outreach Console</span>
+            <span className="font-heading text-base font-bold tracking-tight text-foreground">Peak Xender</span>
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Outreach Console</span>
           </div>
         )}
       </div>
@@ -123,42 +124,20 @@ export const Sidebar = memo(function Sidebar({ isOpen, onClose, collapsed, onTog
   );
 
   return (
-    <>
-      {/* Desktop Sidebar */}
-      <aside
-        className={`hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-sidebar border-r border-sidebar-border z-40 transition-all duration-300 ${
-          collapsed ? 'w-[68px]' : 'w-64'
-        }`}
+    <aside
+      className={`hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-sidebar border-r border-sidebar-border z-40 transition-all duration-300 ${
+        collapsed ? 'w-[68px]' : 'w-64'
+      }`}
+    >
+      {sidebarContent}
+      {/* Collapse Toggle */}
+      <button
+        onClick={onToggleCollapse}
+        className="absolute -right-3 top-7 h-6 w-6 rounded-full border border-sidebar-border bg-sidebar flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors z-50 shadow-sm"
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        {sidebarContent}
-        {/* Collapse Toggle */}
-        <button
-          onClick={onToggleCollapse}
-          className="absolute -right-3 top-7 h-6 w-6 rounded-full border border-sidebar-border bg-sidebar flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors z-50 shadow-sm"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
-        </button>
-      </aside>
-
-      {/* Mobile Overlay Drawer */}
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden animate-fade-in"
-            onClick={onClose}
-          />
-          <aside className="fixed left-0 top-0 h-screen w-72 bg-sidebar border-r border-sidebar-border z-50 lg:hidden animate-slide-in shadow-2xl">
-            <button
-              onClick={onClose}
-              className="absolute right-3 top-4 h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {sidebarContent}
-          </aside>
-        </>
-      )}
-    </>
+        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+      </button>
+    </aside>
   );
 });

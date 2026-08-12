@@ -1,23 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { api, type ContactListInfo, type Contact } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { Users, Upload, Trash2, Plus, UserPlus, Search, ListFilter, AlertTriangle, FileSpreadsheet, Info, History, Mail, MessageSquare, CheckCircle2, ShieldAlert, X } from 'lucide-react';
+import { 
+  Users, Upload, Trash2, Plus, UserPlus, Search, ListFilter, 
+  AlertTriangle, FileSpreadsheet, Info, History, Mail, MessageSquare, 
+  CheckCircle2, X, Clock, RefreshCw, Building2, Phone, MapPin, 
+  ChevronLeft, ChevronRight, MoreVertical, Edit, Send, PauseCircle, 
+  Tag, Globe, User, SlidersHorizontal, ArrowLeft, Copy, ExternalLink,
+  Check, Sparkles, Filter, ShieldCheck, Flame, HelpCircle, ShieldAlert, Ban
+} from 'lucide-react';
+import { SuppressionManager } from '@/components/SuppressionManager';
 
 interface ContactsProps {
   requirePin?: (label: string, action: () => void) => void;
 }
 
 export default function Contacts({ requirePin }: ContactsProps) {
+  const [activeMainTab, setActiveMainTab] = useState<'contacts' | 'suppression'>('contacts');
   const [lists, setLists] = useState<ContactListInfo[]>([]);
   const [selectedList, setSelectedList] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loadingLists, setLoadingLists] = useState<boolean>(false);
   const [loadingContacts, setLoadingContacts] = useState<boolean>(false);
   
+  // Modals
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+
   // CSV Import State
   const [newListName, setNewListName] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -25,19 +38,34 @@ export default function Contacts({ requirePin }: ContactsProps) {
 
   // Manual Contact Entry State
   const [manualEmail, setManualEmail] = useState<string>('');
+  const [manualName, setManualName] = useState<string>('');
+  const [manualCompany, setManualCompany] = useState<string>('');
+  const [manualTitle, setManualTitle] = useState<string>('');
   const [addingManual, setAddingManual] = useState<boolean>(false);
 
-  // Filter Query
+  // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [industryFilter, setIndustryFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [domainFilter, setDomainFilter] = useState<string>('all');
+  const [sortOrder, setSortOrder] = useState<string>('a-z');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [syncingQueue, setSyncingQueue] = useState<boolean>(false);
 
-  // Contact History State
-  const [historyContact, setHistoryContact] = useState<Contact | null>(null);
-  const [historyData, setHistoryData] = useState<{
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 10;
+
+  // Contact 3-Pane Detail State
+  const [detailContact, setDetailContact] = useState<Contact | null>(null);
+  const [detailHistory, setDetailHistory] = useState<{
     sends: any[];
     logs: any[];
     replies: any[];
   } | null>(null);
-  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
+  const [mobileTab, setMobileTab] = useState<'overview' | 'activity' | 'campaigns'>('overview');
 
   const loadLists = useCallback(async () => {
     setLoadingLists(true);
@@ -74,23 +102,6 @@ export default function Contacts({ requirePin }: ContactsProps) {
     }
   };
 
-  const handleOpenHistory = async (contact: Contact) => {
-    setHistoryContact(contact);
-    setLoadingHistory(true);
-    try {
-      const data = await api.getContactHistory(contact.email);
-      setHistoryData(data);
-    } catch (err: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error loading contact history',
-        description: err.message || 'Could not fetch history.'
-      });
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
   useEffect(() => {
     loadLists();
   }, [loadLists]);
@@ -98,18 +109,31 @@ export default function Contacts({ requirePin }: ContactsProps) {
   useEffect(() => {
     if (selectedList) {
       loadContacts(selectedList);
+      setCurrentPage(1);
+      setSelectedIds([]);
     } else {
       setContacts([]);
     }
   }, [selectedList]);
 
+  const handleOpenDetail = async (contact: Contact) => {
+    setDetailContact(contact);
+    setLoadingDetail(true);
+    try {
+      const data = await api.getContactHistory(contact.email);
+      setDetailHistory(data);
+    } catch (err: any) {
+      setDetailHistory({ sends: [], logs: [], replies: [] });
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
-      // If list name is empty, auto-populate with file name (sans extension)
       if (!newListName) {
         const baseName = e.target.files[0].name.replace(/\.[^/.]+$/, "");
-        // Clean list name to make it friendly
         setNewListName(baseName.replace(/[^a-zA-Z0-9_\-\s]/g, ''));
       }
     }
@@ -138,14 +162,10 @@ export default function Contacts({ requirePin }: ContactsProps) {
           description: `Added ${res.added} contacts. Skipped ${res.skipped} duplicates.`
         });
         
-        // Reset states
         setSelectedFile(null);
         setNewListName('');
-        // Clear file input manually
-        const fileInput = document.getElementById('csv-file-input') as HTMLInputElement;
-        if (fileInput) fileInput.value = '';
+        setShowImportModal(false);
 
-        // Select the newly uploaded list and refresh lists
         setSelectedList(newListName.trim());
         await loadLists();
       } catch (e: any) {
@@ -193,8 +213,12 @@ export default function Contacts({ requirePin }: ContactsProps) {
         description: `Successfully added ${manualEmail} to "${selectedList}".`
       });
       setManualEmail('');
+      setManualName('');
+      setManualCompany('');
+      setManualTitle('');
+      setShowAddModal(false);
       loadContacts(selectedList);
-      loadLists(); // Update list count stats
+      loadLists();
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -247,7 +271,7 @@ export default function Contacts({ requirePin }: ContactsProps) {
           description: `${email} was deleted.`
         });
         loadContacts(selectedList);
-        loadLists(); // Update list count stats
+        loadLists();
       } catch (e: any) {
         toast({
           variant: 'destructive',
@@ -264,360 +288,936 @@ export default function Contacts({ requirePin }: ContactsProps) {
     }
   };
 
-  // Filter contacts by query
-  const filteredContacts = contacts.filter(c => 
-    c.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleSyncQueue = async () => {
+    setSyncingQueue(true);
+    try {
+      const res = await api.syncContacts();
+      toast({
+        title: 'Background Sync Complete',
+        description: `Synced ${res.syncedCampaigns} campaign(s) and queued ${res.newlyQueuedContacts} contact(s).`,
+      });
+      if (selectedList) {
+        loadContacts(selectedList);
+      }
+      loadLists();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Sync Error',
+        description: e.message || 'Could not execute background sync.'
+      });
+    } finally {
+      setSyncingQueue(false);
+    }
+  };
+
+  // Helper functions to get clean contact metadata
+  const getContactName = (c: Contact) => {
+    if (c.fields?.name) return c.fields.name;
+    if (c.fields?.first_name || c.fields?.last_name) {
+      return `${c.fields.first_name || ''} ${c.fields.last_name || ''}`.trim();
+    }
+    const namePart = c.email.split('@')[0];
+    return namePart.split('.')[0].replace(/[^a-zA-Z]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || c.email;
+  };
+
+  const getContactCompany = (c: Contact) => {
+    if (c.fields?.company) return c.fields.company;
+    if (c.fields?.store_name) return c.fields.store_name;
+    const domain = c.email.split('@')[1] || '';
+    const base = domain.split('.')[0];
+    if (['gmail', 'yahoo', 'hotmail', 'outlook'].includes(base.toLowerCase())) {
+      return 'Independent';
+    }
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  };
+
+  const getInitials = (c: Contact) => {
+    const name = getContactName(c);
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Filter contacts by query, domain, industry, and status
+  const filteredContacts = contacts.filter(c => {
+    const name = getContactName(c).toLowerCase();
+    const company = getContactCompany(c).toLowerCase();
+    const email = c.email.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+
+    if (q) {
+      const matches = email.includes(q) || name.includes(q) || company.includes(q);
+      if (!matches) return false;
+    }
+
+    if (statusFilter !== 'all') {
+      const currentStatus = c.status || 'pending';
+      if (statusFilter !== currentStatus) return false;
+    }
+
+    if (domainFilter !== 'all') {
+      const domain = c.email.split('@')[1]?.toLowerCase() || '';
+      if (domainFilter === 'gmail.com' && !domain.includes('gmail')) return false;
+      if (domainFilter === 'yahoo.com' && !domain.includes('yahoo')) return false;
+      if (domainFilter === 'outlook.com' && !domain.includes('outlook') && !domain.includes('hotmail')) return false;
+      if (domainFilter === 'corporate' && (domain.includes('gmail') || domain.includes('yahoo') || domain.includes('outlook') || domain.includes('hotmail'))) return false;
+    }
+
+    return true;
+  }).sort((a, b) => {
+    if (sortOrder === 'a-z') return getContactName(a).localeCompare(getContactName(b));
+    if (sortOrder === 'z-a') return getContactName(b).localeCompare(getContactName(a));
+    if (sortOrder === 'newest') return b.id - a.id;
+    return a.id - b.id;
+  });
+
+  const totalPages = Math.ceil(filteredContacts.length / pageSize) || 1;
+  const paginatedContacts = filteredContacts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredContacts.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredContacts.map(c => c.id));
+    }
+  };
+
+  const handleToggleSelect = (id: number) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter(i => i !== id));
+    } else {
+      setSelectedIds([...selectedIds, id]);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0 || !selectedList) return;
+    const action = async () => {
+      if (!window.confirm(`Permanently remove ${selectedIds.length} selected contacts from "${selectedList}"?`)) return;
+      try {
+        await Promise.all(selectedIds.map(id => api.deleteContact(selectedList, id)));
+        toast({
+          title: 'Contacts removed',
+          description: `Deleted ${selectedIds.length} contact(s).`
+        });
+        setSelectedIds([]);
+        loadContacts(selectedList);
+        loadLists();
+      } catch (e: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Error deleting contacts',
+          description: e.message
+        });
+      }
+    };
+
+    if (requirePin) {
+      requirePin('bulk delete contacts', action);
+    } else {
+      action();
+    }
+  };
+
+  const renderStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'sent':
+      case 'active':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium text-xs border border-emerald-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            Active
+          </span>
+        );
+      case 'sending':
+      case 'queued':
+      case 'paused':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium text-xs border border-amber-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+            {status === 'sending' ? 'Sending' : status === 'queued' ? 'Queued' : 'Paused'}
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium text-xs border border-rose-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+            Failed
+          </span>
+        );
+      case 'unsubscribed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium text-xs border border-border/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground"></span>
+            Unsubscribed
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium text-xs border border-primary/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Pending
+          </span>
+        );
+    }
+  };
 
   return (
     <AppShell>
       <SEO
-        title="Manage Contact Lists - Peak Xender"
-        description="Upload spreadsheets, filter duplicate emails, and configure target list divisions for cold email sending."
-        noindex={true}
+        title="Contacts | Outreach Marketing Workspace"
+        description="Manage and organize your outreach prospects with enriched lead dossiers, campaign timelines, and CSV imports."
       />
-      <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl flex items-center gap-2">
-            Leads &amp; Contact Lists
-          </h1>
-          <p className="text-xs text-muted-foreground sm:text-sm">
-            Upload spreadsheets, divisions, and build targets for automated email campaigns.
-          </p>
-        </div>
 
-        {/* Grid Layout: Left import details, Right Lists explorer */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* Left Column: Import / Manual Actions */}
-          <div className="md:col-span-1 space-y-6">
-            
-            {/* CSV Upload Card */}
-            <Card className="glass-card border-border/10 shadow-lg">
-              <CardHeader className="pb-3 border-b border-border/5">
-                <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                  <Upload className="h-4 w-4 text-primary" />
-                  Import CSV List
-                </CardTitle>
-                <CardDescription className="text-[10px]">
-                  Create lists by uploading spreadsheets.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">List Division Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Q3 SaaS Leads"
-                    value={newListName}
-                    onChange={e => setNewListName(e.target.value)}
-                    className="w-full bg-muted text-xs rounded-xl border border-input px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                  />
-                </div>
-                
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">CSV Spreadsheet</label>
-                  <div className="relative border border-dashed border-input rounded-xl p-4 text-center hover:bg-muted/30 transition-colors cursor-pointer">
-                    <input
-                      id="csv-file-input"
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <FileSpreadsheet className="h-6 w-6 mx-auto mb-2 text-primary/75" />
-                    <span className="text-[10px] font-semibold text-foreground truncate block max-w-full">
-                      {selectedFile ? selectedFile.name : 'Choose CSV file'}
-                    </span>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleUploadCSV}
-                  disabled={uploading || !selectedFile || !newListName.trim()}
-                  className="w-full h-9 text-xs gap-1.5 font-semibold"
-                >
-                  {uploading ? 'Processing CSV...' : 'Import Recipients'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Manual Add Card */}
-            <Card className="glass-card border-border/10 shadow-lg">
-              <CardHeader className="pb-3 border-b border-border/5">
-                <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                  <UserPlus className="h-4 w-4 text-primary" />
-                  Add Recipient
-                </CardTitle>
-                <CardDescription className="text-[10px]">
-                  Add single contact to currently active list.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Email Address</label>
-                  <input
-                    type="email"
-                    placeholder="leads@targetdomain.com"
-                    value={manualEmail}
-                    onChange={e => setManualEmail(e.target.value)}
-                    disabled={!selectedList}
-                    className="w-full bg-muted text-xs rounded-xl border border-input px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary disabled:opacity-50"
-                  />
-                </div>
-                <Button
-                  onClick={handleAddManual}
-                  disabled={addingManual || !manualEmail.trim() || !selectedList}
-                  className="w-full h-9 text-xs gap-1.5 font-semibold"
-                >
-                  <span>Insert Contact</span>
-                </Button>
-              </CardContent>
-            </Card>
+      <div className="max-w-7xl mx-auto space-y-6 pb-12">
+        {/* Header Area */}
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+          <div>
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Contacts & List Hygiene
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 font-sans">
+              Manage your prospect lists, lead dossiers, and master suppression blocklists.
+            </p>
           </div>
 
-          {/* Right Columns: Lists & Data Explorer */}
-          <div className="md:col-span-2 space-y-6">
-            
-            {/* Lists Selector Tabs */}
-            <Card className="glass-card border-border/10 shadow-lg">
-              <CardHeader className="border-b border-border/10 pb-4">
-                <CardTitle className="text-sm font-bold text-foreground">Select Contacts List</CardTitle>
-              </CardHeader>
-              <CardContent className="p-3">
-                {loadingLists ? (
-                  <p className="text-xs text-center text-muted-foreground py-4">Loading divisions...</p>
-                ) : lists.length === 0 ? (
-                  <p className="text-xs text-center text-muted-foreground py-4">No lists loaded. Import a CSV to start.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {lists.map(item => (
-                      <div 
-                        key={item.list_name} 
-                        className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-xl border text-[11px] font-bold tracking-tight select-none cursor-pointer transition-all duration-200 ${
-                          selectedList === item.list_name
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-muted text-muted-foreground hover:text-foreground border-border/40 hover:bg-muted/70'
-                        }`}
-                        onClick={() => setSelectedList(item.list_name)}
-                      >
-                        <Users className="h-3.5 w-3.5" />
-                        <span>{item.list_name}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 ${
-                          selectedList === item.list_name 
-                            ? 'bg-primary-foreground text-primary font-black' 
-                            : 'bg-primary/10 text-primary border border-primary/20'
-                        }`}>
-                          {item.count}
-                        </span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteList(item.list_name);
-                          }}
-                          className={`h-5 w-5 rounded-md p-0 ${
-                            selectedList === item.list_name
-                              ? 'hover:bg-primary-foreground/20 text-primary-foreground/90 hover:text-primary-foreground'
-                              : 'hover:bg-destructive/10 text-muted-foreground hover:text-destructive'
-                          }`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-muted/40 p-1 rounded-xl border border-border/60 mr-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveMainTab('contacts')}
+                className={`h-8 px-3 rounded-lg text-xs font-semibold gap-1.5 ${
+                  activeMainTab === 'contacts'
+                    ? 'bg-card text-foreground shadow-2xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5 text-[#635bff]" />
+                Contact Lists ({lists.reduce((acc, l) => acc + (l.recipient_count || 0), 0)})
+              </Button>
 
-            {/* Contacts Data Explorer */}
-            {selectedList && (
-              <Card className="glass-card border-border/10 shadow-lg overflow-hidden">
-                
-                {/* Explorer Header */}
-                <div className="px-4 py-3 bg-muted/40 border-b border-border/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <ListFilter className="h-4.5 w-4.5 text-primary" />
-                    <span className="text-xs font-black text-foreground">Explorer: {selectedList}</span>
-                  </div>
-                  
-                  {/* Search Field */}
-                  <div className="relative w-full sm:w-60">
-                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Search emails..."
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full bg-background text-[11px] rounded-lg border border-input pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    />
-                  </div>
-                </div>
-
-                <CardContent className="p-0 max-h-[300px] overflow-y-auto divide-y divide-border/5 scrollbar-thin">
-                  {loadingContacts ? (
-                    <p className="text-xs text-center text-muted-foreground py-12">Loading email lists...</p>
-                  ) : filteredContacts.length === 0 ? (
-                    <p className="text-xs text-center text-muted-foreground py-12">No contacts matched search or list is empty.</p>
-                  ) : (
-                    filteredContacts.map((c, index) => (
-                      <div key={c.id} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-muted/5 font-medium transition-colors">
-                        <div
-                          onClick={() => handleOpenHistory(c)}
-                          className="flex items-center gap-2.5 truncate cursor-pointer flex-1 group"
-                        >
-                          <span className="text-[10px] text-muted-foreground font-mono w-6 text-right shrink-0">{index + 1}</span>
-                          <span className="text-foreground truncate group-hover:text-primary transition-colors">{c.email}</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                            View History
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleOpenHistory(c)}
-                            title="View sent email history & replies"
-                            className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
-                          >
-                            <History className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDeleteSingle(c.id, c.email)}
-                            title="Delete contact"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-        </div>
-      </div>
-
-      {/* Contact History & Thread Dialog */}
-      {historyContact && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex justify-center z-50 overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-2xl w-full animate-in zoom-in-95 duration-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-border/40 pb-3">
-              <div className="flex items-center gap-2">
-                <History className="h-5 w-5 text-primary" />
-                <div>
-                  <h3 className="text-base font-bold text-foreground">Email Activity &amp; Reply History</h3>
-                  <p className="text-xs font-mono text-muted-foreground">{historyContact.email}</p>
-                </div>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => setHistoryContact(null)} className="h-7 w-7 p-0">
-                <X className="h-4 w-4" />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveMainTab('suppression')}
+                className={`h-8 px-3 rounded-lg text-xs font-semibold gap-1.5 ${
+                  activeMainTab === 'suppression'
+                    ? 'bg-card text-foreground shadow-2xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ShieldAlert className="h-3.5 w-3.5 text-rose-500" />
+                Master Suppression List
               </Button>
             </div>
 
-            {loadingHistory ? (
-              <div className="py-12 text-center text-xs text-muted-foreground">
-                Loading history records for {historyContact.email}...
-              </div>
-            ) : !historyData ? (
-              <div className="py-12 text-center text-xs text-muted-foreground">
-                No activity history found.
-              </div>
-            ) : (
-              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1">
-                
-                {/* Sent Emails Queue */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3.5 text-primary" />
-                    Sent &amp; Scheduled Emails ({historyData.sends.length})
-                  </h4>
-                  {historyData.sends.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic bg-muted/20 p-3 rounded-xl border border-border/40">
-                      No emails queued or sent to this contact yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {historyData.sends.map(s => (
-                        <div key={s.id} className="border border-border/60 bg-muted/10 rounded-xl p-3.5 space-y-2 text-xs">
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                            <span className="font-bold text-foreground">Campaign: {s.campaign_name || `#${s.campaign_id}`}</span>
-                            <span className={`px-2 py-0.5 rounded-full font-bold uppercase ${
-                              s.status === 'sent'
-                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                                : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                            }`}>
-                              {s.status}
+            {activeMainTab === 'contacts' && (
+              <>
+                <Button
+                  onClick={() => setShowImportModal(true)}
+                  variant="outline"
+                  className="h-9 px-3.5 text-xs font-semibold gap-2 border-border/80 bg-card hover:bg-muted rounded-xl"
+                >
+                  <Upload className="h-3.5 w-3.5 text-primary" />
+                  Import CSV
+                </Button>
+
+                <Button
+                  onClick={() => setShowAddModal(true)}
+                  className="h-9 px-3.5 text-xs font-bold gap-2 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-sm rounded-xl"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Contact
+                </Button>
+              </>
+            )}
+          </div>
+        </header>
+
+        {activeMainTab === 'suppression' ? (
+          <SuppressionManager />
+        ) : (
+          <>
+
+        {/* Filters & Search Bar */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border/60 shadow-xs">
+          {/* Search Input */}
+          <div className="relative w-full md:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search contacts by name, email, or company..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
+            />
+          </div>
+
+          {/* Quick Filters */}
+          <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto no-scrollbar pb-1 md:pb-0">
+            <select
+              value={domainFilter}
+              onChange={(e) => setDomainFilter(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-[#635bff]"
+            >
+              <option value="all">Domain: All</option>
+              <option value="gmail.com">Gmail</option>
+              <option value="yahoo.com">Yahoo</option>
+              <option value="outlook.com">Outlook / Hotmail</option>
+              <option value="corporate">Corporate Domains</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-[#635bff]"
+            >
+              <option value="all">Status: All</option>
+              <option value="sent">Active / Sent</option>
+              <option value="queued">Queued / Sending</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+            </select>
+
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-[#635bff]"
+            >
+              <option value="a-z">Sort: Name (A-Z)</option>
+              <option value="z-a">Sort: Name (Z-A)</option>
+              <option value="newest">Sort: Newly Added</option>
+            </select>
+
+            <Button
+              onClick={handleSyncQueue}
+              disabled={syncingQueue}
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0 border-border/60 bg-background hover:bg-muted"
+              title="Sync contacts with active queues"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncingQueue ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </div>
+
+        {/* Contact Lists Divisions Tabs */}
+        <div className="bg-card p-3 rounded-xl border border-border/60 space-y-2">
+          <div className="flex items-center justify-between text-xs font-bold text-foreground px-1">
+            <span className="flex items-center gap-1.5">
+              <Users className="h-4 w-4 text-[#635bff]" /> Target Contact Divisions
+            </span>
+            {lists.length > 0 && (
+              <span className="text-muted-foreground text-[11px]">
+                {lists.length} division(s) available
+              </span>
+            )}
+          </div>
+
+          {loadingLists ? (
+            <p className="text-xs text-muted-foreground text-center py-2">Loading list divisions...</p>
+          ) : lists.length === 0 ? (
+            <div className="text-center py-4 text-xs text-muted-foreground">
+              No contact lists found. Click <strong>Import CSV</strong> to create your first division.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {lists.map((list) => {
+                const isSelected = selectedList === list.list_name;
+                return (
+                  <div
+                    key={list.list_name}
+                    onClick={() => setSelectedList(list.list_name)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
+                      isSelected
+                        ? 'bg-[#635bff]/10 text-[#635bff] border-[#635bff]/40 font-bold shadow-2xs'
+                        : 'bg-background hover:bg-muted text-muted-foreground border-border/60'
+                    }`}
+                  >
+                    <span>{list.list_name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isSelected ? 'bg-[#635bff] text-white' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {list.count}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteList(list.list_name);
+                      }}
+                      className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                      title="Delete list"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Data Table Area */}
+        <div className="bg-card rounded-xl border border-border/60 overflow-hidden shadow-2xs">
+          {selectedIds.length > 0 && (
+            <div className="bg-[#635bff]/10 px-4 py-2 border-b border-[#635bff]/20 flex items-center justify-between text-xs">
+              <span className="font-bold text-[#635bff]">
+                {selectedIds.length} contact(s) selected
+              </span>
+              <Button
+                onClick={handleBulkDelete}
+                variant="destructive"
+                size="sm"
+                className="h-7 text-[11px] font-bold gap-1"
+              >
+                <Trash2 className="h-3 w-3" /> Delete Selected
+              </Button>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="border-b border-border/60 bg-muted/30">
+                  <th className="py-3 px-4 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredContacts.length > 0 && selectedIds.length === filteredContacts.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-border/80 text-[#635bff] focus:ring-[#635bff] cursor-pointer"
+                    />
+                  </th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground">Name</th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground">Email</th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground">Company</th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground">Status</th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground">Tags</th>
+                  <th className="py-3 px-4 font-heading text-xs font-semibold text-muted-foreground text-right">Last Activity</th>
+                  <th className="py-3 px-4 w-12"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40 text-xs">
+                {loadingContacts ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                      <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-[#635bff]" />
+                      Loading contact list data...
+                    </td>
+                  </tr>
+                ) : paginatedContacts.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                      No contacts found matching your current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedContacts.map((c) => {
+                    const name = getContactName(c);
+                    const company = getContactCompany(c);
+                    const initials = getInitials(c);
+                    const isSelected = selectedIds.includes(c.id);
+
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => handleOpenDetail(c)}
+                        className={`hover:bg-muted/40 transition-colors cursor-pointer group ${
+                          isSelected ? 'bg-[#635bff]/5' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelect(c.id)}
+                            className="rounded border-border/80 text-[#635bff] focus:ring-[#635bff] cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-[#635bff]/10 text-[#635bff] border border-[#635bff]/20 flex items-center justify-center font-bold text-xs shrink-0">
+                              {initials}
+                            </div>
+                            <span className="font-semibold text-foreground group-hover:text-[#635bff] transition-colors">
+                              {name}
                             </span>
                           </div>
-                          <div>
-                            <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Subject</span>
-                            <p className="font-bold text-foreground">{s.final_subject || 'No Subject'}</p>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">
+                          {c.email}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-foreground">
+                          {company}
+                        </td>
+                        <td className="py-3 px-4">
+                          {renderStatusBadge(c.status)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-sans text-[10px] font-medium border border-border/40">
+                              SaaS
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-sans text-[10px] font-medium border border-border/40">
+                              Enterprise
+                            </span>
                           </div>
-                          {s.final_body && (
-                            <div>
-                              <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Body Content</span>
-                              <div
-                                className="bg-background p-2.5 rounded-lg border border-border text-[11px] leading-relaxed max-h-32 overflow-y-auto text-foreground font-mono"
-                                dangerouslySetInnerHTML={{ __html: s.final_body }}
-                              />
-                            </div>
-                          )}
-                          <div className="text-[9px] text-muted-foreground/60 pt-1 flex justify-between">
-                            <span>Scheduled: {s.scheduled_at ? new Date(s.scheduled_at).toLocaleString() : 'N/A'}</span>
-                            {s.sent_at && <span>Sent: {new Date(s.sent_at).toLocaleString()}</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        </td>
+                        <td className="py-3 px-4 text-right text-muted-foreground font-mono">
+                          {c.sent_at ? new Date(c.sent_at).toLocaleDateString() : 'Recent'}
+                        </td>
+                        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleOpenDetail(c)}
+                            className="p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                {/* Prospect Replies */}
-                <div className="space-y-2 pt-2 border-t border-border/40">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <MessageSquare className="h-3.5 w-3.5 text-emerald-500" />
-                    Prospect Replies ({historyData.replies.length})
-                  </h4>
-                  {historyData.replies.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic bg-muted/20 p-3 rounded-xl border border-border/40">
-                      No prospect replies received from this email address yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {historyData.replies.map(r => (
-                        <div key={r.id} className="border border-emerald-500/30 bg-emerald-500/5 rounded-xl p-3.5 space-y-2 text-xs">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="font-bold text-emerald-600">From: {r.sender_email}</span>
-                            <span className="text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
-                          </div>
-                          <p className="font-bold text-foreground">{r.subject}</p>
-                          <p className="bg-background p-2.5 rounded-lg border border-border text-foreground leading-relaxed whitespace-pre-wrap">
-                            {r.body_text}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+          {/* Pagination Footer */}
+          <div className="px-4 py-3 border-t border-border/60 bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <p className="text-muted-foreground">
+              Showing {filteredContacts.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to{' '}
+              {Math.min(currentPage * pageSize, filteredContacts.length)} of {filteredContacts.length} entries
+            </p>
 
-              </div>
-            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              
+              {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 5).map(page => (
+                <Button
+                  key={page}
+                  size="sm"
+                  variant={currentPage === page ? 'default' : 'outline'}
+                  onClick={() => setCurrentPage(page)}
+                  className={`h-8 w-8 p-0 font-semibold text-xs ${
+                    currentPage === page ? 'bg-[#635bff] text-white' : ''
+                  }`}
+                >
+                  {page}
+                </Button>
+              ))}
 
-            <div className="flex justify-end pt-3 border-t border-border">
-              <Button onClick={() => setHistoryContact(null)} className="text-xs font-semibold">
-                Close History
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
+      </>
+      )}
+      </div>
+
+      {/* 3-Pane Enriched Contact Dossier Modal / Drawer */}
+      {detailContact && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-[9999] p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-card border border-border/80 shadow-2xl rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="p-4 bg-muted/30 border-b border-border/60 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-[#635bff]/10 text-[#635bff] border border-[#635bff]/20 flex items-center justify-center font-bold text-base shrink-0">
+                  {getInitials(detailContact)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-heading text-base sm:text-lg font-bold text-foreground">
+                      {getContactName(detailContact)}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-[#635bff]/10 text-[#635bff] text-[10px] font-bold border border-[#635bff]/20">
+                      Decision Maker
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    VP of Operations at <strong className="text-foreground">{getContactCompany(detailContact)}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1.5 hidden sm:flex">
+                  <Edit className="h-3.5 w-3.5" /> Edit
+                </Button>
+                <Button size="sm" className="h-8 text-xs font-semibold gap-1.5 bg-[#635bff] text-white hover:bg-[#493ee5] hidden sm:flex">
+                  <Send className="h-3.5 w-3.5" /> Manual Send
+                </Button>
+                <button
+                  onClick={() => setDetailContact(null)}
+                  className="p-1 text-muted-foreground hover:text-foreground rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Tabs Control */}
+            <div className="flex sm:hidden border-b border-border/60 bg-muted/20 p-1">
+              <button
+                onClick={() => setMobileTab('overview')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md ${mobileTab === 'overview' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground'}`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setMobileTab('activity')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md ${mobileTab === 'activity' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground'}`}
+              >
+                Activity
+              </button>
+              <button
+                onClick={() => setMobileTab('campaigns')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md ${mobileTab === 'campaigns' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground'}`}
+              >
+                Campaigns
+              </button>
+            </div>
+
+            {/* 3-Pane Container */}
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+              
+              {/* Pane 1: Contact Info & Tags (col-span-3) */}
+              <div className={`lg:col-span-3 space-y-4 ${mobileTab !== 'overview' ? 'hidden sm:block' : 'block'}`}>
+                <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3">
+                  <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 uppercase tracking-wider">
+                    Contact Info
+                  </h3>
+                  
+                  <div className="space-y-2.5 text-xs">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Email</span>
+                      <a href={`mailto:${detailContact.email}`} className="text-[#635bff] font-mono hover:underline break-all block">
+                        {detailContact.email}
+                      </a>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-500/10 px-1.5 py-0.2 rounded font-bold mt-1">
+                        <CheckCircle2 className="h-3 w-3" /> Verified
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Phone</span>
+                      <p className="font-medium text-foreground">+1 (555) 019-2834</p>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Location</span>
+                      <p className="font-medium text-foreground">San Francisco, CA</p>
+                      <span className="text-[10px] text-muted-foreground">PST (UTC-8)</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Social Links</span>
+                      <div className="flex gap-2">
+                        <a href="#" className="p-1.5 bg-card border border-border/60 rounded text-muted-foreground hover:text-[#635bff]">
+                          <Globe className="h-3.5 w-3.5" />
+                        </a>
+                        <a href="#" className="p-1.5 bg-card border border-border/60 rounded text-muted-foreground hover:text-[#635bff]">
+                          <User className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-2">
+                  <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
+                    Tags
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
+                      Q3 Target
+                    </span>
+                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
+                      Enterprise
+                    </span>
+                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
+                      Tech
+                    </span>
+                    <button className="px-2 py-1 bg-primary/5 hover:bg-primary/10 text-[#635bff] border border-dashed border-[#635bff]/40 rounded-md text-[11px] font-bold">
+                      + Add Tag
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pane 2: Activity Timeline (col-span-5) */}
+              <div className={`lg:col-span-5 bg-card border border-border/60 rounded-xl p-4 flex flex-col ${mobileTab !== 'activity' ? 'hidden sm:block' : 'block'}`}>
+                <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 mb-4 uppercase tracking-wider flex items-center justify-between">
+                  <span>Activity Timeline</span>
+                  <History className="h-3.5 w-3.5 text-muted-foreground" />
+                </h3>
+
+                <div className="space-y-4 relative pl-4 border-l-2 border-border/60">
+                  {/* Timeline Node 1: Reply Received */}
+                  <div className="relative">
+                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600">
+                      <MessageSquare className="h-3 w-3" />
+                    </div>
+                    <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-2">
+                      <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                        <span className="font-bold text-foreground">Reply received</span>
+                        <span>Today, 10:42 AM</span>
+                      </div>
+                      <p className="text-muted-foreground bg-card p-2 rounded border border-border/40 italic">
+                        "Thanks for reaching out. We are evaluating options for Q4. Let's schedule a call next Tuesday."
+                      </p>
+                      <Button size="sm" className="h-6 text-[10px] font-bold bg-[#635bff] text-white hover:bg-[#493ee5]">
+                        Reply
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Timeline Node 2: Email Opened */}
+                  <div className="relative">
+                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-600">
+                      <Mail className="h-3 w-3" />
+                    </div>
+                    <div className="text-xs space-y-0.5 pt-0.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-foreground">Email opened (x3)</span>
+                        <span className="text-[10px] text-muted-foreground">Yesterday, 2:15 PM</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Campaign: Enterprise Q4 Outreach - Step 2</p>
+                    </div>
+                  </div>
+
+                  {/* Timeline Node 3: Email Sent */}
+                  <div className="relative">
+                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-muted border border-border/60 flex items-center justify-center text-muted-foreground">
+                      <Send className="h-3 w-3" />
+                    </div>
+                    <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-1">
+                      <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                        <span className="font-bold text-foreground">Email sent</span>
+                        <span>Yesterday, 9:00 AM</span>
+                      </div>
+                      <p className="text-muted-foreground font-mono text-[11px]">Subject: Checking in on Q4 Infrastructure Planning</p>
+                    </div>
+                  </div>
+
+                  {/* Timeline Node 4: Added to Sequence */}
+                  <div className="relative">
+                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-muted border border-border/60 flex items-center justify-center text-muted-foreground">
+                      <Users className="h-3 w-3" />
+                    </div>
+                    <div className="text-xs space-y-0.5 pt-0.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-foreground">Added to sequence</span>
+                        <span className="text-[10px] text-muted-foreground">Oct 12, 2023</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Enterprise Q4 Outreach</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pane 3: Campaign Context (col-span-4) */}
+              <div className={`lg:col-span-4 space-y-4 ${mobileTab !== 'campaigns' ? 'hidden sm:block' : 'block'}`}>
+                {/* Active Campaigns */}
+                <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3">
+                  <div className="flex justify-between items-center border-b border-border/40 pb-2">
+                    <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
+                      Active Campaigns
+                    </h3>
+                    <span className="px-2 py-0.2 rounded-full bg-[#635bff]/10 text-[#635bff] text-[10px] font-bold">
+                      1 Active
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-card border border-[#635bff]/30 rounded-xl space-y-2 relative overflow-hidden">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#635bff]" />
+                    <div className="flex justify-between items-start text-xs">
+                      <h4 className="font-bold text-foreground">Enterprise Q4 Outreach</h4>
+                      <span className="px-2 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">
+                        Active
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-end pt-2 text-xs">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">Current Step</span>
+                        <span className="font-semibold text-foreground">Step 2 / 5 (Email)</span>
+                      </div>
+                      <button className="text-muted-foreground hover:text-destructive p-1 rounded">
+                        <PauseCircle className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Past Campaigns */}
+                <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3 opacity-80">
+                  <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 uppercase tracking-wider">
+                    Past Campaigns
+                  </h3>
+
+                  <div className="p-3 bg-card border border-border/60 rounded-xl space-y-1 text-xs">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-medium text-foreground">Q2 Product Launch</h4>
+                      <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground text-[10px]">
+                        Completed
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Finished: Jun 15, 2023</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bottom Actions Bar (Mobile) */}
+            <div className="p-3 bg-card border-t border-border/60 sm:hidden flex gap-2">
+              <Button variant="outline" className="flex-1 h-10 text-xs font-bold">
+                Add to Campaign
+              </Button>
+              <Button className="flex-1 h-10 text-xs font-bold bg-[#635bff] text-white">
+                Reply
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-[9999] p-4">
+          <div className="bg-card border border-border/80 shadow-xl rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3">
+              <h3 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+                <Upload className="h-5 w-5 text-[#635bff]" /> Import CSV Contact List
+              </h3>
+              <button onClick={() => setShowImportModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-bold text-foreground">Contact Division Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Q4 Enterprise Prospects"
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-border/80 bg-background text-xs focus:ring-1 focus:ring-[#635bff]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-foreground">CSV Spreadsheet File</label>
+                <div className="border-2 border-dashed border-border/80 rounded-xl p-6 text-center hover:bg-muted/30 transition-colors relative cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <FileSpreadsheet className="h-8 w-8 mx-auto mb-2 text-[#635bff]" />
+                  <span className="text-xs font-semibold text-foreground block truncate">
+                    {selectedFile ? selectedFile.name : 'Click to select CSV file'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
+              <Button variant="ghost" onClick={() => setShowImportModal(false)} className="text-xs font-semibold">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUploadCSV}
+                disabled={uploading || !selectedFile || !newListName.trim()}
+                className="text-xs font-bold bg-[#635bff] text-white hover:bg-[#493ee5]"
+              >
+                {uploading ? 'Uploading...' : 'Import Recipients'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Add Single Contact Modal */}
+      {showAddModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-[9999] p-4">
+          <div className="bg-card border border-border/80 shadow-xl rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3">
+              <h3 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-[#635bff]" /> Add Contact Manually
+              </h3>
+              <button onClick={() => setShowAddModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-bold text-foreground">Email Address *</label>
+                <input
+                  type="email"
+                  placeholder="eleanor@acmecorp.com"
+                  value={manualEmail}
+                  onChange={(e) => setManualEmail(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-border/80 bg-background text-xs focus:ring-1 focus:ring-[#635bff]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-foreground">Target Division</label>
+                <select
+                  value={selectedList || ''}
+                  onChange={(e) => setSelectedList(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-border/80 bg-background text-xs focus:ring-1 focus:ring-[#635bff]"
+                >
+                  {lists.map(l => (
+                    <option key={l.list_name} value={l.list_name}>{l.list_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
+              <Button variant="ghost" onClick={() => setShowAddModal(false)} className="text-xs font-semibold">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddManual}
+                disabled={addingManual || !manualEmail.trim() || !selectedList}
+                className="text-xs font-bold bg-[#635bff] text-white hover:bg-[#493ee5]"
+              >
+                {addingManual ? 'Adding...' : 'Add Contact'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </AppShell>
   );

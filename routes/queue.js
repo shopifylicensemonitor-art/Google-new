@@ -2,14 +2,37 @@
  * routes/queue.js — Queue monitoring and activity logs.
  *
  * Endpoints:
- *   GET /api/queue/:campaignId       → Queue items for a campaign
- *   GET /api/queue/:campaignId/stats → Aggregate stats
- *   GET /api/queue/logs/recent       → Recent send logs
+ *   GET  /api/queue/worker/status       → Server worker health & status
+ *   POST /api/queue/worker/trigger      → Trigger immediate background dispatch tick
+ *   GET  /api/queue/:campaignId       → Queue items for a campaign
+ *   GET  /api/queue/:campaignId/stats → Aggregate stats
+ *   GET  /api/queue/logs/recent       → Recent send logs
  */
 
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
+const { getWorkerStatus, processNextItem } = require('../scheduler');
+
+/** Get server-side background worker health and status. */
+router.get('/worker/status', async (req, res) => {
+  try {
+    const status = await getWorkerStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Trigger immediate dispatch tick manually. */
+router.post('/worker/trigger', async (req, res) => {
+  try {
+    processNextItem().catch(() => {});
+    res.json({ success: true, message: 'Worker dispatch tick triggered manually.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /** Get recent logs across all campaigns. */
 router.get('/logs/recent', async (req, res) => {

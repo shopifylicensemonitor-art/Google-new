@@ -58,4 +58,123 @@ router.get('/click/:id', async (req, res) => {
   res.redirect(url);
 });
 
+/**
+ * RFC 8058 & Web Unsubscribe handler (GET & POST).
+ * Supports token query parameter or email/campaign_id body/params.
+ */
+const handleUnsubscribe = async (req, res) => {
+  try {
+    const db = await getDb();
+    let email = req.query.email || req.body?.email;
+    let campaignId = req.query.campaign_id || req.body?.campaign_id;
+    const token = req.query.token || req.body?.token;
+
+    if (token) {
+      try {
+        const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+        const [tokEmail, tokCampId] = decoded.split('|');
+        if (tokEmail) email = tokEmail;
+        if (tokCampId) campaignId = tokCampId;
+      } catch (_) {
+        // Fallback
+      }
+    }
+
+    if (!email || !email.includes('@')) {
+      if (req.method === 'POST') {
+        return res.status(400).send('Invalid email or token');
+      }
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Unsubscribe Error</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#f8fafc;">
+          <h2 style="color:#f43f5e;">Unsubscribe Request Error</h2>
+          <p style="color:#94a3b8;">No valid email or token was provided. Please check the link in your email.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    email = email.trim().toLowerCase();
+
+    // 1. Add email to master suppression list
+    try {
+      await db.prepare(`
+        INSERT INTO suppression_list (type, value, reason)
+        VALUES ('email', ?, 'unsubscribed')
+      `).run(email);
+    } catch (_) {
+      // Already suppressed
+    }
+
+    // 2. Mark recipient status as unsubscribed across campaigns
+    if (campaignId) {
+      await db.prepare(`
+        UPDATE campaign_recipients 
+        SET status = 'unsubscribed' 
+        WHERE LOWER(recipient_email) = ? AND campaign_id = ?
+      `).run(email, campaignId);
+    } else {
+      await db.prepare(`
+        UPDATE campaign_recipients 
+        SET status = 'unsubscribed' 
+        WHERE LOWER(recipient_email) = ?
+      `).run(email);
+    }
+
+    // 3. Cancel any pending queue items for this recipient
+    await db.prepare(`
+      UPDATE queue 
+      SET status = 'cancelled', error = 'Unsubscribed by recipient' 
+      WHERE LOWER(recipient_email) = ? AND status = 'pending'
+    `).run(email);
+
+    logger.info({ email, campaignId }, 'Recipient unsubscribed successfully');
+
+    // RFC 8058 One-Click Unsubscribe via HTTP POST
+    if (req.method === 'POST') {
+      return res.status(200).send('Unsubscribed successfully');
+    }
+
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({ success: true, message: `Successfully unsubscribed ${email}.` });
+    }
+
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Successfully Unsubscribed</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+          .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 40px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+          .icon-badge { width: 64px; height: 64px; background: rgba(99,91,255,0.15); border: 1px solid rgba(99,91,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #635bff; font-size: 28px; }
+          h1 { font-size: 22px; font-weight: 700; margin: 0 0 10px; color: #ffffff; }
+          p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 0 0 24px; }
+          .email-chip { display: inline-block; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-family: monospace; font-size: 13px; padding: 6px 14px; border-radius: 8px; margin-bottom: 20px; }
+          .footer { font-size: 12px; color: #64748b; margin-top: 24px; border-top: 1px solid #334155; padding-top: 16px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon-badge">✓</div>
+          <h1>You Have Been Unsubscribed</h1>
+          <p>Your email address has been added to our master suppression list. You will not receive any further automated emails from us.</p>
+          <div class="email-chip">${email}</div>
+          <div class="footer">Peak Xender Outreach System &bull; Compliance Verified</div>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    logger.error({ err }, 'Error handling unsubscribe request');
+    res.status(500).send('An error occurred while processing your unsubscribe request.');
+  }
+};
+
+router.get('/unsubscribe', handleUnsubscribe);
+router.post('/unsubscribe', handleUnsubscribe);
+
 module.exports = router;

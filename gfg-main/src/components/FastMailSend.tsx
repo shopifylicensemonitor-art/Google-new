@@ -27,6 +27,7 @@ import type { EmailTemplate } from '@/hooks/useTemplates';
 import type { ContactListInfo } from '@/api';
 import { PUBLIC_PROVIDERS } from '@/lib/publicProviders';
 import { buildMailtoLink } from '@/lib/randomizeMailto';
+import { interpolateTemplate, extractDynamicTokens } from '@/lib/helpers';
 import { CSVPreview } from './CSVPreview';
 import { AIToolbar } from './AIToolbar';
 
@@ -149,54 +150,23 @@ export function FastMailSend({
   // Compute preview with replaced variables for test email
   const testPreview = useMemo(() => {
     const email = testRecipient.trim() || 'john.doe@example.com';
-    const [localPart, domainPart] = email.split('@');
-    const sname = domainPart ? domainPart.split('.')[0] : 'example';
-    let previewSubject = subject
-      .replace(/{name}/g, localPart || 'john.doe')
-      .replace(/{store}/g, domainPart || 'example.com')
-      .replace(/{sname}/g, sname)
-      .replace(/{brand}/g, userName || 'YourBrand');
-    let previewBody = body
-      .replace(/{name}/g, localPart || 'john.doe')
-      .replace(/{store}/g, domainPart || 'example.com')
-      .replace(/{sname}/g, sname)
-      .replace(/{brand}/g, userName || 'YourBrand');
-
-    // Also resolve {{variable}} placeholders with demo fallbacks
-    const resolvePreviewVar = (key: string): string => {
-      const normKey = key.toLowerCase();
-      if (normKey === 'email') return email;
-      if (normKey === 'name' || normKey === 'first_name') return localPart || 'john.doe';
-      if (normKey === 'store' || normKey === 'store_name') return domainPart || 'example.com';
-      if (normKey === 'sname') return sname;
-      if (normKey === 'brand') return userName || 'YourBrand';
-      if (normKey === 'niche') return 'ecommerce';
-      if (normKey === 'pain_point') return 'growth';
-      return `[${key}]`;
-    };
-    previewSubject = previewSubject.replace(/\{\{(\w+)\}\}/g, (_, key) => resolvePreviewVar(key));
-    previewBody = previewBody.replace(/\{\{(\w+)\}\}/g, (_, key) => resolvePreviewVar(key));
+    const previewSubject = interpolateTemplate(subject, { email }, userName || 'YourBrand');
+    const previewBody = interpolateTemplate(body, { email }, userName || 'YourBrand');
 
     return { subject: previewSubject, body: previewBody };
   }, [testRecipient, subject, body, userName]);
 
   const variablesToDisplay = useMemo(() => {
-    const filteredActive = activeVariables.filter(v => v !== 'email' && v !== 'skip');
-    if (filteredActive.length > 0) {
-      const activeTags = filteredActive.map(v => ({ tag: `{{${v}}}` }));
-      if (!filteredActive.includes('brand')) {
-        activeTags.push({ tag: '{{brand}}' });
-      }
-      return activeTags;
+    let rawHeaders: string[] = [];
+
+    if (parsedCSV?.headers && Array.isArray(parsedCSV.headers) && parsedCSV.headers.length > 0) {
+      rawHeaders = parsedCSV.headers;
+    } else if (activeVariables && activeVariables.length > 0) {
+      rawHeaders = activeVariables;
     }
-    return [
-      { tag: '{{first_name}}' },
-      { tag: '{{store_name}}' },
-      { tag: '{{niche}}' },
-      { tag: '{{pain_point}}' },
-      { tag: '{{brand}}' }
-    ];
-  }, [activeVariables]);
+
+    return extractDynamicTokens(rawHeaders);
+  }, [parsedCSV, activeVariables]);
 
   const handleExtractPersonal = useCallback(() => {
     if (onFilterList) {
@@ -500,7 +470,7 @@ export function FastMailSend({
       <div className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Subject Line</label>
         <Input
-          placeholder="Use {{first_name}}, {{store_name}}, {{niche}}, {{pain_point}}..."
+          placeholder="Use {first_name}, {store_name}, {niche}, {pain_point}..."
           value={subject}
           onChange={(e) => onSubjectChange(e.target.value)}
           className="bg-background/30 border-muted/80 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10 rounded-xl h-10 text-xs sm:text-sm"
@@ -512,7 +482,7 @@ export function FastMailSend({
         <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message Body</label>
         <Textarea
           ref={bodyRef}
-          placeholder="Type your message here... Supports {{first_name}}, {{store_name}}, {{niche}}, {{pain_point}}, {{brand}}..."
+          placeholder="Type your message here... Supports {first_name}, {store_name}, {niche}, {pain_point}, {brand}..."
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
           className="min-h-[160px] resize-none bg-background/30 border-muted/80 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10 rounded-xl text-xs sm:text-sm leading-relaxed"

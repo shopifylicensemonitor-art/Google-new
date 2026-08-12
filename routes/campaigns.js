@@ -35,6 +35,42 @@ function createDefaultCampaignContent(subject, bodyHtml, bodyPlain) {
 }
 
 function resolveLaunchRecipientPlan({ existingQueueRows = [], recipients = [], contacts = [] }) {
+  const normalizedRecipients = Array.isArray(recipients) ? recipients : [];
+  const normalizedContacts = Array.isArray(contacts) ? contacts : [];
+
+  // 1. If explicit recipients provided in launch body, use them
+  if (normalizedRecipients.length > 0) {
+    return {
+      useExistingQueue: false,
+      recipients: normalizedRecipients.map((recipient) => {
+        const recipientEmail = recipient?.recipient_email || recipient?.email || recipient?.recipientEmail || '';
+        if (!recipientEmail) return null;
+        return {
+          recipient_email: recipientEmail,
+          account_id: recipient?.account_id ?? recipient?.accountId ?? null,
+          fields: recipient?.fields ?? recipient?.field_values ?? null,
+        };
+      }).filter(Boolean),
+    };
+  }
+
+  // 2. If contacts exist in the assigned list, use list contacts
+  if (normalizedContacts.length > 0) {
+    return {
+      useExistingQueue: false,
+      recipients: normalizedContacts.map((contact) => {
+        const recipientEmail = contact?.recipient_email || contact?.email || contact?.recipientEmail || '';
+        if (!recipientEmail) return null;
+        return {
+          recipient_email: recipientEmail,
+          account_id: contact?.account_id ?? contact?.accountId ?? null,
+          fields: contact?.fields ?? contact?.field_values ?? null,
+        };
+      }).filter(Boolean),
+    };
+  }
+
+  // 3. Fallback to existing queue rows if present
   const normalizedExistingRows = Array.isArray(existingQueueRows) ? existingQueueRows : [];
   if (normalizedExistingRows.length > 0) {
     return {
@@ -54,32 +90,9 @@ function resolveLaunchRecipientPlan({ existingQueueRows = [], recipients = [], c
     };
   }
 
-  const normalizedRecipients = Array.isArray(recipients) ? recipients : [];
-  const normalizedContacts = Array.isArray(contacts) ? contacts : [];
-
-  const resolvedRecipients = normalizedRecipients.length > 0
-    ? normalizedRecipients.map((recipient) => {
-        const recipientEmail = recipient?.recipient_email || recipient?.email || recipient?.recipientEmail || '';
-        if (!recipientEmail) return null;
-        return {
-          recipient_email: recipientEmail,
-          account_id: recipient?.account_id ?? recipient?.accountId ?? null,
-          fields: recipient?.fields ?? recipient?.field_values ?? null,
-        };
-      }).filter(Boolean)
-    : normalizedContacts.map((contact) => {
-        const recipientEmail = contact?.recipient_email || contact?.email || contact?.recipientEmail || '';
-        if (!recipientEmail) return null;
-        return {
-          recipient_email: recipientEmail,
-          account_id: contact?.account_id ?? contact?.accountId ?? null,
-          fields: contact?.fields ?? contact?.field_values ?? null,
-        };
-      }).filter(Boolean);
-
   return {
     useExistingQueue: false,
-    recipients: resolvedRecipients,
+    recipients: [],
   };
 }
 

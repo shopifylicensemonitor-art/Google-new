@@ -1,18 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, ChevronDown, User, Lock, Settings, Menu, ShieldAlert, CheckCircle2, Download, X, Copy, FileText, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Bell, Search, ChevronDown, User, Lock, Settings, Menu, ShieldAlert, CheckCircle2, Download, X, Copy, FileText, Check, Keyboard } from 'lucide-react';
 import { api, type LogItem } from '@/api';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { toast } from '@/hooks/use-toast';
 import { navigateToRoute } from '@/lib/router';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useUI } from '@/context/UIContext';
 
 interface TopBarProps {
   onOpenSidebar: () => void;
 }
 
 export function TopBar({ onOpenSidebar }: TopBarProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNotifications, setShowNotifications] = useState(false);
+  const { globalSearch, setGlobalSearch, notificationsOpen, setNotificationsOpen } = useUI();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [recentLogs, setRecentLogs] = useState<LogItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -51,9 +52,9 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const fetchUser = async () => {
     try {
       const u = await api.getCurrentUser();
-      setUser(u);
-    } catch (err) {
-      console.error('Error fetching current user:', err);
+      if (u) setUser(u);
+    } catch {
+      // Silently ignore user fetch errors when guest or offline
     }
   };
 
@@ -66,12 +67,13 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     const fetchLogs = async () => {
       try {
         const logs = await api.getRecentLogs(5);
-        setRecentLogs(logs || []);
-        // Set unread count based on failed/warning logs
-        const failedLogs = logs.filter(l => l.status === 'failed' || l.status === 'error');
-        setUnreadCount(failedLogs.length > 0 ? failedLogs.length : (logs.length > 0 ? 2 : 0));
-      } catch (err) {
-        console.error('Error fetching notifications logs:', err);
+        if (logs) {
+          setRecentLogs(logs);
+          const failedLogs = logs.filter(l => l.status === 'failed' || l.status === 'error');
+          setUnreadCount(failedLogs.length > 0 ? failedLogs.length : (logs.length > 0 ? 2 : 0));
+        }
+      } catch {
+        // Silently ignore notification log fetch errors
       }
     };
     fetchLogs();
@@ -84,7 +86,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
-        setShowNotifications(false);
+        setNotificationsOpen(false);
       }
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setShowProfileMenu(false);
@@ -92,7 +94,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [setNotificationsOpen]);
 
   const getInitials = (name: string) => {
     if (!name) return 'A';
@@ -200,17 +202,18 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   return (
     <header className="sticky top-0 z-50 flex h-14 lg:h-16 w-full items-center justify-between border-b border-border bg-background/80 px-3 sm:px-6 backdrop-blur-md">
       {/* Left side: Hamburger menu & Search */}
-      <div className="flex flex-1 items-center gap-3">
+      <div className="flex flex-1 items-center gap-2.5 min-w-0">
         <button
           onClick={onOpenSidebar}
-          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
-          aria-label="Open sidebar"
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 lg:hidden shrink-0"
+          title="Open Menu"
+          aria-label="Open Menu"
         >
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* Mobile page title — visible only on small screens */}
-        <span className="text-sm font-bold text-foreground truncate sm:hidden">
+        {/* Mobile page title — visible on small screens */}
+        <span className="text-sm font-black tracking-tight text-foreground truncate shrink-0 sm:hidden">
           Peak Xender
         </span>
 
@@ -219,8 +222,8 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
           <input
             type="text"
             placeholder="Quick search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
             className="w-full rounded-full border border-border bg-muted/40 py-1.5 pl-10 pr-4 text-xs text-foreground placeholder-muted-foreground/50 transition-all focus:border-primary/50 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
@@ -229,6 +232,16 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       {/* Right side: Notifications, Profile */}
       <div className="flex items-center gap-1 sm:gap-3">
         <ThemeToggle />
+        <button
+          onClick={() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));
+          }}
+          className="p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors hidden sm:flex items-center justify-center"
+          title="Keyboard Shortcuts (Shift + ?)"
+          aria-label="Keyboard Shortcuts"
+        >
+          <Keyboard className="h-4.5 w-4.5" />
+        </button>
         {canInstall && (
           <button
             onClick={handleInstall}
@@ -244,7 +257,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         <div className="relative" ref={notificationsRef}>
           <button
             onClick={() => {
-              setShowNotifications(!showNotifications);
+              setNotificationsOpen(!notificationsOpen);
               setShowProfileMenu(false);
             }}
             className="relative rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -258,7 +271,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
           </button>
 
           {/* Notifications Dropdown */}
-          {showNotifications && (
+          {notificationsOpen && (
             <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-card p-2 shadow-2xl z-[100] animate-card-enter">
               <div className="flex items-center justify-between border-b border-border px-3 py-2 pb-2">
                 <span className="text-xs font-bold text-foreground">Recent Activity</span>
@@ -282,7 +295,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
                       key={log.id}
                       onClick={() => {
                         setSelectedNotification(log);
-                        setShowNotifications(false);
+                        setNotificationsOpen(false);
                       }}
                       className="group flex items-start justify-between gap-2 border-b border-border/40 px-3 py-2 text-left hover:bg-muted/50 cursor-pointer transition-colors last:border-b-0"
                     >
@@ -326,7 +339,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
           <button
             onClick={() => {
               setShowProfileMenu(!showProfileMenu);
-              setShowNotifications(false);
+              setNotificationsOpen(false);
             }}
             className="flex items-center gap-2 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
@@ -386,9 +399,9 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         </div>
       </div>
 
-      {/* Profile Settings Modal — With Scrollable Container to prevent Top Cutoff */}
-      {showProfileModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex justify-center z-50 overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+      {/* Profile Settings Modal — Rendered at body root via portal with top z-index */}
+      {showProfileModal && createPortal(
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex justify-center z-[9999] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
           <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold tracking-tight mb-1">Admin Profile Settings</h3>
             <p className="text-xs text-muted-foreground mb-4">Update your administrative profile details.</p>
@@ -445,12 +458,13 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* System Settings Modal — With Scrollable Container to prevent Top Cutoff */}
-      {showSettingsModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex justify-center z-50 overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+      {/* System Settings Modal — Rendered at body root via portal with top z-index */}
+      {showSettingsModal && createPortal(
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex justify-center z-[9999] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
           <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold tracking-tight mb-1">System Control Panel</h3>
             <p className="text-xs text-muted-foreground mb-4">Configure system parameters and deployment settings.</p>
@@ -535,12 +549,13 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Notification Detail Dialog Modal */}
-      {selectedNotification && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex justify-center z-50 overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
+      {/* Notification Detail Dialog Modal — Rendered at body root via portal with top z-index */}
+      {selectedNotification && createPortal(
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex justify-center z-[9999] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
           <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-lg w-full animate-in zoom-in-95 duration-200 space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
@@ -626,7 +641,8 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </header>
   );

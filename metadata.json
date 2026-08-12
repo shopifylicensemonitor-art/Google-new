@@ -1,7 +1,9 @@
 {
   "name": "Peak Xender",
   "description": "Automated Email Outreach & Personalization Platform",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "microphone"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

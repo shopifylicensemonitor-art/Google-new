@@ -104,9 +104,11 @@ app.use('/api/queue', generalLimiter, requireAuth, attachTenant, require('./rout
 app.use('/api/templates', generalLimiter, requireAuth, attachTenant, require('./routes/templates'));
 app.use('/api/ai', generalLimiter, requireAuth, attachTenant, require('./routes/ai'));
 app.use('/api/inbox', generalLimiter, requireAuth, attachTenant, require('./routes/inbox'));
+app.use('/api/suppression', generalLimiter, requireAuth, attachTenant, require('./routes/suppression'));
 
-// Tracking routes are PUBLIC
+// Tracking & Unsubscribe routes are PUBLIC
 app.use('/api/track', require('./routes/tracking'));
+app.use('/api/unsubscribe', require('./routes/tracking'));
 
 // Health check
 app.get('/api/health', async (_req, res) => {

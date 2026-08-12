@@ -62,5 +62,9 @@ export function useTheme() {
     setThemeGlobal(currentTheme === 'dark' ? 'light' : 'dark');
   };
 
-  return { theme, toggleTheme };
+  const setTheme = (next: Theme) => {
+    setThemeGlobal(next);
+  };
+
+  return { theme, toggleTheme, setTheme };
 }
