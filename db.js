@@ -16,6 +16,21 @@ require('dotenv').config();
 
 let ready = null; // Promise that resolves to the wrapped db
 
+async function withTimeout(promiseFactory, ms, label) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promiseFactory(), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ============================================================================
 // PostgreSQL Adapter
 // ============================================================================
@@ -790,49 +805,49 @@ ready = (async () => {
     console.log('Connecting to PostgreSQL (Supabase)...');
     const adapter = createPgAdapter();
     try {
-      await adapter.exec(PG_DDL);
+      await withTimeout(() => adapter.exec(PG_DDL), 10000, 'PostgreSQL schema init');
       try {
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS daily_limit INTEGER DEFAULT 450;");
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS daily_limit INTEGER DEFAULT 450;"), 10000, 'PostgreSQL migration: accounts.daily_limit');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_host TEXT;");
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_port INTEGER;");
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_user TEXT;");
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_pass TEXT;");
-        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_secure INTEGER DEFAULT 1;");
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_host TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_host');
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_port INTEGER;"), 10000, 'PostgreSQL migration: accounts.imap_port');
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_user TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_user');
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_pass TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_pass');
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_secure INTEGER DEFAULT 1;"), 10000, 'PostgreSQL migration: accounts.imap_secure');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;");
+        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;"), 10000, 'PostgreSQL migration: queue.retry_count');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS step_number INTEGER DEFAULT 1;");
+        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS step_number INTEGER DEFAULT 1;"), 10000, 'PostgreSQL migration: queue.step_number');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS campaign_step_id INTEGER;");
+        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS campaign_step_id INTEGER;"), 10000, 'PostgreSQL migration: queue.campaign_step_id');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ignore_window INTEGER DEFAULT 0;");
+        await withTimeout(() => adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ignore_window INTEGER DEFAULT 0;"), 10000, 'PostgreSQL migration: campaigns.ignore_window');
       } catch (_) {}
       try {
-        await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");
+        await withTimeout(() => adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;"), 10000, 'PostgreSQL migration: logs.queue_id');
       } catch (_) {}
       // Multi-tenancy: owner column on all user-scoped tables.
       for (const t of TENANT_TABLES) {
         try {
-          await adapter.exec(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS user_id INTEGER;`);
+          await withTimeout(() => adapter.exec(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS user_id INTEGER;`), 10000, `PostgreSQL migration: ${t}.user_id`);
         } catch (_) {}
       }
       try {
-        await adapter.exec("ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_email_key;");
-        await adapter.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_email ON accounts(user_id, email);");
+        await withTimeout(() => adapter.exec("ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_email_key;"), 10000, 'PostgreSQL migration: drop accounts_email_key');
+        await withTimeout(() => adapter.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_email ON accounts(user_id, email);"), 10000, 'PostgreSQL migration: idx_accounts_user_email');
       } catch (_) {}
       try {
-        await adapter.exec(INDEX_DDL);
+        await withTimeout(() => adapter.exec(INDEX_DDL), 10000, 'PostgreSQL index init');
       } catch (_) {}
       try {
-        await adapter.exec(TENANT_INDEX_DDL);
+        await withTimeout(() => adapter.exec(TENANT_INDEX_DDL), 10000, 'PostgreSQL tenant index init');
       } catch (_) {}
-      await backfillTenantOwnership(adapter);
+      await withTimeout(() => backfillTenantOwnership(adapter), 10000, 'PostgreSQL tenant backfill');
       console.log('PostgreSQL database initialised successfully.');
       return adapter;
     } catch (err) {
