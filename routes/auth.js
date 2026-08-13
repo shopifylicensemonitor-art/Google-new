@@ -46,34 +46,82 @@ router.get('/google-url', (_req, res) => {
   }
 });
 
-/** PIN-based login endpoint for quick local/dev authentication. */
-router.post('/pin-login', async (req, res) => {
-  const { pin } = req.body;
-  const isProd = process.env.NODE_ENV === 'production';
-  const configuredPin = process.env.ACCESS_PIN || (isProd ? '' : '1234');
+/** Email/password signup endpoint. */
+router.post('/signup', async (req, res) => {
+  const { email, password, name } = req.body;
 
-  // In production a PIN must be explicitly configured — never fall back to 1234.
-  if (isProd && !configuredPin) {
-    return res.status(403).json({ error: 'PIN login is disabled. Sign in with Google.' });
-  }
-  if (isProd && !process.env.JWT_SECRET) {
-    logger.error('JWT_SECRET is not set in production — refusing to issue tokens.');
-    return res.status(500).json({ error: 'Server auth is not configured.' });
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: 'Email, password, and name are required.' });
   }
 
-  if (!pin || String(pin) !== String(configuredPin)) {
-    return res.status(401).json({ error: 'Invalid PIN. Please check ACCESS_PIN in your .env file.' });
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
   }
 
   try {
+    const bcrypt = require('bcrypt');
+    const db = await getDb();
+
+    // Check if user already exists
+    const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
+    if (existing) {
+      return res.status(409).json({ error: 'Email already registered.' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert new user
+    await db.prepare(
+      'INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)'
+    ).run(email.toLowerCase(), name, hashedPassword, 'user');
+
+    res.json({ success: true, message: 'Account created successfully. Please sign in.' });
+  } catch (err) {
+    logger.error({ err }, 'Signup error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Email/password signin endpoint. */
+router.post('/signin', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  try {
+    const bcrypt = require('bcrypt');
+    const db = await getDb();
+
+    // Find user by email
+    const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase());
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Verify password
+    const passwordMatch = await bcrypt.compare(password, user.password_hash || '');
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Update last login
+    await db.prepare(
+      "UPDATE users SET last_login = datetime('now') WHERE id = ?"
+    ).run(user.id);
+
+    // Issue JWT
     const token = jwt.sign(
-      { id: 'admin-pin', email: process.env.ADMIN_EMAIL || 'admin@local', name: 'Admin (PIN)', role: 'admin' },
+      { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRY }
     );
 
-    res.json({ success: true, token, user: { name: 'Admin', role: 'admin' } });
+    res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (err) {
+    logger.error({ err }, 'Signin error');
     res.status(500).json({ error: err.message });
   }
 });

@@ -504,6 +504,7 @@ const SQLITE_DDL = `
     name TEXT DEFAULT '',
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
+    password_hash TEXT,
     last_login TEXT DEFAULT (datetime('now')),
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -679,6 +680,7 @@ const PG_DDL = `
     name TEXT DEFAULT '',
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
+    password_hash TEXT,
     last_login TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
