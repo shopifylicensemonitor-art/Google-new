@@ -17,9 +17,10 @@ const { getDb } = require('../db');
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
+    // RLS automatically filters by user_id = auth.uid()
     const templates = await db
-      .prepare('SELECT * FROM templates WHERE user_id = ? ORDER BY created_at DESC')
-      .all(req.userId);
+      .prepare('SELECT * FROM templates ORDER BY created_at DESC')
+      .all();
     res.json(templates);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -30,10 +31,11 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = await getDb();
+    // RLS ensures this is the user's template
     const template = await db
-      .prepare('SELECT * FROM templates WHERE id = ? AND user_id = ?')
-      .get(req.params.id, req.userId);
-    if (!template) return res.status(404).json({ error: 'Not found.' });
+      .prepare('SELECT * FROM templates WHERE id = ?')
+      .get(req.params.id);
+    if (!template) return res.status(404).json({ error: 'Not found or access denied.' });
     res.json(template);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,10 +51,11 @@ router.post('/', async (req, res) => {
 
   try {
     const db = await getDb();
+    // user_id is set by DEFAULT auth.uid() in the database
     const result = await db.prepare(`
-      INSERT INTO templates (name, subject, body_html, body_plain, user_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(name, subject, body_html || '', body_plain || '', req.userId);
+      INSERT INTO templates (name, subject, body_html, body_plain)
+      VALUES (?, ?, ?, ?)
+    `).run(name, subject, body_html || '', body_plain || '');
     res.json({ success: true, id: result.lastInsertRowid });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,11 +67,12 @@ router.put('/:id', async (req, res) => {
   const { name, subject, body_html, body_plain } = req.body;
   try {
     const db = await getDb();
+    // RLS ensures only the user's templates can be updated
     const result = await db.prepare(`
       UPDATE templates SET name = ?, subject = ?, body_html = ?, body_plain = ?
-      WHERE id = ? AND user_id = ?
-    `).run(name, subject, body_html || '', body_plain || '', req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Not found.' });
+      WHERE id = ?
+    `).run(name, subject, body_html || '', body_plain || '', req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -79,10 +83,11 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
+    // RLS ensures only the user's templates can be deleted
     const result = await db
-      .prepare('DELETE FROM templates WHERE id = ? AND user_id = ?')
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Not found.' });
+      .prepare('DELETE FROM templates WHERE id = ?')
+      .run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

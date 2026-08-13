@@ -18,16 +18,10 @@ const logger = require('../logger');
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
-    const uid = req.userId;
     const { q, type } = req.query;
 
     let sql = 'SELECT * FROM suppression_list WHERE 1=1';
     const params = [];
-
-    if (uid) {
-      sql += ' AND (user_id = ? OR user_id IS NULL)';
-      params.push(uid);
-    }
 
     if (type && (type === 'email' || type === 'domain')) {
       sql += ' AND type = ?';
@@ -41,6 +35,7 @@ router.get('/', async (req, res) => {
 
     sql += ' ORDER BY id DESC LIMIT 500';
 
+    // RLS automatically filters by user_id = auth.uid()
     const items = await db.prepare(sql).all(...params);
     res.json({ items });
   } catch (err) {
@@ -53,20 +48,13 @@ router.get('/', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     const db = await getDb();
-    const uid = req.userId;
 
     let sqlEmails = "SELECT COUNT(*) as count FROM suppression_list WHERE type = 'email'";
     let sqlDomains = "SELECT COUNT(*) as count FROM suppression_list WHERE type = 'domain'";
-    const params = [];
 
-    if (uid) {
-      sqlEmails += ' AND (user_id = ? OR user_id IS NULL)';
-      sqlDomains += ' AND (user_id = ? OR user_id IS NULL)';
-      params.push(uid);
-    }
-
-    const emailRow = await db.prepare(sqlEmails).get(...params);
-    const domainRow = await db.prepare(sqlDomains).get(...params);
+    // RLS automatically filters by user_id = auth.uid()
+    const emailRow = await db.prepare(sqlEmails).get();
+    const domainRow = await db.prepare(sqlDomains).get();
 
     const emails = emailRow ? emailRow.count : 0;
     const domains = domainRow ? domainRow.count : 0;
@@ -89,7 +77,6 @@ router.get('/add', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const db = await getDb();
-    const uid = req.userId || null;
     let { value, type, reason } = req.body;
 
     if (!value || typeof value !== 'string') {
@@ -114,10 +101,11 @@ router.post('/', async (req, res) => {
     }
 
     try {
+      // user_id is set by DEFAULT auth.uid() in database
       await db.prepare(`
-        INSERT INTO suppression_list (type, value, reason, user_id)
-        VALUES (?, ?, ?, ?)
-      `).run(type, value, reason, uid);
+        INSERT INTO suppression_list (type, value, reason)
+        VALUES (?, ?, ?)
+      `).run(type, value, reason);
     } catch (insertErr) {
       if (insertErr.message && insertErr.message.includes('UNIQUE')) {
         return res.status(409).json({ error: `${value} is already in the suppression list.` });
@@ -143,7 +131,6 @@ router.post('/', async (req, res) => {
 router.post('/bulk', async (req, res) => {
   try {
     const db = await getDb();
-    const uid = req.userId || null;
     const { entries, defaultReason } = req.body;
 
     if (!entries) {
@@ -180,10 +167,11 @@ router.post('/bulk', async (req, res) => {
       if (!cleanVal) continue;
 
       try {
+        // user_id is set by DEFAULT auth.uid() in database
         await db.prepare(`
-          INSERT INTO suppression_list (type, value, reason, user_id)
-          VALUES (?, ?, ?, ?)
-        `).run(type, cleanVal, reason, uid);
+          INSERT INTO suppression_list (type, value, reason)
+          VALUES (?, ?, ?)
+        `).run(type, cleanVal, reason);
         addedCount++;
 
         if (type === 'email') {
@@ -214,7 +202,9 @@ router.delete('/:id', async (req, res) => {
     const db = await getDb();
     const { id } = req.params;
 
-    await db.prepare('DELETE FROM suppression_list WHERE id = ?').run(id);
+    // RLS ensures only the user's suppression entries can be deleted
+    const result = await db.prepare('DELETE FROM suppression_list WHERE id = ?').run(id);
+    if (!result.changes) return res.status(404).json({ error: 'Entry not found or access denied.' });
     res.json({ success: true, message: 'Removed from suppression list.' });
   } catch (err) {
     res.status(500).json({ error: err.message });

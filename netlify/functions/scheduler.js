@@ -28,6 +28,7 @@
  *   - routes/queue.js — Worker status & manual trigger endpoints
  */
 
+const { schedule } = require('@netlify/functions');
 const logger = require('../../logger');
 
 // Lazy-load scheduler to avoid initializing node-cron when not needed
@@ -42,9 +43,9 @@ async function initScheduler() {
 
 /**
  * Netlify scheduled function handler.
- * Called automatically by Netlify's scheduler.
+ * Called automatically by Netlify's scheduler every 1 minute.
  */
-exports.handler = async (event, context) => {
+const scheduledHandler = async (event, context) => {
   try {
     // Initialize scheduler on first run
     await initScheduler();
@@ -81,6 +82,9 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+// Export Netlify Scheduled Function running every 1 minute
+exports.handler = schedule('@every 1m', scheduledHandler);
 
 /**
  * Manual invocation endpoint (for testing).

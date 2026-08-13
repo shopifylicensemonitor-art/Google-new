@@ -180,11 +180,19 @@ function createSqliteAdapter() {
   const path = require('path');
   const os = require('os');
 
+  let getStore;
+  try {
+    ({ getStore } = require('@netlify/blobs'));
+  } catch (_e) {
+    // Netlify Blobs package optionally loaded
+  }
+
   const isServerless = !!(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL);
   const DB_PATH = isServerless 
     ? path.join(os.tmpdir(), 'mailflow.db') 
     : path.join(__dirname, 'mailflow.db');
   let rawDb = null;
+  let netlifyStore = null;
 
   // Debounced async save to avoid blocking the event loop on every write.
   let saveTimer = null;
@@ -194,8 +202,19 @@ function createSqliteAdapter() {
     if (!rawDb) return;
     try {
       const data = rawDb.export();
-      saveInProgress = fs.promises.writeFile(DB_PATH, Buffer.from(data));
+      const buffer = Buffer.from(data);
+
+      saveInProgress = fs.promises.writeFile(DB_PATH, buffer);
       await saveInProgress;
+
+      if (netlifyStore) {
+        try {
+          await netlifyStore.set('mailflow.db', buffer);
+          console.log('SQLite database persisted to Netlify Blobs.');
+        } catch (blobErr) {
+          console.warn('Netlify Blobs save skipped/failed:', blobErr.message);
+        }
+      }
     } catch (err) {
       console.warn('SQLite disk save skipped (read-only filesystem or serverless context):', err.message);
     } finally {
@@ -242,13 +261,29 @@ function createSqliteAdapter() {
       }
     });
 
-    if (fs.existsSync(DB_PATH)) {
-      const fileBuffer = fs.readFileSync(DB_PATH);
-      rawDb = new SQL.Database(fileBuffer);
-      console.log('SQLite database loaded from disk.');
-    } else {
-      rawDb = new SQL.Database();
-      console.log('New SQLite database created.');
+    // Attempt to initialize Netlify Blobs if in Netlify environment
+    if (isServerless && getStore) {
+      try {
+        netlifyStore = getStore('mailflow-db');
+        const blobBuffer = await netlifyStore.get('mailflow.db', { type: 'arrayBuffer' });
+        if (blobBuffer && blobBuffer.byteLength > 0) {
+          rawDb = new SQL.Database(new Uint8Array(blobBuffer));
+          console.log('SQLite database loaded successfully from Netlify Blobs.');
+        }
+      } catch (blobErr) {
+        console.warn('Netlify Blobs load skipped or unavailable:', blobErr.message);
+      }
+    }
+
+    if (!rawDb) {
+      if (fs.existsSync(DB_PATH)) {
+        const fileBuffer = fs.readFileSync(DB_PATH);
+        rawDb = new SQL.Database(fileBuffer);
+        console.log('SQLite database loaded from disk.');
+      } else {
+        rawDb = new SQL.Database();
+        console.log('New SQLite database created.');
+      }
     }
 
     const wrapped = {

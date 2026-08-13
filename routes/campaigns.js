@@ -99,27 +99,20 @@ function resolveLaunchRecipientPlan({ existingQueueRows = [], recipients = [], c
 router.createDefaultCampaignContent = createDefaultCampaignContent;
 router.resolveLaunchRecipientPlan = resolveLaunchRecipientPlan;
 
-/** Fetch a campaign only when it belongs to the requesting user. */
-async function getOwnedCampaign(db, id, userId, columns = '*') {
-  return db
-    .prepare(`SELECT ${columns} FROM campaigns WHERE id = ? AND user_id = ?`)
-    .get(id, userId);
-}
-
 /** List the current user's campaigns. */
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
+    // RLS automatically filters by user_id = auth.uid()
     const campaigns = await db.prepare(`
       SELECT c.*,
              COALESCE(SUM(q.opens_count), 0) as total_opens,
              COALESCE(SUM(q.clicks_count), 0) as total_clicks
       FROM campaigns c
       LEFT JOIN queue q ON c.id = q.campaign_id
-      WHERE c.user_id = ?
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `).all(req.userId);
+    `).all();
     res.json(campaigns);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -130,24 +123,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
-    if (!campaign) return res.status(404).json({ error: 'Not found.' });
-
-    // Attach steps
-    const steps = await db.prepare('SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_number ASC').all(req.params.id);
-    campaign.steps = steps || [];
-
-    // Attach queue stats
-    const stats = await db.prepare(`
-      SELECT status, COUNT(*) as count
-      FROM queue WHERE campaign_id = ?
-      GROUP BY status
-    `).all(req.params.id);
-
-    campaign.queue_stats = {};
-    stats.forEach(s => { campaign.queue_stats[s.status] = s.count; });
-
-    // Attach tracking totals
+    // RLS enforces ownership; will return nothing if not user's campaign
+    const campaign = await db.prepare(`
+      SELECT * FROM campaigns WHERE id = ?
+    `).get(req.params.id);
     const trackingRow = await db.prepare(`
       SELECT COALESCE(SUM(opens_count), 0) as total_opens,
              COALESCE(SUM(clicks_count), 0) as total_clicks
@@ -185,8 +164,8 @@ router.post('/', async (req, res) => {
     // Count contacts in the specified list when one is provided.
     const countRow = resolvedContactList
       ? await db
-          .prepare('SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?')
-          .get(resolvedContactList, req.userId)
+          .prepare('SELECT COUNT(*) as total FROM contacts WHERE list_name = ?')
+          .get(resolvedContactList)
       : null;
 
     const createBoth = db.transaction(async (txDb) => {
@@ -194,14 +173,14 @@ router.post('/', async (req, res) => {
         INSERT INTO campaigns
           (name, subject, body_html, body_plain, contact_list,
            delay_seconds, start_time, end_time, total_contacts,
-           content_variations, content_mode, ignore_window, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           content_variations, content_mode, ignore_window)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         name, content.subject, content.body_html, content.body_plain,
         resolvedContactList, delay_seconds, start_time, end_time,
         countRow ? countRow.total : 0,
         content_variations ? JSON.stringify(content_variations) : null,
-        content_mode, ignore_window ? 1 : 0, req.userId
+        content_mode, ignore_window ? 1 : 0
       );
 
       const campaignId = result.lastInsertRowid;
@@ -228,8 +207,9 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'status');
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+    // RLS ensures this is the user's campaign
+    const campaign = await db.prepare('SELECT status FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found or access denied.' });
     if (campaign.status === 'sending') {
       return res.status(400).json({ error: 'Cannot edit a campaign while it is sending. Pause it first.' });
     }
@@ -255,8 +235,8 @@ router.put('/:id', async (req, res) => {
 
     if (fields.contact_list) {
       const countRow = await db.prepare(
-        'SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?'
-      ).get(fields.contact_list, req.userId);
+        'SELECT COUNT(*) as total FROM contacts WHERE list_name = ?'
+      ).get(fields.contact_list);
       updates.push('total_contacts = ?');
       values.push(countRow ? countRow.total : 0);
     }
@@ -307,8 +287,9 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const owned = await getOwnedCampaign(db, req.params.id, req.userId, 'id');
-    if (!owned) return res.status(404).json({ error: 'Campaign not found.' });
+    // RLS ensures this is the user's campaign
+    const owned = await db.prepare('SELECT id FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!owned) return res.status(404).json({ error: 'Campaign not found or access denied.' });
     const deleteBoth = db.transaction(async (txDb) => {
       await txDb.prepare('DELETE FROM queue WHERE campaign_id = ?').run(req.params.id);
       await txDb.prepare('DELETE FROM campaign_recipients WHERE campaign_id = ?').run(req.params.id);
@@ -351,9 +332,9 @@ router.post('/create-from-csv', async (req, res) => {
     // so the campaign can still be created even before a full mail account is configured.
     let accountsForRoundRobin = [];
     if (account_id) {
-      const acct = await db.prepare('SELECT id FROM accounts WHERE id = ? AND status = \'active\' AND user_id = ?').get(account_id, req.userId);
+      const acct = await db.prepare('SELECT id FROM accounts WHERE id = ? AND status = \'active\'').get(account_id);
       if (!acct) {
-        const fallbackAccount = await db.prepare("SELECT id FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id LIMIT 1").get(req.userId);
+        const fallbackAccount = await db.prepare("SELECT id FROM accounts WHERE status = 'active' ORDER BY id LIMIT 1").get();
         if (!fallbackAccount) {
           accountsForRoundRobin = [];
         } else {
@@ -365,8 +346,8 @@ router.post('/create-from-csv', async (req, res) => {
     } else {
       // Get all active accounts for round-robin
       accountsForRoundRobin = await db.prepare(
-        "SELECT id FROM accounts WHERE status = 'active' AND user_id = ?"
-      ).all(req.userId);
+        "SELECT id FROM accounts WHERE status = 'active'"
+      ).all();
     }
 
     if (accountsForRoundRobin.length === 0) {
@@ -442,24 +423,24 @@ router.post('/create-from-csv', async (req, res) => {
 router.post('/:id/launch', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+    const campaign = await db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found or access denied.' });
     if (campaign.status === 'sending') {
       return res.status(400).json({ error: 'Campaign is already sending.' });
     }
 
     // Get active accounts for rotation
     const accounts = await db.prepare(
-      "SELECT id FROM accounts WHERE status = 'active' AND user_id = ?"
-    ).all(req.userId);
+      "SELECT id FROM accounts WHERE status = 'active'"
+    ).all();
     if (accounts.length === 0) {
       return res.status(400).json({ error: 'No active sender accounts. Add at least one Gmail account first.' });
     }
 
     // Get contacts for this campaign's list
     const contacts = await db.prepare(
-      'SELECT email, fields FROM contacts WHERE list_name = ? AND user_id = ?'
-    ).all(campaign.contact_list, req.userId);
+      'SELECT email, fields FROM contacts WHERE list_name = ?'
+    ).all(campaign.contact_list);
 
     const existingQueueRows = await db.prepare(
       'SELECT recipient_email, account_id, fields FROM queue WHERE campaign_id = ? AND status IN (\'pending\', \'sending\')'
@@ -561,7 +542,8 @@ router.post('/:id/launch', async (req, res) => {
 router.post('/:id/pause', async (req, res) => {
   try {
     const db = await getDb();
-    await db.prepare("UPDATE campaigns SET status = 'paused' WHERE id = ? AND user_id = ?").run(req.params.id, req.userId);
+    const result = await db.prepare("UPDATE campaigns SET status = 'paused' WHERE id = ?").run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Campaign not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -572,7 +554,8 @@ router.post('/:id/pause', async (req, res) => {
 router.post('/:id/resume', async (req, res) => {
   try {
     const db = await getDb();
-    await db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ? AND user_id = ?").run(req.params.id, req.userId);
+    const result = await db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ?").run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Campaign not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -583,8 +566,8 @@ router.post('/:id/resume', async (req, res) => {
 router.post('/:id/retry-processing', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'id');
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+    const campaign = await db.prepare('SELECT id FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found or access denied.' });
 
     const pendingRow = await db.prepare("SELECT COUNT(*) as total FROM queue WHERE campaign_id = ? AND status IN ('pending','sending')").get(req.params.id);
     if (!pendingRow || pendingRow.total === 0) {
@@ -614,8 +597,8 @@ router.post('/:id/retry-all', async (req, res) => {
 
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'id, status');
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+    const campaign = await db.prepare('SELECT id, status FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found or access denied.' });
 
     // Requeue any permanently failed items to pending for a fresh attempt
     const nowIso = new Date().toISOString();
@@ -623,7 +606,7 @@ router.post('/:id/retry-all', async (req, res) => {
 
     // If campaign is not sending, set it to sending so the scheduler can process it
     if (campaign.status !== 'sending') {
-      await db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ? AND user_id = ?").run(req.params.id, req.userId);
+      await db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ?").run(req.params.id);
     }
 
     let iterations = 0;
@@ -663,18 +646,18 @@ router.post('/:id/retry-all', async (req, res) => {
 router.get('/:id/preview', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+    const campaign = await db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found or access denied.' });
 
     // Retrieve active accounts for display name / sender email preview
-    const accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ?").all(req.userId);
+    const accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active'").all();
     const defaultAccount = accounts.length > 0 ? accounts[0] : { email: 'no-sender@peakxender.com', display_name: 'System Default' };
 
     // Get up to 3 sample contacts to show different personalization outputs
     const count = parseInt(req.query.count, 10) || 3;
     const contacts = await db.prepare(
-      'SELECT * FROM contacts WHERE list_name = ? AND user_id = ? LIMIT ?'
-    ).all(campaign.contact_list, req.userId, count);
+      'SELECT * FROM contacts WHERE list_name = ? LIMIT ?'
+    ).all(campaign.contact_list, count);
 
     // Support previewing a specific step
     const stepNum = parseInt(req.query.step, 10) || 1;

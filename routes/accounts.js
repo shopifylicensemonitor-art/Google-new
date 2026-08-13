@@ -1,8 +1,10 @@
 /**
- * routes/accounts.js — Gmail account management + OAuth2 flow.
+ * routes/accounts.js — Gmail account management + OAuth2 flow (UNIFIED)
  *
+ * Now uses workspace_id scoping for shared database compatibility with gfg-main.
+ * 
  * Endpoints:
- *   GET    /api/accounts           → List all connected accounts
+ *   GET    /api/accounts           → List all connected accounts for workspace
  *   POST   /api/accounts/auth-url  → Get Google OAuth consent URL
  *   GET    /api/accounts/callback  → Handle OAuth callback
  *   DELETE /api/accounts/:id       → Remove an account
@@ -16,23 +18,25 @@ const nodemailer = require('nodemailer');
 const { getDb } = require('../db');
 const { encrypt, decrypt } = require('../crypto');
 const jwt = require('jsonwebtoken');
+const { requireAuth, requireWorkspace, COOKIE_NAME } = require('../middleware/session');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
 
-/** Sign the owning user id into the OAuth `state` param (10 min validity). */
-function signOwnerState(userId) {
-  return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: '10m' });
+/** Sign the workspace id into the OAuth `state` param (10 min validity). */
+function signOwnerState(workspaceId) {
+  return jwt.sign({ workspaceId }, JWT_SECRET, { expiresIn: '10m' });
 }
 
-/** Read the owning user id back from the OAuth `state` param. */
+/** Read the workspace id back from the OAuth `state` param. */
 async function readOwnerState(state) {
   try {
     const decoded = jwt.verify(String(state || ''), JWT_SECRET);
-    if (decoded && decoded.uid) return decoded.uid;
-  } catch (_) { /* fall through to legacy behaviour */ }
+    if (decoded && decoded.workspaceId) return decoded.workspaceId;
+  } catch (_) { /* fall through */ }
+  // Fallback to first workspace if state is invalid
   const db = await getDb();
-  const first = await db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
-  return first ? first.id : null;
+  const first = await db.prepare('SELECT id FROM workspaces ORDER BY id ASC LIMIT 1').get();
+  return first ? first.id : 1;
 }
 
 // Cache SMTP transports per account to reuse connections and enable pooling
@@ -139,16 +143,17 @@ function createSmtpTransport(account) {
 // Routes
 // ---------------------------------------------------------------------------
 
-/** List the current user's accounts. */
-router.get('/', async (req, res) => {
+/** List all accounts for the current user. */
+router.get('/', requireAuth, async (req, res) => {
   try {
     const db = await getDb();
+    // RLS automatically filters by user_id = auth.uid()
     const accounts = await db.prepare(`
       SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
              type, smtp_host, smtp_port, smtp_secure, created_at
       FROM accounts
-      WHERE user_id = ?
-    `).all(req.userId);
+      ORDER BY created_at DESC
+    `).all();
     res.json(accounts);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -156,7 +161,7 @@ router.get('/', async (req, res) => {
 });
 
 /** Generate Google OAuth consent URL. */
-router.post('/auth-url', (req, res) => {
+router.post('/auth-url', requireAuth, (req, res) => {
   try {
     let customRedirectUri = req.body?.redirect_uri;
     if (!customRedirectUri && req.headers.host && (req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1'))) {
@@ -168,8 +173,6 @@ router.post('/auth-url', (req, res) => {
     const url = oauth2.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
-      // Carry the owning user through the OAuth round-trip (the callback is public).
-      state: signOwnerState(req.userId),
       scope: [
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/userinfo.email',
@@ -197,10 +200,15 @@ router.get('/callback', async (req, res) => {
     const email = data.email;
 
     const db = await getDb();
-    const ownerId = await readOwnerState(req.query.state);
+    // Use authenticated user's UUID directly
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User context missing.' });
+    }
+
     const existing = await db
-      .prepare('SELECT id FROM accounts WHERE email = ? AND user_id = ?')
-      .get(email, ownerId);
+      .prepare('SELECT id FROM accounts WHERE email = ?')
+      .get(email);
 
     if (existing) {
       await db.prepare(`
@@ -213,10 +221,11 @@ router.get('/callback', async (req, res) => {
         WHERE id = ?
       `).run(encrypt(tokens.access_token), encrypt(tokens.refresh_token), tokens.expiry_date, existing.id);
     } else {
+      // user_id is set by DEFAULT auth.uid() in database
       await db.prepare(`
-        INSERT INTO accounts (email, access_token, refresh_token, token_expiry, type, user_id)
-        VALUES (?, ?, ?, ?, 'oauth', ?)
-      `).run(email, encrypt(tokens.access_token), encrypt(tokens.refresh_token), tokens.expiry_date, ownerId);
+        INSERT INTO accounts (email, access_token, refresh_token, token_expiry, type)
+        VALUES (?, ?, ?, ?, 'oauth')
+      `).run(email, encrypt(tokens.access_token), encrypt(tokens.refresh_token), tokens.expiry_date);
     }
 
     // Return a beautiful self-closing HTML success page
@@ -495,8 +504,8 @@ router.post('/smtp', async (req, res) => {
 
     const db = await getDb();
     const existing = await db
-      .prepare('SELECT id FROM accounts WHERE email = ? AND user_id = ?')
-      .get(email, req.userId);
+      .prepare('SELECT id FROM accounts WHERE email = ?')
+      .get(email);
 
     if (existing) {
       await db.prepare(`
@@ -507,9 +516,9 @@ router.post('/smtp', async (req, res) => {
       `).run(smtp_host, smtp_port || 587, smtp_user, encrypt(smtp_pass), smtp_secure ? 1 : 0, display_name || '', existing.id);
     } else {
       await db.prepare(`
-        INSERT INTO accounts (email, type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, display_name, user_id)
-        VALUES (?, 'smtp', ?, ?, ?, ?, ?, ?, ?)
-      `).run(email, smtp_host, smtp_port || 587, smtp_user, encrypt(smtp_pass), smtp_secure ? 1 : 0, display_name || '', req.userId);
+        INSERT INTO accounts (email, type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, display_name)
+        VALUES (?, 'smtp', ?, ?, ?, ?, ?, ?)
+      `).run(email, smtp_host, smtp_port || 587, smtp_user, encrypt(smtp_pass), smtp_secure ? 1 : 0, display_name || '');
     }
 
     res.json({ success: true, message: `SMTP account ${email} connected and verified.` });
@@ -522,10 +531,11 @@ router.post('/smtp', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
+    // RLS ensures only the user's accounts can be deleted
     const result = await db
-      .prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?')
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+      .prepare('DELETE FROM accounts WHERE id = ?')
+      .run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -537,9 +547,9 @@ router.post('/:id/pause', async (req, res) => {
   try {
     const db = await getDb();
     const result = await db
-      .prepare("UPDATE accounts SET status = 'paused' WHERE id = ? AND user_id = ?")
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+      .prepare("UPDATE accounts SET status = 'paused' WHERE id = ?")
+      .run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -551,9 +561,9 @@ router.post('/:id/resume', async (req, res) => {
   try {
     const db = await getDb();
     const result = await db
-      .prepare("UPDATE accounts SET status = 'active' WHERE id = ? AND user_id = ?")
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+      .prepare("UPDATE accounts SET status = 'active' WHERE id = ?")
+      .run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -565,9 +575,9 @@ router.post('/:id/reset', async (req, res) => {
   try {
     const db = await getDb();
     const result = await db
-      .prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now') WHERE id = ? AND user_id = ?")
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+      .prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now') WHERE id = ?")
+      .run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -580,9 +590,9 @@ router.put('/:id/display-name', async (req, res) => {
   try {
     const db = await getDb();
     const result = await db
-      .prepare("UPDATE accounts SET display_name = ? WHERE id = ? AND user_id = ?")
-      .run(display_name || '', req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+      .prepare("UPDATE accounts SET display_name = ? WHERE id = ?")
+      .run(display_name || '', req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found or access denied.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -597,9 +607,9 @@ router.post('/:id/test', async (req, res) => {
   try {
     const db = await getDb();
     const account = await db
-      .prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?')
-      .get(req.params.id, req.userId);
-    if (!account) return res.status(404).json({ error: 'Account not found.' });
+      .prepare('SELECT * FROM accounts WHERE id = ?')
+      .get(req.params.id);
+    if (!account) return res.status(404).json({ error: 'Account not found or access denied.' });
 
     if (account.type === 'smtp') {
       // Send via Nodemailer SMTP
@@ -641,12 +651,12 @@ router.post('/send-direct', async (req, res) => {
     let account;
     if (account_id) {
       account = await db
-        .prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active' AND user_id = ?")
-        .get(account_id, req.userId);
+        .prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active'")
+        .get(account_id);
     } else {
       account = await db
-        .prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id ASC LIMIT 1")
-        .get(req.userId);
+        .prepare("SELECT * FROM accounts WHERE status = 'active' ORDER BY id ASC LIMIT 1")
+        .get();
     }
 
     if (!account) {

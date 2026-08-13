@@ -1,19 +1,25 @@
 /**
  * middleware/session.js — JWT session verification middleware.
  *
- * Checks for Bearer token in Authorization header.
- * Falls back to PIN auth if no JWT is configured (backward compatible).
+ * Supports:
+ * - Supabase JWTs (via SUPABASE_JWT_SECRET)
+ * - App-issued JWTs (via JWT_SECRET)
+ * - PIN-based fallback for local development
  */
 
 const jwt = require('jsonwebtoken');
 const logger = require('../logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || JWT_SECRET;
 
 /**
- * Middleware that accepts EITHER a valid JWT Bearer token
- * OR the legacy PIN-based auth. This ensures backward compatibility
- * while enabling the new auth flow.
+ * Middleware that accepts:
+ * 1. Supabase JWT (Bearer token with SUPABASE_JWT_SECRET)
+ * 2. App-issued JWT (Bearer token with JWT_SECRET)
+ * 3. PIN fallback (development only)
+ *
+ * Extracts user info and sets req.user for downstream middlewares
  */
 function requireAuth(req, res, next) {
   // Allow public access to OAuth callback and auth-url generation
@@ -21,16 +27,48 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  // Try JWT Bearer token
+  let token = null;
+
+  // 1. Check Authorization: Bearer header
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+
+  // Try JWT Bearer token
+  if (token) {
     try {
-      const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
+      // Try Supabase JWT first
+      let decoded;
+      try {
+        decoded = jwt.verify(token, SUPABASE_JWT_SECRET, {
+          algorithms: ['HS256', 'RS256'],
+          ignoreExpiration: false
+        });
+      } catch (supabaseErr) {
+        // Fallback to app JWT_SECRET
+        decoded = jwt.verify(token, JWT_SECRET, {
+          algorithms: ['HS256'],
+          ignoreExpiration: false
+        });
+      }
+
+      // Extract user info from JWT
+      // Supabase format: { sub: uuid, aud: 'authenticated', email, ... }
+      // App format: { userId: ..., email, ... }
+      req.user = {
+        id: decoded.sub || decoded.userId,  // Supabase uses 'sub' claim
+        email: decoded.email,
+        role: decoded.role || decoded.user_role,
+        name: decoded.name,
+      };
+
       return next();
-    } catch (_) {
+    } catch (err) {
       // Token is invalid or expired; fall through to check PIN fallback below
+      if (process.env.DEBUG_AUTH === 'true') {
+        logger.debug({ err: err.message }, 'JWT verification failed');
+      }
     }
   }
 
@@ -48,7 +86,13 @@ function requireAuth(req, res, next) {
 
     if (providedPin && String(providedPin) === String(configuredPin)) {
       // Mark a minimal user context so downstream handlers can rely on `req.user`.
-      req.user = { id: 'pin', email: 'local-pin', role: 'admin' };
+      // Note: This uses a fake UUID for local development
+      req.user = {
+        id: '00000000-0000-0000-0000-000000000000',  // Development UUID
+        email: 'local-pin',
+        role: 'admin',
+        name: 'Local Dev'
+      };
       return next();
     }
   } else {
@@ -59,7 +103,10 @@ function requireAuth(req, res, next) {
     }
   }
 
-  return res.status(401).json({ error: 'Unauthorized. Provide a valid JWT token.' });
+  return res.status(401).json({
+    error: 'Unauthorized',
+    message: 'Authentication token required. Provide Authorization: Bearer <token> header.'
+  });
 }
 
 module.exports = { requireAuth };
