@@ -37,9 +37,10 @@ router.get('/lists', async (req, res) => {
     const lists = await db.prepare(`
       SELECT list_name, COUNT(*) as count
       FROM contacts
+      WHERE user_id = ?
       GROUP BY list_name
       ORDER BY list_name
-    `).all();
+    `).all(req.userId);
     res.json(lists);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -105,30 +106,30 @@ router.get('/history/:email', async (req, res) => {
     const db = await getDb();
     const email = req.params.email;
 
-    // Sent queue emails (RLS filters to current user's campaigns)
+    // Sent queue emails
     const queueSends = await db.prepare(`
       SELECT q.*, c.name as campaign_name
       FROM queue q
       LEFT JOIN campaigns c ON q.campaign_id = c.id
-      WHERE q.recipient_email = ?
+      WHERE q.recipient_email = ? AND c.user_id = ?
       ORDER BY q.id DESC
-    `).all(email);
+    `).all(email, req.userId);
 
-    // Logs (RLS filters to current user's accounts)
+    // Logs
     const logItems = await db.prepare(`
       SELECT l.* FROM logs l
       JOIN accounts a ON l.account_id = a.id
-      WHERE l.recipient_email = ?
+      WHERE l.recipient_email = ? AND a.user_id = ?
       ORDER BY l.id DESC LIMIT 20
-    `).all(email);
+    `).all(email, req.userId);
 
-    // Received inbox replies (RLS filters to current user's accounts)
+    // Received inbox replies
     const replies = await db.prepare(`
       SELECT m.* FROM inbox_messages m
       JOIN accounts a ON m.account_id = a.id
-      WHERE (m.sender_email = ? OR m.recipient_email = ?)
+      WHERE (m.sender_email = ? OR m.recipient_email = ?) AND a.user_id = ?
       ORDER BY m.id DESC
-    `).all(email, email);
+    `).all(email, email, req.userId);
 
     res.json({
       sends: queueSends || [],
@@ -147,8 +148,8 @@ router.get('/:listName', async (req, res) => {
     const limit = parseInt(req.query.limit, 10);
     const offset = parseInt(req.query.offset, 10);
     
-    let query = 'SELECT * FROM contacts WHERE list_name = ? ORDER BY id';
-    const params = [req.params.listName];
+    let query = 'SELECT * FROM contacts WHERE list_name = ? AND user_id = ? ORDER BY id';
+    const params = [req.params.listName, req.userId];
     
     if (!isNaN(limit) && limit > 0) {
       query += ' LIMIT ?';
@@ -251,8 +252,8 @@ router.post('/import-bulk', async (req, res) => {
 
     // Fetch existing emails to prevent duplicates efficiently
     const existing = await db
-      .prepare('SELECT email FROM contacts WHERE list_name = ?')
-      .all(listName);
+      .prepare('SELECT email FROM contacts WHERE list_name = ? AND user_id = ?')
+      .all(listName, req.userId);
     const existingEmails = new Set(existing.map(row => row.email.toLowerCase()));
 
     const contactsToInsert = [];
@@ -285,11 +286,11 @@ router.post('/import-bulk', async (req, res) => {
         const chunkSize = 200;
         for (let i = 0; i < contactsToInsert.length; i += chunkSize) {
           const chunk = contactsToInsert.slice(i, i + chunkSize);
-          const placeholders = chunk.map(() => '(?, ?, ?)').join(', ');
-          const sql = `INSERT INTO contacts (list_name, email, fields) VALUES ${placeholders}`;
+          const placeholders = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+          const sql = `INSERT INTO contacts (list_name, email, fields, user_id) VALUES ${placeholders}`;
           const params = [];
           chunk.forEach(item => {
-            params.push(listName, item.email, item.fieldsJson);
+            params.push(listName, item.email, item.fieldsJson, req.userId);
           });
           await txDb.prepare(sql).run(params);
           added += chunk.length;
@@ -564,8 +565,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     // Fetch existing emails to prevent duplicates efficiently
     const existing = await db
-      .prepare('SELECT email FROM contacts WHERE list_name = ?')
-      .all(listName);
+      .prepare('SELECT email FROM contacts WHERE list_name = ? AND user_id = ?')
+      .all(listName, req.userId);
     const existingEmails = new Set(existing.map(row => row.email.toLowerCase()));
 
     const contactsToInsert = [];
@@ -618,11 +619,11 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         const chunkSize = 200;
         for (let i = 0; i < contactsToInsert.length; i += chunkSize) {
           const chunk = contactsToInsert.slice(i, i + chunkSize);
-          const placeholders = chunk.map(() => '(?, ?, ?)').join(', ');
-          const sql = `INSERT INTO contacts (list_name, email, fields) VALUES ${placeholders}`;
+          const placeholders = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+          const sql = `INSERT INTO contacts (list_name, email, fields, user_id) VALUES ${placeholders}`;
           const params = [];
           chunk.forEach(c => {
-            params.push(listName, c.email, c.fieldsJson);
+            params.push(listName, c.email, c.fieldsJson, req.userId);
           });
           await txDb.prepare(sql).run(params);
           added += chunk.length;
@@ -655,16 +656,16 @@ router.post('/', async (req, res) => {
   try {
     const db = await getDb();
     const existing = await db.prepare(
-      'SELECT id FROM contacts WHERE list_name = ? AND email = ?'
-    ).get(list_name, email);
+      'SELECT id FROM contacts WHERE list_name = ? AND email = ? AND user_id = ?'
+    ).get(list_name, email, req.userId);
 
     if (existing) {
       return res.status(409).json({ error: 'Contact already exists in this list.' });
     }
 
     const result = await db.prepare(
-      'INSERT INTO contacts (list_name, email) VALUES (?, ?)'
-    ).run(list_name, email);
+      'INSERT INTO contacts (list_name, email, user_id) VALUES (?, ?, ?)'
+    ).run(list_name, email, req.userId);
 
     // Trigger background sync
     syncContactListsToActiveCampaigns(db).catch(() => {});
@@ -680,8 +681,8 @@ router.delete('/:listName', async (req, res) => {
   try {
     const db = await getDb();
     const result = await db
-      .prepare('DELETE FROM contacts WHERE list_name = ?')
-      .run(req.params.listName);
+      .prepare('DELETE FROM contacts WHERE list_name = ? AND user_id = ?')
+      .run(req.params.listName, req.userId);
     res.json({ success: true, deleted: result.changes });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -692,11 +693,8 @@ router.delete('/:listName', async (req, res) => {
 router.delete('/:listName/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const result = await db.prepare('DELETE FROM contacts WHERE id = ? AND list_name = ?')
-      .run(req.params.id, req.params.listName);
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Contact not found or access denied.' });
-    }
+    await db.prepare('DELETE FROM contacts WHERE id = ? AND list_name = ? AND user_id = ?')
+      .run(req.params.id, req.params.listName, req.userId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

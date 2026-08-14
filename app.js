@@ -129,12 +129,13 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req, res) => {
   try {
     const db = await getDb();
+    const uid = req.userId;
 
-    const accountsRow = await db.prepare("SELECT SUM(daily_sent) as today_sent, COUNT(*) as total FROM accounts WHERE status = 'active'").get() || { today_sent: 0, total: 0 };
-    const queueRow = await db.prepare("SELECT COUNT(*) as pending FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending'").get() || { pending: 0 };
-    const campaignsRow = await db.prepare("SELECT COUNT(*) as active FROM campaigns WHERE status = 'sending'").get() || { active: 0 };
-    const failedRow = await db.prepare("SELECT SUM(failed_count) as failed FROM campaigns").get() || { failed: 0 };
-    const trackingRow = await db.prepare("SELECT COALESCE(SUM(q.opens_count), 0) as opens, COALESCE(SUM(q.clicks_count), 0) as clicks FROM queue q JOIN campaigns c ON q.campaign_id = c.id").get() || { opens: 0, clicks: 0 };
+    const accountsRow = await db.prepare("SELECT SUM(daily_sent) as today_sent, COUNT(*) as total FROM accounts WHERE status = 'active' AND user_id = ?").get(uid) || { today_sent: 0, total: 0 };
+    const queueRow = await db.prepare("SELECT COUNT(*) as pending FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.user_id = ?").get(uid) || { pending: 0 };
+    const campaignsRow = await db.prepare("SELECT COUNT(*) as active FROM campaigns WHERE status = 'sending' AND user_id = ?").get(uid) || { active: 0 };
+    const failedRow = await db.prepare("SELECT SUM(failed_count) as failed FROM campaigns WHERE user_id = ?").get(uid) || { failed: 0 };
+    const trackingRow = await db.prepare("SELECT COALESCE(SUM(q.opens_count), 0) as opens, COALESCE(SUM(q.clicks_count), 0) as clicks FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE c.user_id = ?").get(uid) || { opens: 0, clicks: 0 };
 
     const stats = {
       today_sent: accountsRow.today_sent || 0,
@@ -152,19 +153,21 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
              COALESCE(SUM(q.clicks_count), 0) as total_clicks
       FROM campaigns c
       LEFT JOIN queue q ON c.id = q.campaign_id
+      WHERE c.user_id = ?
       GROUP BY c.id
       ORDER BY c.id DESC
       LIMIT 5
-    `).all();
+    `).all(uid);
 
     const queue = await db.prepare(`
       SELECT q.*, c.name as campaign_name, a.email as account_email
       FROM queue q
       JOIN campaigns c ON q.campaign_id = c.id
       LEFT JOIN accounts a ON q.account_id = a.id
+      WHERE c.user_id = ?
       ORDER BY q.id DESC
       LIMIT 10
-    `).all();
+    `).all(uid);
 
     res.json({ stats, campaigns, queue });
   } catch (err) {

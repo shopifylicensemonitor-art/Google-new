@@ -2,12 +2,14 @@
   publish = "gfg-main/dist"
   command = "cd gfg-main && npm install && npm run build"
 
-[functions]
-  directory = "netlify/functions"
-
 [build.environment]
   SECRETS_SCAN_ENABLED = "false"
   SECRETS_SCAN_OMIT_KEYS = "PORT,ACCESS_PIN,TRACKING_BASE_URL,FRONTEND_ORIGIN,GOOGLE_REDIRECT_URI,GOOGLE_LOGIN_REDIRECT_URI"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["node_modules/sql.js/dist/sql-wasm.wasm", "gfg-main/node_modules/sql.js/dist/sql-wasm.wasm"]
 
 [[redirects]]
   from = "/api/*"

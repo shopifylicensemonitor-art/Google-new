@@ -16,21 +16,6 @@ require('dotenv').config();
 
 let ready = null; // Promise that resolves to the wrapped db
 
-async function withTimeout(promiseFactory, ms, label) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-  });
-
-  try {
-    return await Promise.race([promiseFactory(), timeoutPromise]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 // ============================================================================
 // PostgreSQL Adapter
 // ============================================================================
@@ -195,19 +180,11 @@ function createSqliteAdapter() {
   const path = require('path');
   const os = require('os');
 
-  let getStore;
-  try {
-    ({ getStore } = require('@netlify/blobs'));
-  } catch (_e) {
-    // Netlify Blobs package optionally loaded
-  }
-
   const isServerless = !!(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL);
   const DB_PATH = isServerless 
     ? path.join(os.tmpdir(), 'mailflow.db') 
     : path.join(__dirname, 'mailflow.db');
   let rawDb = null;
-  let netlifyStore = null;
 
   // Debounced async save to avoid blocking the event loop on every write.
   let saveTimer = null;
@@ -217,19 +194,8 @@ function createSqliteAdapter() {
     if (!rawDb) return;
     try {
       const data = rawDb.export();
-      const buffer = Buffer.from(data);
-
-      saveInProgress = fs.promises.writeFile(DB_PATH, buffer);
+      saveInProgress = fs.promises.writeFile(DB_PATH, Buffer.from(data));
       await saveInProgress;
-
-      if (netlifyStore) {
-        try {
-          await netlifyStore.set('mailflow.db', buffer);
-          console.log('SQLite database persisted to Netlify Blobs.');
-        } catch (blobErr) {
-          console.warn('Netlify Blobs save skipped/failed:', blobErr.message);
-        }
-      }
     } catch (err) {
       console.warn('SQLite disk save skipped (read-only filesystem or serverless context):', err.message);
     } finally {
@@ -276,29 +242,13 @@ function createSqliteAdapter() {
       }
     });
 
-    // Attempt to initialize Netlify Blobs if in Netlify environment
-    if (isServerless && getStore) {
-      try {
-        netlifyStore = getStore('mailflow-db');
-        const blobBuffer = await netlifyStore.get('mailflow.db', { type: 'arrayBuffer' });
-        if (blobBuffer && blobBuffer.byteLength > 0) {
-          rawDb = new SQL.Database(new Uint8Array(blobBuffer));
-          console.log('SQLite database loaded successfully from Netlify Blobs.');
-        }
-      } catch (blobErr) {
-        console.warn('Netlify Blobs load skipped or unavailable:', blobErr.message);
-      }
-    }
-
-    if (!rawDb) {
-      if (fs.existsSync(DB_PATH)) {
-        const fileBuffer = fs.readFileSync(DB_PATH);
-        rawDb = new SQL.Database(fileBuffer);
-        console.log('SQLite database loaded from disk.');
-      } else {
-        rawDb = new SQL.Database();
-        console.log('New SQLite database created.');
-      }
+    if (fs.existsSync(DB_PATH)) {
+      const fileBuffer = fs.readFileSync(DB_PATH);
+      rawDb = new SQL.Database(fileBuffer);
+      console.log('SQLite database loaded from disk.');
+    } else {
+      rawDb = new SQL.Database();
+      console.log('New SQLite database created.');
     }
 
     const wrapped = {
@@ -504,7 +454,6 @@ const SQLITE_DDL = `
     name TEXT DEFAULT '',
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
-    password_hash TEXT,
     last_login TEXT DEFAULT (datetime('now')),
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -680,7 +629,6 @@ const PG_DDL = `
     name TEXT DEFAULT '',
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
-    password_hash TEXT,
     last_login TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
@@ -807,49 +755,49 @@ ready = (async () => {
     console.log('Connecting to PostgreSQL (Supabase)...');
     const adapter = createPgAdapter();
     try {
-      await withTimeout(() => adapter.exec(PG_DDL), 10000, 'PostgreSQL schema init');
+      await adapter.exec(PG_DDL);
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS daily_limit INTEGER DEFAULT 450;"), 10000, 'PostgreSQL migration: accounts.daily_limit');
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS daily_limit INTEGER DEFAULT 450;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_host TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_host');
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_port INTEGER;"), 10000, 'PostgreSQL migration: accounts.imap_port');
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_user TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_user');
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_pass TEXT;"), 10000, 'PostgreSQL migration: accounts.imap_pass');
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_secure INTEGER DEFAULT 1;"), 10000, 'PostgreSQL migration: accounts.imap_secure');
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_host TEXT;");
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_port INTEGER;");
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_user TEXT;");
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_pass TEXT;");
+        await adapter.exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS imap_secure INTEGER DEFAULT 1;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;"), 10000, 'PostgreSQL migration: queue.retry_count');
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS step_number INTEGER DEFAULT 1;"), 10000, 'PostgreSQL migration: queue.step_number');
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS step_number INTEGER DEFAULT 1;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS campaign_step_id INTEGER;"), 10000, 'PostgreSQL migration: queue.campaign_step_id');
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS campaign_step_id INTEGER;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ignore_window INTEGER DEFAULT 0;"), 10000, 'PostgreSQL migration: campaigns.ignore_window');
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ignore_window INTEGER DEFAULT 0;");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;"), 10000, 'PostgreSQL migration: logs.queue_id');
+        await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");
       } catch (_) {}
       // Multi-tenancy: owner column on all user-scoped tables.
       for (const t of TENANT_TABLES) {
         try {
-          await withTimeout(() => adapter.exec(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS user_id INTEGER;`), 10000, `PostgreSQL migration: ${t}.user_id`);
+          await adapter.exec(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS user_id INTEGER;`);
         } catch (_) {}
       }
       try {
-        await withTimeout(() => adapter.exec("ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_email_key;"), 10000, 'PostgreSQL migration: drop accounts_email_key');
-        await withTimeout(() => adapter.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_email ON accounts(user_id, email);"), 10000, 'PostgreSQL migration: idx_accounts_user_email');
+        await adapter.exec("ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_email_key;");
+        await adapter.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_email ON accounts(user_id, email);");
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec(INDEX_DDL), 10000, 'PostgreSQL index init');
+        await adapter.exec(INDEX_DDL);
       } catch (_) {}
       try {
-        await withTimeout(() => adapter.exec(TENANT_INDEX_DDL), 10000, 'PostgreSQL tenant index init');
+        await adapter.exec(TENANT_INDEX_DDL);
       } catch (_) {}
-      await withTimeout(() => backfillTenantOwnership(adapter), 10000, 'PostgreSQL tenant backfill');
+      await backfillTenantOwnership(adapter);
       console.log('PostgreSQL database initialised successfully.');
       return adapter;
     } catch (err) {

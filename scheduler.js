@@ -270,11 +270,20 @@ async function syncContactListsToActiveCampaigns(db) {
     let syncedCampaignsCount = 0;
 
     for (const campaign of activeCampaigns) {
-      const contacts = await db.prepare(`
-        SELECT email, fields
-        FROM contacts
-        WHERE list_name = ?
-      `).all(campaign.contact_list);
+      let contacts = [];
+      if (campaign.user_id) {
+        contacts = await db.prepare(`
+          SELECT email, fields
+          FROM contacts
+          WHERE list_name = ? AND user_id = ?
+        `).all(campaign.contact_list, campaign.user_id);
+      } else {
+        contacts = await db.prepare(`
+          SELECT email, fields
+          FROM contacts
+          WHERE list_name = ?
+        `).all(campaign.contact_list);
+      }
 
       if (!contacts || contacts.length === 0) continue;
 

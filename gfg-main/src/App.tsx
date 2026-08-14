@@ -109,13 +109,6 @@ const App = () => {
       window.history.replaceState({}, "", cleanUrl);
       navigateToRoute(window.location.pathname + window.location.hash, { replace: true });
     }
-
-    // Background queue dispatch heartbeat for active user sessions
-    const interval = setInterval(() => {
-      fetch('/api/queue/worker/trigger', { method: 'POST' }).catch(() => {});
-    }, 45000);
-
-    return () => clearInterval(interval);
   }, []);
 
   return (

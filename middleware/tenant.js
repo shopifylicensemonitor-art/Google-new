@@ -1,81 +1,55 @@
 /**
- * middleware/tenant.js — Supabase UUID extraction for RLS
+ * middleware/tenant.js — resolves the numeric application user that owns data.
  *
- * For Supabase integration:
- * - auth.uid() returns a UUID from the authenticated user
- * - req.user.id contains this UUID from the JWT 'sub' claim
- * - Pass it through as req.userId for all database queries
- * - RLS policies enforce isolation at database level
+ * Every user-scoped table (accounts, contacts, campaigns, templates) carries a
+ * `user_id`. This middleware turns the JWT payload into a real `users.id` and
+ * exposes it as `req.userId`, creating the user row on first sight so PIN and
+ * OAuth sessions both map onto a stable owner.
  */
 
+const { getDb, TENANT_TABLES } = require('../db');
 const logger = require('../logger');
 
-/** UUID validation regex */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Resolve (and lazily create) the users row for the current session. */
+async function resolveUserId(user) {
+  const db = await getDb();
 
-/**
- * Validate UUID format to ensure it matches Supabase auth.uid() format
- * @param {string} id - The ID to validate
- * @returns {boolean} true if valid UUID format
- */
-function isValidUUID(id) {
-  return typeof id === 'string' && UUID_REGEX.test(id);
+  // JWTs issued after multi-tenancy carry the real numeric users.id.
+  if (user && Number.isInteger(Number(user.id)) && String(Number(user.id)) === String(user.id)) {
+    const row = await db.prepare('SELECT id FROM users WHERE id = ?').get(Number(user.id));
+    if (row) return row.id;
+  }
+
+  const email = (user && user.email) || 'admin@local';
+  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  if (existing) return existing.id;
+
+  const result = await db
+    .prepare('INSERT INTO users (email, name, picture, role) VALUES (?, ?, ?, ?)')
+    .run(email, (user && user.name) || email.split('@')[0], '', (user && user.role) || 'admin');
+  const id = result.lastInsertRowid;
+
+  // First user ever: adopt any pre-multi-tenancy rows so nothing disappears.
+  const count = await db.prepare('SELECT COUNT(*) as c FROM users').get();
+  if (count && Number(count.c) === 1) {
+    for (const t of TENANT_TABLES) {
+      try {
+        await db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id IS NULL`).run(id);
+      } catch (_) { /* non-fatal */ }
+    }
+  }
+  return id;
 }
 
-/**
- * Express middleware — Extract Supabase UUID and attach to request.
- * Must run AFTER requireAuth middleware that sets req.user
- */
+/** Express middleware — must run after requireAuth. */
 async function attachTenant(req, res, next) {
   try {
-    // Check that user exists and has an ID
-    if (!req.user) {
-      return res.status(401).json({
-        error: 'User context missing.',
-        message: 'User must be authenticated before accessing tenant resources.'
-      });
-    }
-
-    const userId = req.user.id;
-
-    // Validate UUID format (Supabase UUIDs are always valid UUIDs)
-    if (!isValidUUID(userId)) {
-      logger.warn(
-        { userId, userIdType: typeof userId },
-        'Invalid user ID format - expected UUID'
-      );
-      return res.status(401).json({
-        error: 'Invalid user ID format.',
-        message: 'User ID must be a valid UUID from Supabase.'
-      });
-    }
-
-    // Attach the Supabase UUID to request for database queries
-    req.userId = userId;
-
-    // Debug logging (disabled in production)
-    if (process.env.DEBUG_AUTH === 'true') {
-      logger.info({ userId: req.userId.substring(0, 8) + '...' }, 'Tenant UUID attached');
-    }
-
+    req.userId = await resolveUserId(req.user);
     next();
   } catch (err) {
-    logger.error({ err: err.message, stack: err.stack }, 'Failed to attach tenant');
-    res.status(500).json({
-      error: 'Could not resolve user context.',
-      message: 'An error occurred while validating your session.'
-    });
+    logger.error({ err: err.message }, 'Failed to resolve tenant user');
+    res.status(500).json({ error: 'Could not resolve user context.' });
   }
 }
 
-/** Helper: Validate UUID format */
-function getUserIdFromToken(jwtPayload) {
-  if (!jwtPayload || !jwtPayload.sub) {
-    return null;
-  }
-  // Supabase stores auth.uid() in the 'sub' claim
-  const id = jwtPayload.sub;
-  return isValidUUID(id) ? id : null;
-}
-
-module.exports = { attachTenant, isValidUUID, getUserIdFromToken };
+module.exports = { attachTenant, resolveUserId };
