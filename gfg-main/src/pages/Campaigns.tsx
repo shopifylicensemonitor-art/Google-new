@@ -14,7 +14,8 @@ import { triggerHaptic } from '@/lib/haptics';
 import { 
   Send, Plus, Trash2, Play, Pause, FileText, Info,
   Clock, Zap, CheckCircle2, ChevronRight, BarChart3, RotateCw, Pencil, Search, Filter,
-  UploadCloud, ListFilter, Check, ArrowRight, ArrowLeft, Users, Mail, Layers, X
+  UploadCloud, ListFilter, Check, ArrowRight, ArrowLeft, Users, Mail, Layers, X,
+  Eye,
 } from 'lucide-react';
 
 interface CampaignsProps {
@@ -86,6 +87,8 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   const [subject, setSubject] = useState<string>('');
   const [bodyHtml, setBodyHtml] = useState<string>('');
   const [bodyPlain, setBodyPlain] = useState<string>('');
+  const [showPreview, setShowPreview] = useState<boolean>(false);
+  const [workflowSteps, setWorkflowSteps] = useState<{ id: number; trigger_event: string; delay_seconds: number; subject: string; body_html: string }[]>([]);
   const [speed, setSpeed] = useState<number>(30);
   const [startTime, setStartTime] = useState<string>('08:00');
   const [endTime, setEndTime] = useState<string>('22:00');
@@ -268,6 +271,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
           start_time: startTime,
           end_time: endTime,
           ignore_window: ignoreWindow ? 1 : 0,
+          steps: workflowSteps.map((s, idx) => ({ step_number: idx + 2, subject: s.subject, body_html: s.body_html, delay_seconds: s.delay_seconds, trigger_event: s.trigger_event })),
           content_mode: contentMode,
           content_variations: contentMode === 'rotation' ? (variations as any) : null
         });
@@ -323,6 +327,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
         setEndTime('22:00');
         setContentMode('single');
         setVariations([{ subject: '', body_html: '' }]);
+        setWorkflowSteps([]);
         loadData();
       } catch (e: any) {
         toast({
@@ -893,21 +898,40 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HTML Body</label>
-                          <VoiceToTextButton
-                            size="sm"
-                            label="Voice Input"
-                            onTranscript={(text) => {
-                              setBodyHtml(prev => prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`);
-                              setBodyPlain(prev => prev ? `${prev}\n${text}` : text);
-                            }}
-                          />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              onClick={() => setShowPreview(!showPreview)}
+                              className="h-7 text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              {showPreview ? 'Hide Preview' : 'Preview'}
+                            </Button>
+                            <VoiceToTextButton
+                              size="sm"
+                              label="Voice Input"
+                              onTranscript={(text) => {
+                                setBodyHtml(prev => prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`);
+                                setBodyPlain(prev => prev ? `${prev}\n${text}` : text);
+                              }}
+                            />
+                          </div>
                         </div>
-                        <textarea
-                          placeholder="<h2>Hello!</h2><p>Writing regarding your outreach...</p>"
-                          value={bodyHtml}
-                          onChange={e => setBodyHtml(e.target.value)}
-                          className="w-full bg-background text-xs rounded-xl border border-input p-3 min-h-[110px] font-mono focus:ring-1 focus:ring-primary"
-                        />
+                        <div className={`grid ${showPreview ? 'grid-cols-2 gap-4' : 'grid-cols-1'} items-start`}>
+                          <textarea
+                            placeholder="<h2>Hello!</h2><p>Writing regarding your outreach...</p>"
+                            value={bodyHtml}
+                            onChange={e => setBodyHtml(e.target.value)}
+                            className={`w-full bg-background text-xs rounded-xl border border-input p-3 min-h-[160px] font-mono focus:ring-1 focus:ring-primary ${showPreview ? 'h-[160px]' : ''}`}
+                          />
+                          {showPreview && (
+                            <div className="w-full h-[160px] bg-white text-black p-4 rounded-xl border border-border/60 overflow-y-auto shadow-inner text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: bodyHtml || '<p style="color:#999;font-style:italic">No HTML content yet...</p>' }} />
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Plain Text Fallback</label>
@@ -977,6 +1001,111 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Campaign Workflow Builder */}
+                  <div className="pt-6 border-t border-border/40 mt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /> Automated Workflow</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">Define a sequence of automated email steps triggered by specific events.</p>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        type="button" 
+                        onClick={() => setWorkflowSteps([...workflowSteps, { id: Date.now(), trigger_event: 'wait', delay_seconds: 86400, subject: '', body_html: '' }])}
+                        className="h-8 text-xs font-semibold gap-1"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add Step
+                      </Button>
+                    </div>
+                    
+                    {workflowSteps.length > 0 && (
+                      <div className="space-y-4">
+                        {workflowSteps.map((step, index) => (
+                          <div key={step.id} className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3 relative">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              type="button"
+                              onClick={() => setWorkflowSteps(workflowSteps.filter(s => s.id !== step.id))}
+                              className="absolute top-2 right-2 h-6 w-6 text-muted-foreground hover:text-destructive"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                            <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+                              <span className="bg-primary/20 text-primary h-5 w-5 rounded-full flex items-center justify-center">{index + 2}</span>
+                              Follow-up Step
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Trigger Event</label>
+                                <select
+                                  value={step.trigger_event}
+                                  onChange={(e) => {
+                                    const newSteps = [...workflowSteps];
+                                    newSteps[index].trigger_event = e.target.value;
+                                    setWorkflowSteps(newSteps);
+                                  }}
+                                  className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
+                                >
+                                  <option value="wait">Wait Time (No Action)</option>
+                                  <option value="opened">If Email Opened</option>
+                                  <option value="clicked">If Link Clicked</option>
+                                  <option value="unopened">If Not Opened</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Wait Duration</label>
+                                <select
+                                  value={step.delay_seconds}
+                                  onChange={(e) => {
+                                    const newSteps = [...workflowSteps];
+                                    newSteps[index].delay_seconds = Number(e.target.value);
+                                    setWorkflowSteps(newSteps);
+                                  }}
+                                  className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
+                                >
+                                  <option value={3600}>1 Hour</option>
+                                  <option value={86400}>1 Day</option>
+                                  <option value={172800}>2 Days</option>
+                                  <option value={259200}>3 Days</option>
+                                  <option value={604800}>7 Days</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Subject Line</label>
+                              <input 
+                                type="text"
+                                placeholder="Re: Following up..."
+                                value={step.subject}
+                                onChange={(e) => {
+                                  const newSteps = [...workflowSteps];
+                                  newSteps[index].subject = e.target.value;
+                                  setWorkflowSteps(newSteps);
+                                }}
+                                className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">HTML Body</label>
+                              <textarea 
+                                placeholder="Just checking in..."
+                                value={step.body_html}
+                                onChange={(e) => {
+                                  const newSteps = [...workflowSteps];
+                                  newSteps[index].body_html = e.target.value;
+                                  setWorkflowSteps(newSteps);
+                                }}
+                                className="w-full bg-background text-xs rounded-lg border border-input p-2 min-h-[80px] font-mono focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

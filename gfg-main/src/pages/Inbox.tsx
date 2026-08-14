@@ -33,6 +33,8 @@ export default function Inbox() {
   const [sentimentFilter, setSentimentFilter] = useState<string>('all');
   const [readFilter, setReadFilter] = useState<string>('all');
   const [showMobileDetail, setShowMobileDetail] = useState<boolean>(false);
+  const [sentimentSummary, setSentimentSummary] = useState<string>('');
+  const [loadingSentiment, setLoadingSentiment] = useState<boolean>(false);
 
   const loadInbox = React.useCallback(async () => {
     setLoading(true);
@@ -46,6 +48,19 @@ export default function Inbox() {
       toast({ variant: 'destructive', title: 'Failed to load inbox', description: err.message });
     } finally {
       setLoading(false);
+    }
+    
+    // Load sentiment
+    setLoadingSentiment(true);
+    try {
+      const sentData = await api.getInboxSentiment();
+      if (sentData && sentData.summary) {
+        setSentimentSummary(sentData.summary);
+      }
+    } catch (err) {
+      console.log('Could not load sentiment', err);
+    } finally {
+      setLoadingSentiment(false);
     }
   }, [selectedMsg]);
 

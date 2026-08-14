@@ -10,10 +10,12 @@ import { Button } from '@/components/ui/button';
 import { 
   Send, Users, Mail, MessageSquare, AlertTriangle, CheckCircle2, Clock, 
   RotateCw, Play, Pause, Plus, TrendingUp, TrendingDown,
-  Lock, AlertCircle, Calendar, ArrowRight, ShieldCheck, Sparkles, Inbox
+  Lock, AlertCircle, Calendar, ArrowRight, ShieldCheck, Sparkles, Inbox,
+  Download
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useUI } from '@/context/UIContext';
+import { UsageSummaryChart } from '@/components/UsageSummaryChart';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -36,17 +38,23 @@ export default function Dashboard() {
       account_email: string | null;
       status: string;
     }[];
+    chartData: {
+      date: string;
+      sent: number;
+      failed: number;
+    }[];
   } | null>(null);
   
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('Gabriel');
+  const [days, setDays] = useState<number>(7);
 
   const fetchDashboardData = useCallback(async () => {
     try {
       const [dashData, accountsData] = await Promise.all([
-        api.getDashboardData(),
+        api.getDashboardData(days),
         api.getAccounts()
       ]);
       setServerData(dashData);
@@ -56,10 +64,24 @@ export default function Dashboard() {
       console.error(err);
       setError(err.message || 'Could not connect to the Outreach API server.');
     }
-  }, []);
+  }, [days]);
 
   useEffect(() => {
-    fetchDashboardData().finally(() => setLoading(false));
+    fetchDashboardData().finally(() => {
+      setLoading(false);
+      // Run toast checks
+      api.getDashboardData().then(dash => {
+        if (dash.stats.failed > 50 && dash.stats.failed > dash.stats.today_sent * 0.1) {
+          toast({ variant: 'destructive', title: 'High Bounce Rate Detected', description: `${dash.stats.failed} emails have failed recently. Check your campaigns.`});
+        }
+      });
+      api.getAccounts().then(accs => {
+        const disconnected = accs.find(a => a.status === 'disconnected' || a.status === 'error');
+        if (disconnected) {
+          toast({ variant: 'destructive', title: 'Gmail Auth Error', description: `Account ${disconnected.email} is disconnected. Please re-authenticate.` });
+        }
+      });
+    });
     const intervalMs = batterySaver ? 60000 : 10000;
     const interval = setInterval(fetchDashboardData, intervalMs);
     return () => clearInterval(interval);
@@ -129,14 +151,41 @@ export default function Dashboard() {
               Here's a snapshot of your outreach performance today.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-3.5 py-2 rounded-lg bg-card border border-border text-foreground font-medium text-xs hover:bg-muted/60 transition-colors shadow-sm flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-              Date Range: Today
-            </button>
+                    <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="px-3 py-2 rounded-lg bg-card border border-border text-foreground font-medium text-xs hover:bg-muted/60 transition-colors shadow-sm outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value={7}>Last 7 Days</option>
+              <option value={14}>Last 14 Days</option>
+              <option value={30}>Last 30 Days</option>
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!serverData?.campaigns) return;
+                const headers = ['ID,Name,Status,Total Contacts,Sent,Failed,Opens,Clicks'];
+                const rows = serverData.campaigns.map(c => 
+                  `${c.id},"${c.name}",${c.status},${c.total_contacts},${c.sent_count},${c.failed_count},${c.total_opens || 0},${c.total_clicks || 0}`
+                );
+                const csv = headers.concat(rows).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `campaign_performance_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+              }}
+              className="text-xs px-3 shadow-sm h-8 flex items-center gap-2"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
             <Button
               onClick={() => navigate('/campaigns')}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs px-4 py-2 rounded-lg shadow-sm flex items-center gap-2"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs px-4 h-8 rounded-lg shadow-sm flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
               New Campaign
@@ -273,6 +322,59 @@ export default function Dashboard() {
           </div>
         </div>
 
+                {/* Usage Summary Chart and Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-3 bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Usage Summary</h2>
+                <p className="text-xs text-muted-foreground mt-1">Daily email outreach volume over the last {days} days.</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-primary/10 text-primary">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex-1">
+              {serverData?.chartData ? (
+                <UsageSummaryChart data={serverData.chartData} />
+              ) : (
+                <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+                  Loading chart data...
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Summary Cards Side Panel */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm flex-1 flex flex-col justify-center">
+              <div className="flex items-center gap-3 mb-2 text-muted-foreground">
+                <Send className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Total Sent ({days}d)</span>
+              </div>
+              <div className="text-3xl font-extrabold text-foreground">{chartTotalSent.toLocaleString()}</div>
+            </div>
+            
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm flex-1 flex flex-col justify-center">
+              <div className="flex items-center gap-3 mb-2 text-muted-foreground">
+                <Mail className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Open Rate</span>
+              </div>
+              <div className="text-3xl font-extrabold text-foreground">{openRate}%</div>
+            </div>
+            
+            <div className="bg-card border border-border rounded-xl p-5 shadow-sm flex-1 flex flex-col justify-center">
+              <div className="flex items-center gap-3 mb-2 text-muted-foreground">
+                <MessageSquare className="h-4 w-4 text-indigo-500" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Reply Rate</span>
+              </div>
+              <div className="text-3xl font-extrabold text-foreground">3.4%</div>
+            </div>
+          </div>
+        </div>
+
+
+
         {/* Campaign Queue & Sync Status */}
         <CampaignQueueStatus />
 
@@ -287,65 +389,36 @@ export default function Dashboard() {
               </Link>
             </div>
 
-            <div className="p-6 flex-1 flex flex-col gap-6">
-              {/* Feed Item 1 */}
-              <div className="flex gap-4 relative">
-                <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-border/60" />
-                <div className="z-10 bg-primary/10 text-primary h-8 w-8 rounded-full flex items-center justify-center shrink-0 border border-primary/20">
-                  <CheckCircle2 className="h-4 w-4" />
-                </div>
-                <div className="pt-0.5">
-                  <p className="text-xs font-semibold text-foreground">Sequence Step Completed</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Step 2 (Email) sent to 45 contacts in 'Q3 Enterprise Target'.
-                  </p>
-                  <span className="text-[10px] text-muted-foreground/70 font-mono block mt-1">10:24 AM</span>
-                </div>
-              </div>
-
-              {/* Feed Item 2 */}
-              <div className="flex gap-4 relative">
-                <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-border/60" />
-                <div className="z-10 bg-muted text-muted-foreground h-8 w-8 rounded-full flex items-center justify-center border border-border shrink-0">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <div className="pt-0.5">
-                  <p className="text-xs font-semibold text-foreground">Follow-up Scheduled</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Automated follow-up set for Sarah Jenkins regarding 'Pricing Inquiry'.
-                  </p>
-                  <span className="text-[10px] text-muted-foreground/70 font-mono block mt-1">09:15 AM</span>
-                </div>
-              </div>
-
-              {/* Feed Item 3 */}
-              <div className="flex gap-4 relative">
-                <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-border/60" />
-                <div className="z-10 bg-secondary/10 text-secondary h-8 w-8 rounded-full flex items-center justify-center border border-secondary/20 shrink-0">
-                  <Users className="h-4 w-4" />
-                </div>
-                <div className="pt-0.5">
-                  <p className="text-xs font-semibold text-foreground">New Contacts Imported</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Imported 120 contacts from 'Dreamforce_Leads_2024.csv'.
-                  </p>
-                  <span className="text-[10px] text-muted-foreground/70 font-mono block mt-1">Yesterday, 4:30 PM</span>
-                </div>
-              </div>
-
-              {/* Feed Item 4 */}
-              <div className="flex gap-4 relative">
-                <div className="z-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 h-8 w-8 rounded-full flex items-center justify-center border border-emerald-500/20 shrink-0">
-                  <Play className="h-4 w-4 fill-current" />
-                </div>
-                <div className="pt-0.5">
-                  <p className="text-xs font-semibold text-foreground">Campaign Activated</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    'Startup Founder Outreach' campaign is now live.
-                  </p>
-                  <span className="text-[10px] text-muted-foreground/70 font-mono block mt-1">Yesterday, 1:15 PM</span>
-                </div>
-              </div>
+            <div className="p-6 flex-1 flex flex-col gap-6 overflow-y-auto max-h-[400px]">
+              {!serverData?.recent_logs || serverData.recent_logs.length === 0 ? (
+                <div className="text-center text-xs text-muted-foreground py-8">No recent activity.</div>
+              ) : (
+                serverData.recent_logs.map((log, idx) => (
+                  <div key={log.id || idx} className="flex gap-4 relative">
+                    {idx !== serverData.recent_logs.length - 1 && (
+                      <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-border/60" />
+                    )}
+                    <div className={`z-10 h-8 w-8 rounded-full flex items-center justify-center shrink-0 border ${
+                      log.status === 'sent' 
+                        ? 'bg-primary/10 text-primary border-primary/20' 
+                        : log.status === 'failed' || log.status === 'error'
+                          ? 'bg-destructive/10 text-destructive border-destructive/20'
+                          : 'bg-muted text-muted-foreground border-border'
+                    }`}>
+                      {log.status === 'sent' ? <CheckCircle2 className="h-4 w-4" /> : log.status === 'failed' || log.status === 'error' ? <AlertTriangle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+                    </div>
+                    <div className="pt-0.5">
+                      <p className="text-xs font-semibold text-foreground capitalize">{log.status} Event</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {log.message || `Email ${log.status} to ${log.recipient_email || 'unknown'}`} {log.campaign_name ? `in '${log.campaign_name}'` : ''}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground/70 font-mono block mt-1">
+                        {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

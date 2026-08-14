@@ -59,6 +59,7 @@ export interface CampaignStep {
   body_html: string;
   body_plain: string;
   delay_seconds: number;
+  trigger_event?: string;
 }
 
 export interface CampaignRecipient {
@@ -258,7 +259,6 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
 export const api = {
   // Auth
-  getCurrentUser: () => apiFetch<{ id?: number; email?: string; name?: string; }>('/api/auth/me'),
   verifyPin: async (pin: string): Promise<boolean> => {
     try {
       const res = await fetch(`${BASE_URL}/api/auth/pin-login`, {
@@ -276,7 +276,7 @@ export const api = {
   },
 
   // Accounts
-  getDashboardData: () => apiFetch<{
+  getDashboardData: (days: number = 7) => apiFetch<{
     stats: {
       today_sent: number;
       active_accounts: number;
@@ -292,7 +292,8 @@ export const api = {
       account_email: string | null;
       status: string;
     }[];
-  }>('/api/dashboard'),
+    chartData: { date: string; sent: number; failed: number }[];
+  }>(`/api/dashboard?days=${days}`),
   getAccounts: () => apiFetch<Account[]>('/api/accounts'),
   getAuthUrl: () => apiFetch<{ url: string }>('/api/accounts/auth-url', { method: 'POST' }),
   deleteAccount: (id: number) => apiFetch<{ success: boolean }>(`/api/accounts/${id}`, { method: 'DELETE' }),

@@ -147,6 +147,7 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       clicks: trackingRow.clicks || 0,
     };
 
+    
     const campaigns = await db.prepare(`
       SELECT c.*,
              COALESCE(SUM(q.opens_count), 0) as total_opens,
@@ -169,7 +170,54 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       LIMIT 10
     `).all(uid);
 
-    res.json({ stats, campaigns, queue });
+    // Fetch recent logs
+    const recent_logs = await db.prepare(`
+      SELECT l.*, c.name as campaign_name
+      FROM logs l
+      LEFT JOIN campaigns c ON l.campaign_id = c.id
+      ORDER BY l.created_at DESC
+      LIMIT 10
+    `).all();
+
+
+    
+    
+    const days = parseInt(req.query.days) || 7;
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    const startDate = d.toISOString();
+    const logs = await db.prepare(
+      "SELECT status, created_at FROM logs l JOIN campaigns c ON l.campaign_id = c.id WHERE c.user_id = ? AND l.created_at >= ?"
+    ).all(uid, startDate);
+
+    // Group logs by day
+    const chartData = {};
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const label = date.toISOString().split('T')[0];
+      chartData[label] = { date: label, sent: 0, failed: 0 };
+    }
+
+    logs.forEach(log => {
+      const day = new Date(log.created_at).toISOString().split('T')[0];
+      if (chartData[day]) {
+        if (log.status === 'sent') chartData[day].sent++;
+        if (log.status === 'failed' || log.status === 'error') chartData[day].failed++;
+      }
+    });
+
+    // Fetch recent logs
+    const recent_logs = await db.prepare(`
+      SELECT l.*, c.name as campaign_name
+      FROM logs l
+      LEFT JOIN campaigns c ON l.campaign_id = c.id
+      WHERE c.user_id = ?
+      ORDER BY l.created_at DESC
+      LIMIT 10
+    `).all(uid);
+
+    res.json({ stats, campaigns, queue, chartData: Object.values(chartData), recent_logs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

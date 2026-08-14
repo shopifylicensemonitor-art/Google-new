@@ -209,9 +209,9 @@ router.post('/', async (req, res) => {
       if (steps && Array.isArray(steps)) {
         for (const step of steps) {
           await txDb.prepare(`
-            INSERT INTO campaign_steps (campaign_id, step_number, subject, body_html, body_plain, delay_seconds)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(campaignId, step.step_number, step.subject, step.body_html || '', step.body_plain || '', step.delay_seconds || 86400);
+            INSERT INTO campaign_steps (campaign_id, step_number, subject, body_html, body_plain, delay_seconds, trigger_event)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(campaignId, step.step_number, step.subject, step.body_html || '', step.body_plain || '', step.delay_seconds || 86400, step.trigger_event || 'wait');
         }
       }
       return campaignId;
@@ -290,9 +290,9 @@ router.put('/:id', async (req, res) => {
         await txDb.prepare('DELETE FROM campaign_steps WHERE campaign_id = ?').run(req.params.id);
         for (const step of fields.steps) {
           await txDb.prepare(`
-            INSERT INTO campaign_steps (campaign_id, step_number, subject, body_html, body_plain, delay_seconds)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(req.params.id, step.step_number, step.subject, step.body_html || '', step.body_plain || '', step.delay_seconds || 86400);
+            INSERT INTO campaign_steps (campaign_id, step_number, subject, body_html, body_plain, delay_seconds, trigger_event)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(req.params.id, step.step_number, step.subject, step.body_html || '', step.body_plain || '', step.delay_seconds || 86400, step.trigger_event || 'wait');
         }
       }
     });
