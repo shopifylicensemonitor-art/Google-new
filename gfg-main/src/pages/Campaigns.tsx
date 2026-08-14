@@ -4,6 +4,7 @@ import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { SwipeableListItem } from '@/components/SwipeableListItem';
 import { VoiceToTextButton } from '@/components/VoiceToTextButton';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -1103,16 +1104,15 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               {/* Advanced Filter Bar */}
               <div className="pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
                 {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Search campaign or subject..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full bg-background text-xs rounded-xl border border-input pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
+                <RecentSearchInput
+                  storageKey="campaigns_search_history"
+                  placeholder="Search campaign or subject..."
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  className="w-full bg-background text-xs rounded-xl border border-input pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                  containerClassName="relative"
+                  iconClassName="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground"
+                />
 
                 {/* Status Filter */}
                 <select

@@ -5,6 +5,7 @@ import { SEO } from '@/components/SEO';
 import { AppShell } from '@/components/AppShell';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { DashboardSkeleton } from '@/components/DashboardSkeleton';
+import { CampaignQueueStatus } from '@/components/CampaignQueueStatus';
 import { Button } from '@/components/ui/button';
 import { 
   Send, Users, Mail, MessageSquare, AlertTriangle, CheckCircle2, Clock, 
@@ -271,6 +272,9 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Campaign Queue & Sync Status */}
+        <CampaignQueueStatus />
 
         {/* Main Content Area (Two Columns) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

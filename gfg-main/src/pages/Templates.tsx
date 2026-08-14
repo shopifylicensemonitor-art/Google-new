@@ -3,6 +3,7 @@ import { api, type Template } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { VoiceToTextButton } from '@/components/VoiceToTextButton';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
@@ -292,16 +293,15 @@ export default function Templates({ requirePin }: TemplatesProps) {
 
         {/* Search & Category Filter Bar */}
         <div className="bg-card rounded-xl border border-border/60 p-3 flex flex-col md:flex-row gap-3 items-center justify-between shadow-2xs">
-          <div className="relative w-full md:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search templates by name or subject..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
-            />
-          </div>
+          <RecentSearchInput
+            storageKey="templates_search_history"
+            placeholder="Search templates by name or subject..."
+            value={searchQuery}
+            onChange={setSearchQuery}
+            className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
+            containerClassName="relative w-full md:max-w-md"
+            iconClassName="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+          />
 
           <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto no-scrollbar py-1">
             {TEMPLATE_CATEGORIES.map((cat) => {

@@ -7,6 +7,7 @@ import { toast } from '@/hooks/use-toast';
 import { navigateToRoute } from '@/lib/router';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { useUI } from '@/context/UIContext';
 
 interface TopBarProps {
@@ -218,16 +219,15 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
           <Logo size="sm" subtitle="" />
         </div>
 
-        <div className="relative w-full max-w-xs md:max-w-sm hidden sm:block">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-          <input
-            type="text"
-            placeholder="Quick search..."
-            value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            className="w-full rounded-full border border-border bg-muted/40 py-1.5 pl-10 pr-4 text-xs text-foreground placeholder-muted-foreground/50 transition-all focus:border-primary/50 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/50"
-          />
-        </div>
+        <RecentSearchInput
+          storageKey="global_search_history"
+          placeholder="Quick search..."
+          value={globalSearch}
+          onChange={setGlobalSearch}
+          className="w-full rounded-full border border-border bg-muted/40 py-1.5 pl-10 pr-4 text-xs text-foreground placeholder-muted-foreground/50 transition-all focus:border-primary/50 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/50"
+          containerClassName="relative w-full max-w-xs md:max-w-sm hidden sm:block"
+          iconClassName="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60"
+        />
       </div>
 
       {/* Right side: Notifications, Profile */}

@@ -258,6 +258,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
 export const api = {
   // Auth
+  getCurrentUser: () => apiFetch<{ id?: number; email?: string; name?: string; }>('/api/auth/me'),
   verifyPin: async (pin: string): Promise<boolean> => {
     try {
       const res = await fetch(`${BASE_URL}/api/auth/pin-login`, {

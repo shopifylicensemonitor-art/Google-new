@@ -5,6 +5,7 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { AIChatBot } from './AIChatBot';
 import { FloatingSendWidget } from './FloatingSendWidget';
 import { InstallAppPrompt } from './InstallAppPrompt';
+import { SyncStatusWidget } from './SyncStatusWidget';
 import { useUI } from '@/context/UIContext';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -53,6 +54,9 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Keyboard Shortcuts Dialog Modal */}
       <KeyboardShortcutsModal open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+
+      {/* Sync Status Widget */}
+      <SyncStatusWidget />
 
       {/* Gemini AI Assistant Floating Widget */}
       <AIChatBot />

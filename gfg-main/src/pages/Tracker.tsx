@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { useOutreachTracker } from '@/hooks/useOutreachTracker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -417,16 +418,15 @@ export default function Tracker() {
 
           {/* Search & Filter bar for logs */}
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search logs by email, name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-xs bg-background"
-              />
-            </div>
+            <RecentSearchInput
+              storageKey="tracker_search_history"
+              placeholder="Search logs by email, name..."
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className="w-full flex h-8 pl-8 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              containerClassName="relative w-full sm:w-72"
+              iconClassName="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"
+            />
 
             <div className="flex gap-1.5 w-full sm:w-auto bg-muted/40 p-1 rounded-lg border border-border/40">
               <button

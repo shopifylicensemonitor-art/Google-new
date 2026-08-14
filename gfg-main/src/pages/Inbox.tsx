@@ -5,6 +5,7 @@ import { SEO } from '@/components/SEO';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { SwipeableListItem } from '@/components/SwipeableListItem';
 import { InboxSkeleton } from '@/components/InboxSkeleton';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -205,16 +206,15 @@ export default function Inbox() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="relative w-64 hidden sm:block">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search inbox..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-xs bg-background"
-              />
-            </div>
+            <RecentSearchInput
+              storageKey="inbox_search_history"
+              placeholder="Search inbox..."
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className="pl-8 h-8 text-xs bg-background flex w-full rounded-md border border-input px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              containerClassName="relative w-64 hidden sm:block"
+              iconClassName="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"
+            />
 
             <Button
               onClick={handleSync}

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, type ContactListInfo, type Contact } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
+import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { 
@@ -546,16 +547,15 @@ export default function Contacts({ requirePin }: ContactsProps) {
         {/* Filters & Search Bar */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border/60 shadow-xs">
           {/* Search Input */}
-          <div className="relative w-full md:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search contacts by name, email, or company..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
-            />
-          </div>
+          <RecentSearchInput
+            storageKey="contacts_search_history"
+            placeholder="Search contacts by name, email, or company..."
+            value={searchQuery}
+            onChange={setSearchQuery}
+            className="w-full h-10 pl-9 pr-4 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] transition-all"
+            containerClassName="relative w-full md:max-w-md"
+            iconClassName="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+          />
 
           {/* Quick Filters */}
           <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto no-scrollbar pb-1 md:pb-0">

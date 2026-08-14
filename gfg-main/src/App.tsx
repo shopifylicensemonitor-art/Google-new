@@ -1,7 +1,8 @@
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, HashRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense, useEffect, useCallback } from "react";
+import { lazy, Suspense, useEffect, useCallback, useState } from "react";
+import { api } from "./api";
 import Landing from "./pages/Landing";
 import Index from "./pages/Index";
 import { initCapacitor, isNativePlatform } from "./lib/capacitor";
@@ -67,18 +68,51 @@ const Router = isNativePlatform() ? HashRouter : BrowserRouter;
 const CLARITY_PROJECT_ID = "q6srfz9g0o";
 
 // ---------------------------------------------------------------------------
-// Security Protected Route Wrapper (JWT or PIN)
+// Security Protected Route Wrapper
 // ---------------------------------------------------------------------------
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  let token = localStorage.getItem("auth_token");
+  const [isVerifying, setIsVerifying] = useState(true);
+  const [isVerified, setIsVerified] = useState(false);
 
-  if (!token) {
-    token = "demo_session_token";
-    localStorage.setItem("auth_token", token);
+  useEffect(() => {
+    const verifySession = async () => {
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        setIsVerifying(false);
+        navigateToRoute("/login", { replace: true });
+        return;
+      }
+
+      try {
+        await api.getCurrentUser();
+        setIsVerified(true);
+      } catch (error) {
+        console.error("Session verification failed:", error);
+        localStorage.removeItem("auth_token");
+        navigateToRoute("/login", { replace: true });
+      } finally {
+        setIsVerifying(false);
+      }
+    };
+
+    verifySession();
+  }, []);
+
+  if (isVerifying) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isVerified) {
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
