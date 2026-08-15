@@ -170,18 +170,6 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       LIMIT 10
     `).all(uid);
 
-    // Fetch recent logs
-    const recent_logs = await db.prepare(`
-      SELECT l.*, c.name as campaign_name
-      FROM logs l
-      LEFT JOIN campaigns c ON l.campaign_id = c.id
-      ORDER BY l.created_at DESC
-      LIMIT 10
-    `).all();
-
-
-    
-    
     const days = parseInt(req.query.days) || 7;
     const d = new Date();
     d.setDate(d.getDate() - days);

@@ -455,7 +455,25 @@ const SQLITE_DDL = `
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
     last_login TEXT DEFAULT (datetime('now')),
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    password_hash TEXT,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TEXT,
+    email_verified BOOLEAN DEFAULT FALSE,
+    verification_code TEXT,
+    verification_code_expires TEXT,
+    access_token_expires_at TEXT,
+    refresh_token_expires_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    revoked INTEGER DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -630,7 +648,24 @@ const PG_DDL = `
     picture TEXT DEFAULT '',
     role TEXT DEFAULT 'admin',
     last_login TIMESTAMPTZ DEFAULT NOW(),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    password_hash TEXT,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    email_verified BOOLEAN DEFAULT FALSE,
+    verification_code TEXT,
+    verification_code_expires TIMESTAMPTZ,
+    access_token_expires_at TIMESTAMPTZ,
+    refresh_token_expires_at TIMESTAMPTZ
+  );
+
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    revoked BOOLEAN DEFAULT FALSE
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -781,6 +816,69 @@ ready = (async () => {
       try {
         await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");
       } catch (_) {}
+      // Email/password authentication columns
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;");
+      } catch (_) {}
+      // Account lockout and email verification columns
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TEXT;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code TEXT;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_expires TEXT;");
+      } catch (_) {}
+      // PHASE 4: Add refresh token columns
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_token_expires_at TEXT;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TEXT;");
+      } catch (_) {}
+      // Create refresh_tokens table if not exists (fallback for direct DB init)
+      try {
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            revoked INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          );
+        `);
+      } catch (_) {}
+      // Workspace/multi-tenant support tables
+      try {
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS workspaces (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+        `);
+      } catch (_) {}
+      try {
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS workspace_members (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT DEFAULT 'member',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(workspace_id, user_id)
+          );
+        `);
+      } catch (_) {}
       // Multi-tenancy: owner column on all user-scoped tables.
       for (const t of TENANT_TABLES) {
         try {
@@ -872,6 +970,50 @@ ready = (async () => {
     } catch (_) {}
     try {
       await wrapped.exec("ALTER TABLE logs ADD COLUMN queue_id INTEGER;");
+    } catch (_) {}
+    // Email/password authentication columns
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN password_hash TEXT;");
+    } catch (_) {}
+    // Account lockout and email verification columns
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN locked_until TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN verification_code TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN verification_code_expires TEXT;");
+    } catch (_) {}
+    // Workspace/multi-tenant support tables
+    try {
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+    } catch (_) {}
+    try {
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS workspace_members (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          workspace_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          role TEXT DEFAULT 'member',
+          created_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(workspace_id, user_id),
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+      `);
     } catch (_) {}
     for (const t of TENANT_TABLES) {
       try {

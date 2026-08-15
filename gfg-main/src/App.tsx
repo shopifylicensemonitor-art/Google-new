@@ -60,6 +60,7 @@ const Inbox = lazyWithRetry(() => import("./pages/Inbox"));
 
 const Blog = lazyWithRetry(() => import("./pages/Blog"));
 const BlogPost = lazyWithRetry(() => import("./pages/BlogPost"));
+const EmailVerification = lazyWithRetry(() => import("./pages/EmailVerification"));
 
 // Use HashRouter in native apps (no server to handle URL paths),
 // BrowserRouter on web where Netlify handles routing.
@@ -156,6 +157,7 @@ const App = () => {
               <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/verify-email" element={<EmailVerification />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/help" element={<Help />} />

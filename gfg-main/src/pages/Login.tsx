@@ -6,13 +6,29 @@ import { BASE_URL as API_BASE } from "../api";
 import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PasswordStrength from "@/components/PasswordStrength";
 
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pin, setPin] = useState("");
-  const [pinLoading, setPinLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [isSignup, setIsSignup] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Password strength validation helper
+  const isPasswordStrong = (): boolean => {
+    if (!isSignup) return true; // Only validate on signup
+    return (
+      password.length >= 8 &&
+      /[A-Z]/.test(password) &&
+      /[a-z]/.test(password) &&
+      /[0-9]/.test(password) &&
+      /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    );
+  };
 
   // Check if already logged in
   useEffect(() => {
@@ -21,7 +37,6 @@ export default function Login() {
       navigate("/send");
     }
 
-    // Check for auth error in URL
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("auth_error");
     if (authError === "unauthorized") {
@@ -44,33 +59,59 @@ export default function Login() {
     }
   };
 
-  const handlePinLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pin.trim()) return;
-    setPinLoading(true);
+  const handleEmailAuth = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!email.trim() || !password.trim()) {
+      setError("Email and password are required.");
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    const trimmedName = name.trim();
+
+    if (isSignup && !trimmedName) {
+      setError("Please enter your full name to create an account.");
+      return;
+    }
+
+    setAuthLoading(true);
     setError(null);
+
     try {
-      const res = await fetch(`${API_BASE}/api/auth/pin-login`, {
+      const endpoint = isSignup ? "signup" : "signin";
+      const payload = isSignup ? { email: trimmedEmail, password, name: trimmedName } : { email: trimmedEmail, password };
+      const res = await fetch(`${API_BASE}/api/auth/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin.trim() }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "PIN login failed");
-      localStorage.setItem("auth_token", data.token);
-      navigate("/send");
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Unable to ${isSignup ? "create" : "sign in to"} your account.`);
+      }
+
+      if (!isSignup) {
+        if (data.token) {
+          localStorage.setItem("auth_token", data.token);
+        }
+        navigate("/send");
+        return;
+      }
+
+      // SIGNUP SUCCESS - REDIRECT TO EMAIL VERIFICATION
+      navigate(`/verify-email?email=${encodeURIComponent(trimmedEmail)}`);
+      return;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "PIN login failed");
+      setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
-      setPinLoading(false);
+      setAuthLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-4">
-      {/* Container */}
       <div className="w-full max-w-md space-y-6">
-        {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-2">
           <Logo size="xl" subtitle="Campaign Console" />
           <p className="text-xs text-muted-foreground pt-1">
@@ -78,9 +119,7 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Card */}
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-2xs space-y-5">
-          {/* Error Banner */}
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-500 text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -88,7 +127,6 @@ export default function Login() {
             </div>
           )}
 
-          {/* Primary Google Login */}
           <Button
             onClick={handleGoogleLogin}
             disabled={loading}
@@ -119,56 +157,88 @@ export default function Login() {
             {loading ? "Authenticating..." : "Sign in with Google"}
           </Button>
 
-          {/* Divider */}
           <div className="relative flex items-center justify-center my-4">
             <div className="border-t border-border/60 w-full" />
             <span className="bg-card px-3 text-[10px] uppercase font-mono font-bold text-muted-foreground absolute">
-              Or Admin Access
+              Or continue with email
             </span>
           </div>
 
-          {/* PIN Login Form */}
-          <form onSubmit={handlePinLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <Lock className="h-3.5 w-3.5 text-[#635bff]" /> Admin Passcode
+          <form onSubmit={handleEmailAuth} className="space-y-4">
+            {isSignup && (
+              <div className="space-y-1.5">
+                <label htmlFor="full-name" className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-[#635bff]" /> Full name
                 </label>
-                <button
-                  type="button"
-                  onClick={() => alert("Recovery instructions have been sent to the registered admin email.")}
-                  className="text-[10px] text-[#635bff] hover:underline focus:outline-none"
-                >
-                  Forgot Passcode?
-                </button>
+                <Input
+                  id="full-name"
+                  type="text"
+                  placeholder="Jane Doe"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={authLoading || loading}
+                  className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
+                />
               </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label htmlFor="email-address" className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Key className="h-3.5 w-3.5 text-[#635bff]" /> Email address
+              </label>
               <Input
-                type="password"
-                placeholder="Enter 6-digit PIN..."
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                disabled={pinLoading || loading}
-                className="h-10 text-xs font-mono bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
+                id="email-address"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={authLoading || loading}
+                className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
               />
             </div>
-            
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={pinLoading || !pin.trim() || loading}
-              className="w-full h-10 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] gap-1.5 transition-all"
-            >
-              {pinLoading ? (
-                <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-primary border-t-transparent" />
-              ) : (
-                <ArrowRight className="h-3.5 w-3.5" />
-              )}
-              {pinLoading ? "Verifying PIN..." : "Access Admin Workspace"}
-            </Button>
+
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-[#635bff]" /> Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={authLoading || loading}
+                className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
+              />
+              {isSignup && <PasswordStrength password={password} showRequirements={true} />}
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Button
+                type="submit"
+                disabled={authLoading || loading || !email.trim() || !password.trim() || (isSignup && !name.trim()) || (isSignup && !isPasswordStrong())}
+                className="w-full h-10 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-1.5 transition-all"
+              >
+                {authLoading ? (
+                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-white" />
+                ) : (
+                  <ArrowRight className="h-3.5 w-3.5" />
+                )}
+                {authLoading ? (isSignup ? "Creating account..." : "Signing in...") : isSignup ? "Create account" : "Sign in with email"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsSignup((current) => !current)}
+                className="w-full h-10 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] transition-all"
+              >
+                {isSignup ? "Already have an account? Sign in" : "Need an account? Sign up"}
+              </Button>
+            </div>
           </form>
         </div>
 
-        {/* Security Footer */}
         <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1.5">
           <Shield className="h-3.5 w-3.5 text-emerald-600" /> Secure 256-bit OAuth2 &amp; Encrypted Session
         </p>
