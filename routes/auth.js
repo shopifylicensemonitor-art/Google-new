@@ -149,7 +149,7 @@ router.post('/signup', async (req, res) => {
       String(name).trim(),
       hashedPassword,
       'user',
-      0, // email_verified = false
+      false, // email_verified = false
       verificationCode,
       codeExpires.toISOString()
     );
@@ -308,7 +308,7 @@ router.post('/refresh', async (req, res) => {
 
     // Find the refresh token in database
     const tokenRecord = await db.prepare(
-      'SELECT * FROM refresh_tokens WHERE token = ? AND revoked = 0'
+      'SELECT * FROM refresh_tokens WHERE token = ? AND revoked = false'
     ).get(refreshToken);
 
     if (!tokenRecord) {
@@ -493,7 +493,7 @@ router.post('/verify-email', async (req, res) => {
 
     // MARK EMAIL AS VERIFIED
     await db.prepare(
-      'UPDATE users SET email_verified = 1, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
+      'UPDATE users SET email_verified = true, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
     ).run(user.id);
 
     res.json({
@@ -746,7 +746,7 @@ router.post('/test-verify-email', async (req, res) => {
     }
 
     await db.prepare(
-      'UPDATE users SET email_verified = 1, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
+      'UPDATE users SET email_verified = true, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
     ).run(user.id);
 
     res.json({ success: true, message: 'Email verified for testing.' });
