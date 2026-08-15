@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { navigateToRoute } from "../lib/router";
 import { BASE_URL as API_BASE } from "../api";
-import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PasswordStrength from "@/components/PasswordStrength";
@@ -17,6 +17,7 @@ export default function Login() {
   const [name, setName] = useState("");
   const [isSignup, setIsSignup] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Password strength validation helper
   const isPasswordStrong = (): boolean => {
@@ -201,16 +202,42 @@ export default function Login() {
               <label htmlFor="password" className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5 text-[#635bff]" /> Password
               </label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={authLoading || loading}
-                className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={authLoading || loading}
+                  className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff] pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  disabled={authLoading || loading}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
               {isSignup && <PasswordStrength password={password} showRequirements={true} />}
+              {!isSignup && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/forgot-password')}
+                    className="text-[10px] font-bold text-[#635bff] hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-3">

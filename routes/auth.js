@@ -325,6 +325,123 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
+/** PHASE 5: Forgot password endpoint — generate reset token and send email */
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  try {
+    const db = await getDb();
+    const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email.trim().toLowerCase());
+
+    // Generic response to prevent user enumeration
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a password reset link.'
+      });
+    }
+
+    // Generate 32-byte random reset token
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour expiry
+
+    // Store reset token in database
+    await db.prepare(
+      'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)'
+    ).run(user.id, resetToken, expiresAt.toISOString());
+
+    // Send reset email
+    const { sendPasswordResetEmail } = require('../utils/email');
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email.trim())}`;
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    try {
+      await sendPasswordResetEmail(email.trim(), resetCode, resetLink);
+      logger.info({ email }, 'Password reset email sent');
+    } catch (emailErr) {
+      logger.warn({ err: emailErr, email }, 'Failed to send reset email, but token was created');
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'If an account exists with this email, you will receive a password reset link.'
+    });
+  } catch (err) {
+    logger.error({ err }, 'Forgot password error');
+    res.status(500).json({ error: 'Failed to process request. Please try again.' });
+  }
+});
+
+/** PHASE 5: Reset password endpoint — validate token and update password */
+router.post('/reset-password', async (req, res) => {
+  const { token, email, newPassword } = req.body;
+
+  if (!token || !email || !newPassword) {
+    return res.status(400).json({ error: 'Token, email, and new password are required.' });
+  }
+
+  try {
+    // Validate password strength
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        error: 'Password does not meet requirements.',
+        requirements: passwordValidation.errors
+      });
+    }
+
+    const db = await getDb();
+    
+    // Find reset token
+    const resetToken = await db.prepare(
+      'SELECT * FROM password_reset_tokens WHERE token = ? AND used_at IS NULL'
+    ).get(token);
+
+    if (!resetToken) {
+      return res.status(401).json({ error: 'Invalid or expired reset token.' });
+    }
+
+    // Check if token has expired
+    if (new Date(resetToken.expires_at) < new Date()) {
+      return res.status(401).json({ error: 'Reset token has expired.' });
+    }
+
+    // Get user
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(resetToken.user_id);
+    if (!user || user.email !== email.trim().toLowerCase()) {
+      return res.status(401).json({ error: 'Invalid request.' });
+    }
+
+    // Hash new password
+    const bcrypt = require('bcrypt');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password and mark token as used
+    await db.prepare(
+      'UPDATE users SET password_hash = ? WHERE id = ?'
+    ).run(passwordHash, user.id);
+
+    await db.prepare(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE id = ?'
+    ).run(new Date().toISOString(), resetToken.id);
+
+    logger.info({ email }, 'Password reset successfully');
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.'
+    });
+  } catch (err) {
+    logger.error({ err }, 'Reset password error');
+    res.status(500).json({ error: 'Password reset failed. Please try again.' });
+  }
+});
+
 /** Email verification endpoint — verify code sent to user's email */
 router.post('/verify-email', async (req, res) => {
   const { email, code } = req.body;
@@ -583,6 +700,39 @@ router.post('/settings', async (req, res) => {
     res.json({ success: true, message: 'Settings updated successfully.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/** DEV-ONLY: Auto-verify test emails (ending with @test.local) */
+router.post('/test-verify-email', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  // Only allow test emails in development
+  if (!email.endsWith('@test.local')) {
+    return res.status(403).json({ error: 'Only @test.local emails can be auto-verified.' });
+  }
+
+  try {
+    const db = await getDb();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    await db.prepare(
+      'UPDATE users SET email_verified = 1, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
+    ).run(user.id);
+
+    res.json({ success: true, message: 'Email verified for testing.' });
+  } catch (err) {
+    logger.error({ err }, 'Test email verification error');
+    res.status(500).json({ error: 'Verification failed.' });
   }
 });
 

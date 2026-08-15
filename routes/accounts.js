@@ -713,6 +713,31 @@ function makeRawEmail(from, to, subject, body, extraHeaders = {}) {
   return Buffer.from(msg, 'utf-8').toString('base64url');
 }
 
+/** DEV-ONLY: Insert a test account directly for testing workflows */
+router.post('/test-account', async (req, res) => {
+  const { email, display_name, status } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  try {
+    const db = await getDb();
+    const result = await db.prepare(
+      'INSERT INTO accounts (user_id, email, display_name, status, access_token, type) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(req.userId, email, display_name || 'Test Account', status || 'active', 'test_token_dev', 'oauth');
+
+    res.json({
+      success: true,
+      account_id: result.lastInsertRowid,
+      email,
+      status: status || 'active'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Export the helper for the scheduler
 router.ensureFreshToken = ensureFreshToken;
 router.makeRawEmail = makeRawEmail;

@@ -476,6 +476,16 @@ const SQLITE_DDL = `
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    used_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -489,6 +499,7 @@ const SQLITE_DDL = `
     body_html TEXT,
     body_plain TEXT,
     delay_seconds INTEGER DEFAULT 86400,
+    trigger_event TEXT DEFAULT 'wait',
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
   );
@@ -668,6 +679,15 @@ const PG_DDL = `
     revoked BOOLEAN DEFAULT FALSE
   );
 
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    used_at TIMESTAMPTZ
+  );
+
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -681,6 +701,7 @@ const PG_DDL = `
     body_html TEXT,
     body_plain TEXT,
     delay_seconds INTEGER DEFAULT 86400,
+    trigger_event TEXT DEFAULT 'wait',
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
