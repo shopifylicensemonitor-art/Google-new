@@ -150,7 +150,7 @@ export default function EmailVerification() {
                 className="h-10 text-center text-2xl font-mono bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
               />
               <p className="text-[10px] text-muted-foreground">
-                Enter the 6-digit code from your email. Code expires in 24 hours.
+                Enter the 6-digit code from your email. Code expires in 15 minutes.
               </p>
             </div>
 

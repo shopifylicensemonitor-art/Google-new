@@ -78,6 +78,11 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+const RootRoute = () => {
+  const token = localStorage.getItem("auth_token");
+  return token ? <Navigate to="/dashboard" replace /> : <Landing />;
+};
+
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [isVerifying, setIsVerifying] = useState(true);
   const [isVerified, setIsVerified] = useState(false);
@@ -144,7 +149,7 @@ const App = () => {
       localStorage.setItem("auth_token", token);
       const cleanUrl = `${window.location.pathname}${window.location.hash}`;
       window.history.replaceState({}, "", cleanUrl);
-      navigateToRoute(window.location.pathname + window.location.hash, { replace: true });
+      navigateToRoute("/dashboard", { replace: true });
     }
   }, []);
 
@@ -157,7 +162,7 @@ const App = () => {
           <ErrorBoundary>
             <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted-foreground bg-background">Loading...</div>}>
               <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={<RootRoute />} />
               <Route path="/login" element={<Login />} />
               <Route path="/verify-email" element={<EmailVerification />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />

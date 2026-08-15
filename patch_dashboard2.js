@@ -81,9 +81,10 @@ code = code.replace(oldHeaderRegex, headerActions);
 
 // Calculate metrics for summary cards
 const metricsCalculation = `  // Metrics calculation
-  const totalContacts = accounts.length > 0 ? 1284 : 0;
+  const totalContacts = serverData?.stats.total_contacts || 0;
   const todaySent = serverData?.stats.today_sent || 0;
   const totalOpens = serverData?.stats.opens || 0;
+  const totalReplies = serverData?.stats.replies || 0;
   const totalSentAll = serverData?.stats.today_sent || 1; // avoid /0
   
   // Calculate aggregated stats from chartData
@@ -92,7 +93,7 @@ const metricsCalculation = `  // Metrics calculation
   
   // Overall open/reply rates (based on lifetime stats from campaigns or queue)
   const openRate = totalSentAll > 0 ? ((totalOpens / totalSentAll) * 100).toFixed(1) : '0.0';
-  const replyRate = (Math.min(totalSentAll * 0.034, 432) / totalSentAll * 100).toFixed(1); // placeholder logic for demo
+  const replyRate = totalSentAll > 0 ? ((totalReplies / totalSentAll) * 100).toFixed(1) : '0.0'; // Calculate from actual reply data
 `;
 
 code = code.replace(/  \/\/ Metrics calculation[\s\S]*?const todaySent = serverData\?\.stats\.today_sent \|\| 0;/m, metricsCalculation);

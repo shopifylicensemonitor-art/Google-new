@@ -8,7 +8,26 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../logger');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRETS = Array.from(new Set([
+  process.env.SUPABASE_JWT_SECRET,
+  process.env.JWT_SECRET,
+  JWT_SECRET,
+].filter(Boolean)));
+
+function verifyJwtToken(token) {
+  let lastError = null;
+
+  for (const secret of JWT_SECRETS) {
+    try {
+      return jwt.verify(token, secret);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Invalid JWT');
+}
 
 /**
  * Middleware that accepts EITHER a valid JWT Bearer token
@@ -26,7 +45,7 @@ function requireAuth(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = verifyJwtToken(token);
       req.user = decoded;
       return next();
     } catch (_) {
@@ -62,4 +81,4 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ error: 'Unauthorized. Provide a valid JWT token.' });
 }
 
-module.exports = { requireAuth };
+module.exports = { requireAuth, verifyJwtToken, JWT_SECRET };

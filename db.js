@@ -926,7 +926,11 @@ ready = (async () => {
 
   // Fallback to SQLite if Postgres is disabled, unavailable, or misconfigured.
   {
-    console.log('Using local SQLite database...');
+    if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+      console.warn('DATABASE_URL is not set. Production app is using SQLite fallback, so Supabase data will not be persisted there. Configure DATABASE_URL for real production persistence.');
+    } else {
+      console.log('Using local SQLite database...');
+    }
     const { wrapped } = await createSqliteAdapter();
     await wrapped.exec(SQLITE_DDL);
     try {

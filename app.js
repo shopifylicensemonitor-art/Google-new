@@ -6,10 +6,20 @@
 
 require('dotenv').config();
 
-// Ensure AI_ENCRYPTION_KEY and JWT_SECRET are available with fallbacks
+// Ensure AI_ENCRYPTION_KEY and JWT_SECRET are available with fallbacks.
+// Prefer the Supabase secret when configured so app-issued JWTs match the project auth setup.
+if (process.env.SUPABASE_JWT_SECRET && !process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+}
+if (!process.env.SUPABASE_JWT_SECRET && process.env.JWT_SECRET) {
+  process.env.SUPABASE_JWT_SECRET = process.env.JWT_SECRET;
+}
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'peak-xender-jwt-secret-key-32chars';
   console.warn('Warning: JWT_SECRET not set; using default fallback.');
+}
+if (!process.env.SUPABASE_JWT_SECRET) {
+  process.env.SUPABASE_JWT_SECRET = process.env.JWT_SECRET;
 }
 if (!process.env.AI_ENCRYPTION_KEY) {
   process.env.AI_ENCRYPTION_KEY = process.env.JWT_SECRET;
@@ -136,6 +146,12 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     const campaignsRow = await db.prepare("SELECT COUNT(*) as active FROM campaigns WHERE status = 'sending' AND user_id = ?").get(uid) || { active: 0 };
     const failedRow = await db.prepare("SELECT SUM(failed_count) as failed FROM campaigns WHERE user_id = ?").get(uid) || { failed: 0 };
     const trackingRow = await db.prepare("SELECT COALESCE(SUM(q.opens_count), 0) as opens, COALESCE(SUM(q.clicks_count), 0) as clicks FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE c.user_id = ?").get(uid) || { opens: 0, clicks: 0 };
+    
+    // Count replies from inbox_messages for this user
+    const repliesRow = await db.prepare("SELECT COUNT(*) as replies FROM inbox_messages WHERE user_id = ?").get(uid) || { replies: 0 };
+    
+    // Count total contacts
+    const contactsRow = await db.prepare("SELECT COUNT(*) as total FROM contacts WHERE user_id = ?").get(uid) || { total: 0 };
 
     const stats = {
       today_sent: accountsRow.today_sent || 0,
@@ -145,6 +161,8 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       failed: failedRow.failed || 0,
       opens: trackingRow.opens || 0,
       clicks: trackingRow.clicks || 0,
+      replies: repliesRow.replies || 0,
+      total_contacts: contactsRow.total || 0,
     };
 
     

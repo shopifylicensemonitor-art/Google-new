@@ -35,7 +35,7 @@ export default function Login() {
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
     if (token) {
-      navigate("/send");
+      navigate("/dashboard");
     }
 
     const params = new URLSearchParams(window.location.search);
@@ -96,7 +96,7 @@ export default function Login() {
         if (data.token) {
           localStorage.setItem("auth_token", data.token);
         }
-        navigate("/send");
+        navigate("/dashboard");
         return;
       }
 

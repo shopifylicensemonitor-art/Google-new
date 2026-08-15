@@ -17,17 +17,36 @@ const { getDb } = require('../db');
 const { encrypt, decrypt } = require('../crypto');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRETS = Array.from(new Set([
+  process.env.SUPABASE_JWT_SECRET,
+  process.env.JWT_SECRET,
+  JWT_SECRET,
+].filter(Boolean)));
 
 /** Sign the owning user id into the OAuth `state` param (10 min validity). */
 function signOwnerState(userId) {
   return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: '10m' });
 }
 
+function verifyStateToken(state) {
+  let lastError = null;
+
+  for (const secret of JWT_SECRETS) {
+    try {
+      return jwt.verify(String(state || ''), secret);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Invalid OAuth state token');
+}
+
 /** Read the owning user id back from the OAuth `state` param. */
 async function readOwnerState(state) {
   try {
-    const decoded = jwt.verify(String(state || ''), JWT_SECRET);
+    const decoded = verifyStateToken(state);
     if (decoded && decoded.uid) return decoded.uid;
   } catch (_) { /* fall through to legacy behaviour */ }
   const db = await getDb();
@@ -723,9 +742,18 @@ router.post('/test-account', async (req, res) => {
 
   try {
     const db = await getDb();
+    // Generate a test JWT token using the JWT secret
+    const crypto = require('crypto');
+    const jwt = require('jsonwebtoken');
+    const testToken = jwt.sign(
+      { email, type: 'test', iat: Math.floor(Date.now() / 1000) },
+      process.env.JWT_SECRET || 'peak-xender-jwt-secret-key-32chars',
+      { expiresIn: '7d' }
+    );
+    
     const result = await db.prepare(
       'INSERT INTO accounts (user_id, email, display_name, status, access_token, type) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(req.userId, email, display_name || 'Test Account', status || 'active', 'test_token_dev', 'oauth');
+    ).run(req.userId, email, display_name || 'Test Account', status || 'active', testToken, 'oauth');
 
     res.json({
       success: true,

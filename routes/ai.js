@@ -153,6 +153,17 @@ async function callAI(messages, systemOverride = null) {
     if (response.text) return response.text.trim();
   }
 
+  const hasMissingGemini = !process.env.GEMINI_API_KEY;
+  const hasCustomConfig = config && config.apiKey;
+  
+  if (hasMissingGemini && !hasCustomConfig) {
+    throw new Error('❌ AI Provider is not configured. Please:' +
+      '\n1. Get a Gemini API Key from https://ai.google.dev' +
+      '\n2. Set GEMINI_API_KEY in your .env file, OR' +
+      '\n3. Configure a custom AI provider in AI Settings' +
+      '\n\nWithout an AI provider, content generation features will not work.');
+  }
+  
   throw new Error('AI Provider is not configured yet. Please configure your API key in AI Settings or system environment.');
 }
 
@@ -182,15 +193,26 @@ router.get('/config', async (_req, res) => {
 /** POST /api/ai/config â€” Save/update AI provider config */
 router.post('/config', async (req, res) => {
   const { provider, apiKey, baseUrl, model } = req.body;
+  
+  // Validate API key
   if (!apiKey) {
     return res.status(400).json({ error: 'API Key is required.' });
+  }
+
+  const trimmedKey = apiKey.trim();
+  
+  // Reject masked keys (contain asterisks or are too short)
+  if (trimmedKey.includes('*') || trimmedKey.includes('...') || trimmedKey.length < 10) {
+    return res.status(400).json({ 
+      error: 'Invalid API key format. Please provide a complete, valid API key (not a masked version).' 
+    });
   }
 
   try {
     const db = await getDb();
     const cleanBaseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
     const cleanModel = model || 'openai/gpt-4o-mini';
-    const encKey = encryptKey(apiKey.trim());
+    const encKey = encryptKey(trimmedKey);
 
     const existing = await db.prepare('SELECT id FROM ai_config ORDER BY id DESC LIMIT 1').get();
     if (existing) {
@@ -201,8 +223,10 @@ router.post('/config', async (req, res) => {
         .run(provider || 'custom', encKey, cleanBaseUrl, cleanModel);
     }
 
+    logger.info({ provider, model }, 'AI configuration saved successfully');
     res.json({ success: true, message: 'AI Provider settings saved successfully.' });
   } catch (err) {
+    logger.error({ err }, 'Failed to save AI config');
     res.status(500).json({ error: err.message });
   }
 });

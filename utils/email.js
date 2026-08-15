@@ -62,7 +62,13 @@ async function initializeEmailer() {
   }
 
   // Option 4: Console mock (development/testing without real emails)
-  logger.warn('No email service configured. Using console logging for emails.');
+  if (process.env.NODE_ENV === 'production') {
+    const message = 'No email service configured for production. Set SMTP_HOST / SMTP_USER / SMTP_PASS or GMAIL_USER / GMAIL_APP_PASSWORD, or configure Supabase SMTP.';
+    logger.error(message);
+    throw new Error(message);
+  }
+
+  logger.warn('No email service configured. Using console logging for emails in development mode.');
   return {
     sendMail: async (mailOptions) => {
       logger.info('EMAIL MOCK (not sent):', {
@@ -112,7 +118,7 @@ async function sendVerificationEmail(email, code, verificationLink) {
                 ${code}
               </p>
               <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">
-                Code expires in 24 hours
+                Code expires in 15 minutes
               </p>
             </div>
           </div>
@@ -140,7 +146,7 @@ ${verificationLink}
 OPTION 2: Enter this code
 ${code}
 
-Code expires in 24 hours.
+Code expires in 15 minutes.
 
 If you didn't create this account, please ignore this email.
     `.trim();

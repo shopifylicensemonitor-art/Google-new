@@ -269,6 +269,9 @@ export const api = {
       pending: number;
       active_campaigns: number;
       failed: number;
+      opens?: number;
+      clicks?: number;
+      replies?: number;
     };
     campaigns: Campaign[];
     queue: {

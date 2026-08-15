@@ -14,10 +14,32 @@ const jwt = require('jsonwebtoken');
 const { google } = require('googleapis');
 const { getDb } = require('../db');
 const logger = require('../logger');
+const { verifyJwtToken } = require('../middleware/session');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+const JWT_SECRETS = Array.from(new Set([
+  process.env.SUPABASE_JWT_SECRET,
+  process.env.JWT_SECRET,
+  JWT_SECRET,
+].filter(Boolean)));
 const JWT_EXPIRY = '7d';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || process.env.VERIFICATION_CODE_TTL_MINUTES || 15);
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:8080';
+
+function verifyToken(token) {
+  let lastError = null;
+
+  for (const secret of JWT_SECRETS) {
+    try {
+      return jwt.verify(token, secret);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Invalid JWT');
+}
 
 /**
  * Validates password strength requirements:
@@ -117,7 +139,7 @@ router.post('/signup', async (req, res) => {
 
     // GENERATE 6-DIGIT VERIFICATION CODE
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const codeExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await db.prepare(
@@ -143,8 +165,7 @@ router.post('/signup', async (req, res) => {
     ).run(workspaceId, userId, 'admin');
 
     // SEND VERIFICATION EMAIL
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const verificationLink = `${frontendUrl}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
+    const verificationLink = `${FRONTEND_ORIGIN}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
 
     try {
       await sendVerificationEmail(normalizedEmail, verificationCode, verificationLink);
@@ -357,7 +378,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Send reset email
     const { sendPasswordResetEmail } = require('../utils/email');
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email.trim())}`;
+    const resetLink = `${FRONTEND_ORIGIN}/reset-password?token=${resetToken}&email=${encodeURIComponent(email.trim())}`;
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     try {
@@ -510,15 +531,14 @@ router.post('/resend-verification', async (req, res) => {
 
     // GENERATE NEW VERIFICATION CODE
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const codeExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     await db.prepare(
       'UPDATE users SET verification_code = ?, verification_code_expires = ? WHERE id = ?'
     ).run(verificationCode, codeExpires.toISOString(), user.id);
 
     // SEND VERIFICATION EMAIL
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const verificationLink = `${frontendUrl}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
+    const verificationLink = `${FRONTEND_ORIGIN}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
 
     try {
       await sendVerificationEmail(normalizedEmail, verificationCode, verificationLink);
@@ -603,7 +623,7 @@ router.get('/me', async (req, res) => {
 
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
     res.json({
       id: decoded.id,
       email: decoded.email,
@@ -624,7 +644,7 @@ router.post('/profile', async (req, res) => {
 
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyToken(token);
     const { name, picture } = req.body;
 
     if (!name) {
