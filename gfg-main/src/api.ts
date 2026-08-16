@@ -25,6 +25,7 @@ export interface Account {
   email: string;
   status: 'active' | 'paused';
   daily_sent: number;
+  daily_limit?: number;
   last_reset: string | null;
   display_name: string;
   type: 'oauth' | 'smtp';
@@ -87,6 +88,20 @@ export interface Campaign {
   content_variations: string | null;
   content_mode: 'single' | 'rotation';
   ignore_window?: number;
+  timezone?: string;
+  account_ids?: string | number[];
+  target_limit?: number;
+  target_range_start?: number;
+  target_range_end?: number;
+  exclude_previously_contacted?: number | boolean;
+  custom_filters?: string | { field: string; operator: string; value: string }[];
+  format_type?: 'html' | 'plain';
+  timing_mode?: 'smart' | 'fixed' | 'stealth' | 'burst' | 'custom';
+  min_delay?: number;
+  max_delay?: number;
+  cooldown_enabled?: number | boolean;
+  cooldown_batch_size?: number;
+  cooldown_duration_minutes?: number;
   created_at: string;
   queue_stats?: {
     pending?: number;
@@ -167,13 +182,36 @@ export interface InboxMessage {
   subject: string | null;
   body_text: string | null;
   body_html: string | null;
-  sentiment: 'hot_lead' | 'unsubscribe' | 'question' | 'neutral';
+  sentiment: 'hot_lead' | 'unsubscribe' | 'question' | 'neutral' | 'sent';
   is_read: number;
+  is_starred?: number;
+  starred_at?: string | null;
+  status?: string;
+  message_id?: string | null;
+  thread_id?: string | null;
   created_at: string;
   contact_list?: string;
   contact_fields?: Record<string, string>;
   store_url?: string;
   store_name?: string;
+}
+
+export interface InboxCounts {
+  all: number;
+  unread: number;
+  primary: number;
+  interested: number;
+  questions: number;
+  opted_out: number;
+  starred: number;
+  by_account: {
+    account_id: number;
+    account_email: string;
+    display_name: string;
+    account_status: string;
+    count: number;
+    unread_count: number;
+  }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -290,12 +328,28 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ to })
   }),
-  resetAccount: (id: number) => apiFetch<{ success: boolean }>(`/api/accounts/${id}/reset`, { method: 'POST' }),
+  resetAccount: (id: number, resetCode?: string) => apiFetch<{ success: boolean; message?: string }>(`/api/accounts/${id}/reset`, {
+    method: 'POST',
+    body: JSON.stringify({ reset_code: resetCode })
+  }),
   pauseAccount: (id: number) => apiFetch<{ success: boolean }>(`/api/accounts/${id}/pause`, { method: 'POST' }),
   resumeAccount: (id: number) => apiFetch<{ success: boolean }>(`/api/accounts/${id}/resume`, { method: 'POST' }),
+  updateAccountLimit: (id: number, dailyLimit: number) => apiFetch<{ success: boolean; daily_limit?: number; message?: string }>(`/api/accounts/${id}/daily-limit`, {
+    method: 'PUT',
+    body: JSON.stringify({ daily_limit: dailyLimit })
+  }),
+  updateAccount: (id: number, data: { display_name?: string; daily_limit?: number }) => apiFetch<{ success: boolean; message?: string }>(`/api/accounts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
   updateDisplayName: (id: number, displayName: string) => apiFetch<{ success: boolean }>(`/api/accounts/${id}/display-name`, {
     method: 'PUT',
     body: JSON.stringify({ display_name: displayName })
+  }),
+  getResetCodeStatus: () => apiFetch<{ configured: boolean }>('/api/auth/reset-code'),
+  setResetCode: (resetCode: string) => apiFetch<{ success: boolean; message?: string }>('/api/auth/reset-code', {
+    method: 'POST',
+    body: JSON.stringify({ reset_code: resetCode })
   }),
   connectSmtp: (data: {
     email: string;
@@ -345,8 +399,10 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(data)
   }),
-  deleteCampaign: (id: number) => apiFetch<{ success: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
-  launchCampaign: (id: number) => apiFetch<{ success: boolean; message: string; processing_started?: boolean; processing_error?: string; recipients_count?: number; accounts_count?: number }>(`/api/campaigns/${id}/launch`, { method: 'POST' }),
+  launchCampaign: (id: number, options?: { account_ids?: number[]; custom_filters?: any[]; target_limit?: number; target_range_start?: number; target_range_end?: number; exclude_previously_contacted?: boolean | number; recipients?: any[]; contacts?: any[] }) => apiFetch<{ success: boolean; message: string; processing_started?: boolean; processing_error?: string; recipients_count?: number; accounts_count?: number }>(`/api/campaigns/${id}/launch`, {
+    method: 'POST',
+    body: options ? JSON.stringify(options) : undefined
+  }),
   retryProcessing: (id: number) => apiFetch<{ success: boolean; processing_started?: boolean; processing_error?: string }>(`/api/campaigns/${id}/retry-processing`, { method: 'POST' }),
   retryAll: (id: number, opts?: { max_iterations?: number; max_seconds?: number }) => apiFetch<{ success: boolean; processed_count?: number; remaining_pending?: number; iterations?: number; processing_error?: string }>(`/api/campaigns/${id}/retry-all`, { method: 'POST', body: JSON.stringify(opts || {}) }),
   pauseCampaign: (id: number) => apiFetch<{ success: boolean }>(`/api/campaigns/${id}/pause`, { method: 'POST' }),
@@ -464,9 +520,13 @@ export const api = {
   // Auth
   getLoginUrl: () => apiFetch<{ url: string }>('/api/auth/google-url'),
   getCurrentUser: () => apiFetch<{ id: number; email: string; name: string; role: string; picture?: string }>('/api/auth/me'),
-  updateProfile: (name: string, picture: string) => apiFetch<{ success: boolean; message: string }>('/api/auth/profile', {
+  updateProfile: (name: string, picture?: string) => apiFetch<{ success: boolean; message: string }>('/api/auth/profile', {
     method: 'POST',
-    body: JSON.stringify({ name, picture }),
+    body: JSON.stringify({ name, picture: picture || '' }),
+  }),
+  changePassword: (data: { currentPassword?: string; newPassword: string }) => apiFetch<{ success: boolean; message: string }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(data),
   }),
   getSettings: () => apiFetch<{
     ADMIN_EMAIL: string;
@@ -535,12 +595,30 @@ export const api = {
   }),
 
   // Inbox & Two-Way Receiving
-  getInboxMessages: (limit?: number) => apiFetch<InboxMessage[]>(`/api/inbox${limit ? `?limit=${limit}` : ''}`),
-  syncInbox: () => apiFetch<{ success: boolean; message: string }>('/api/inbox/sync', { method: 'POST' }),
+  getInboxCounts: () => apiFetch<InboxCounts>('/api/inbox/counts'),
+  getInboxMessages: (params?: { limit?: number; account_id?: number | string; sentiment?: string; starred?: boolean; read?: 'unread' | 'read' | 'all'; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.account_id && params.account_id !== 'all') query.set('account_id', String(params.account_id));
+    if (params?.sentiment && params.sentiment !== 'all') query.set('sentiment', params.sentiment);
+    if (params?.starred) query.set('starred', '1');
+    if (params?.read && params.read !== 'all') query.set('read', params.read);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString();
+    return apiFetch<InboxMessage[]>(`/api/inbox${qs ? `?${qs}` : ''}`);
+  },
+  syncInbox: () => apiFetch<{ success: boolean; message: string; newMessages?: number; syncedAccounts?: number }>('/api/inbox/sync', { method: 'POST' }),
   markInboxRead: (id: number) => apiFetch<{ success: boolean }>(`/api/inbox/${id}/read`, { method: 'POST' }),
-  replyToInboxMessage: (id: number, replyBody: string) => apiFetch<{ success: boolean; message: string }>(`/api/inbox/${id}/reply`, {
+  starInboxMessage: (id: number) => apiFetch<{ success: boolean; is_starred: number }>(`/api/inbox/${id}/star`, { method: 'POST' }),
+  deleteInboxMessage: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/inbox/${id}`, { method: 'DELETE' }),
+  bulkInboxAction: (ids: number[], action: 'mark_read' | 'mark_unread' | 'star' | 'unstar' | 'delete') => apiFetch<{ success: boolean; count: number; action: string }>('/api/inbox/bulk', {
     method: 'POST',
-    body: JSON.stringify({ replyBody })
+    body: JSON.stringify({ ids, action })
+  }),
+  getInboxThread: (id: number) => apiFetch<{ thread: InboxMessage[]; outbound_history: any[]; contact_email: string }>(`/api/inbox/thread/${id}`),
+  replyToInboxMessage: (id: number, replyBody: string, replySubject?: string) => apiFetch<{ success: boolean; message: string }>(`/api/inbox/${id}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ replyBody, replySubject })
   }),
 
   // Master Suppression & Do-Not-Contact List

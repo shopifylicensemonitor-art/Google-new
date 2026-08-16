@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { RecentSearchInput } from '@/components/RecentSearchInput';
 import { useOutreachTracker } from '@/hooks/useOutreachTracker';
+import { useKPITargets } from '@/hooks/useKPITargets';
+import { KPITargetsModal } from '@/components/KPITargetsModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -12,45 +15,57 @@ import {
   TrendingUp, TrendingDown, Minus, Trash2, Search, Download, Trash, 
   Layers, CheckCircle2, Mail, ExternalLink, Calendar, AlertCircle,
   Send, MailOpen, MousePointerClick, MessageSquare, AlertTriangle, Filter,
-  BarChart3, RefreshCw
+  BarChart3, RefreshCw, Inbox, Target, Settings2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend 
 } from 'recharts';
 
-const TREND_DATA = [
-  { day: 'Mon', opens: 4200, clicks: 1800 },
-  { day: 'Tue', opens: 6100, clicks: 2500 },
-  { day: 'Wed', opens: 8800, clicks: 4100 },
-  { day: 'Thu', opens: 5200, clicks: 2100 },
-  { day: 'Fri', opens: 7400, clicks: 3600 },
-  { day: 'Sat', opens: 3100, clicks: 1200 },
-  { day: 'Sun', opens: 2800, clicks: 900 }
-];
-
 export default function Tracker() {
   const { logs, deleteLog, clearLogs } = useOutreachTracker();
+  const { targets } = useKPITargets();
+  const [kpiModalOpen, setKpiModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'bcc'>('all');
   const [timeRange, setTimeRange] = useState<'30' | '7' | '90'>('30');
   const [selectedCampaignFilter, setSelectedCampaignFilter] = useState<string>('all');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [dashboardData, setDashboardData] = useState<{
+    stats: {
+      today_sent: number;
+      active_accounts: number;
+      pending: number;
+      active_campaigns: number;
+      failed: number;
+      opens?: number;
+      clicks?: number;
+      replies?: number;
+      total_contacts?: number;
+    };
+    campaigns: Campaign[];
+    chartData: { date: string; sent: number; failed: number }[];
+  } | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      const [camps, dash] = await Promise.all([
+        api.getCampaigns().catch(() => [] as Campaign[]),
+        api.getDashboardData(Number(timeRange)).catch(() => null)
+      ]);
+      setCampaigns(camps);
+      setDashboardData(dash);
+    } catch (e) {
+      // Fallback silently if API fails
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchCampaigns = async () => {
-      try {
-        setLoading(true);
-        const data = await api.getCampaigns();
-        setCampaigns(data);
-      } catch (e) {
-        // Fallback silently if API fails
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCampaigns();
-  }, []);
+    fetchAnalytics();
+  }, [timeRange]);
 
   // Calculate stats from actual logs + system stats
   const stats = useMemo(() => {
@@ -64,6 +79,50 @@ export default function Tracker() {
 
     return { total, individualCount, bccCount, todayCount };
   }, [logs]);
+
+  const totalSent = useMemo(() => {
+    const fromCampaigns = campaigns.reduce((acc, c) => acc + (c.sent_count || 0), 0);
+    return Math.max(fromCampaigns, stats.total, dashboardData?.stats.today_sent || 0);
+  }, [campaigns, stats.total, dashboardData]);
+
+  const totalOpens = useMemo(() => {
+    return campaigns.reduce((acc, c) => acc + (c.total_opens || 0), 0) + (dashboardData?.stats.opens || 0);
+  }, [campaigns, dashboardData]);
+
+  const totalClicks = useMemo(() => {
+    return campaigns.reduce((acc, c) => acc + (c.total_clicks || 0), 0) + (dashboardData?.stats.clicks || 0);
+  }, [campaigns, dashboardData]);
+
+  const totalFailed = useMemo(() => {
+    return campaigns.reduce((acc, c) => acc + (c.failed_count || 0), 0) + (dashboardData?.stats.failed || 0);
+  }, [campaigns, dashboardData]);
+
+  const totalReplies = dashboardData?.stats.replies || 0;
+
+  const deliveredRate = totalSent > 0 ? (((totalSent - totalFailed) / totalSent) * 100).toFixed(1) : '100.0';
+  const openRate = totalSent > 0 ? ((totalOpens / totalSent) * 100).toFixed(1) : '0.0';
+  const clickRate = totalSent > 0 ? ((totalClicks / totalSent) * 100).toFixed(1) : '0.0';
+  const replyRate = totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : '0.0';
+  const bounceRate = totalSent > 0 ? ((totalFailed / totalSent) * 100).toFixed(1) : '0.0';
+
+  const chartData = useMemo(() => {
+    if (dashboardData?.chartData && dashboardData.chartData.length > 0) {
+      return dashboardData.chartData.map(d => ({
+        day: d.date ? d.date.slice(5) : '',
+        sent: d.sent || 0,
+        failed: d.failed || 0,
+      }));
+    }
+    return [
+      { day: 'Day 1', sent: 0, failed: 0 },
+      { day: 'Day 2', sent: 0, failed: 0 },
+      { day: 'Day 3', sent: 0, failed: 0 },
+      { day: 'Day 4', sent: 0, failed: 0 },
+      { day: 'Day 5', sent: 0, failed: 0 },
+      { day: 'Day 6', sent: 0, failed: 0 },
+      { day: 'Day 7', sent: 0, failed: 0 }
+    ];
+  }, [dashboardData]);
 
   // Handle Search and Type Filters for Logs
   const filteredLogs = useMemo(() => {
@@ -193,6 +252,16 @@ export default function Tracker() {
             </select>
 
             <Button
+              onClick={() => setKpiModalOpen(true)}
+              variant="outline"
+              size="sm"
+              className="h-10 text-xs font-bold gap-1.5 border-border/60 bg-card hover:bg-muted text-foreground"
+            >
+              <Target className="h-4 w-4 text-primary" />
+              <span>Set KPI Targets</span>
+            </Button>
+
+            <Button
               onClick={handleExportCSV}
               variant="outline"
               size="icon"
@@ -213,10 +282,10 @@ export default function Tracker() {
               <span className="text-xs font-bold uppercase tracking-wider">Sent</span>
             </div>
             <div className="font-heading text-2xl font-bold text-foreground">
-              {stats.total > 0 ? stats.total.toLocaleString() : '124k'}
+              {totalSent.toLocaleString()}
             </div>
-            <div className="flex items-center gap-1 mt-1 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-              <TrendingUp className="h-3 w-3" /> +12.5%
+            <div className="flex items-center gap-1 mt-1 text-primary text-[11px] font-bold">
+              <TrendingUp className="h-3 w-3" /> Goal: {targets.dailyGoal.toLocaleString()}/day
             </div>
           </div>
 
@@ -226,9 +295,9 @@ export default function Tracker() {
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               <span className="text-xs font-bold uppercase tracking-wider">Delivered</span>
             </div>
-            <div className="font-heading text-2xl font-bold text-foreground">98.2%</div>
+            <div className="font-heading text-2xl font-bold text-foreground">{deliveredRate}%</div>
             <div className="flex items-center gap-1 mt-1 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-              <TrendingUp className="h-3 w-3" /> +2.1%
+              <CheckCircle2 className="h-3 w-3" /> Target: &gt;97%
             </div>
           </div>
 
@@ -238,9 +307,9 @@ export default function Tracker() {
               <MailOpen className="h-4 w-4 text-blue-500" />
               <span className="text-xs font-bold uppercase tracking-wider">Opened</span>
             </div>
-            <div className="font-heading text-2xl font-bold text-foreground">42.3%</div>
-            <div className="flex items-center gap-1 mt-1 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-              <TrendingUp className="h-3 w-3" /> +5.4%
+            <div className="font-heading text-2xl font-bold text-foreground">{openRate}%</div>
+            <div className="flex items-center gap-1 mt-1 text-blue-600 dark:text-blue-400 text-[11px] font-bold">
+              <Target className="h-3 w-3" /> Goal: {targets.targetOpenRate}%
             </div>
           </div>
 
@@ -250,9 +319,9 @@ export default function Tracker() {
               <MousePointerClick className="h-4 w-4 text-amber-500" />
               <span className="text-xs font-bold uppercase tracking-wider">Clicked</span>
             </div>
-            <div className="font-heading text-2xl font-bold text-foreground">8.7%</div>
-            <div className="flex items-center gap-1 mt-1 text-muted-foreground text-[11px] font-bold">
-              <Minus className="h-3 w-3" /> 0.0%
+            <div className="font-heading text-2xl font-bold text-foreground">{clickRate}%</div>
+            <div className="flex items-center gap-1 mt-1 text-amber-600 dark:text-amber-400 text-[11px] font-bold">
+              <Target className="h-3 w-3" /> Goal: {targets.targetClickRate}%
             </div>
           </div>
 
@@ -262,21 +331,21 @@ export default function Tracker() {
               <MessageSquare className="h-4 w-4 text-purple-500" />
               <span className="text-xs font-bold uppercase tracking-wider">Replied</span>
             </div>
-            <div className="font-heading text-2xl font-bold text-foreground">3.2%</div>
-            <div className="flex items-center gap-1 mt-1 text-rose-500 text-[11px] font-bold">
-              <TrendingDown className="h-3 w-3" /> -1.1%
+            <div className="font-heading text-2xl font-bold text-foreground">{replyRate}%</div>
+            <div className="flex items-center gap-1 mt-1 text-purple-600 dark:text-purple-400 text-[11px] font-bold">
+              <Target className="h-3 w-3" /> Goal: {targets.targetReplyRate}%
             </div>
           </div>
 
           {/* Bounced */}
           <div className="bg-card rounded-xl p-4 border border-border/60 shadow-2xs">
             <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
-              <AlertTriangle className="h-4 w-4 text-rose-500" />
+              <AlertTriangle className={`h-4 w-4 ${parseFloat(bounceRate) > targets.maxBounceRate ? 'text-rose-500' : 'text-emerald-500'}`} />
               <span className="text-xs font-bold uppercase tracking-wider">Bounced</span>
             </div>
-            <div className="font-heading text-2xl font-bold text-foreground">2.0%</div>
-            <div className="flex items-center gap-1 mt-1 text-emerald-600 text-[11px] font-bold">
-              <TrendingDown className="h-3 w-3" /> -0.5%
+            <div className="font-heading text-2xl font-bold text-foreground">{bounceRate}%</div>
+            <div className={`flex items-center gap-1 mt-1 text-[11px] font-bold ${parseFloat(bounceRate) > targets.maxBounceRate ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              <AlertTriangle className="h-3 w-3" /> Limit: &lt;{targets.maxBounceRate}%
             </div>
           </div>
         </div>
@@ -287,14 +356,14 @@ export default function Tracker() {
           <div className="lg:col-span-2 bg-card rounded-xl border border-border/60 p-5 shadow-2xs flex flex-col justify-between">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-[#635bff]" /> Engagement Trends
+                <BarChart3 className="h-4 w-4 text-[#635bff]" /> Outreach Activity
               </h3>
-              <span className="text-xs text-muted-foreground font-mono">Weekly Breakdown</span>
+              <span className="text-xs text-muted-foreground font-mono">Last {timeRange} Days</span>
             </div>
 
             <div className="h-[280px] w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={TREND_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(119, 117, 135, 0.2)" />
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#777587' }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#777587' }} />
@@ -308,8 +377,8 @@ export default function Tracker() {
                     }} 
                   />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Bar dataKey="opens" name="Opens" fill="#635bff" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="clicks" name="Clicks" fill="#ffb68f" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sent" name="Emails Sent" fill="#635bff" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="failed" name="Failed / Bounced" fill="#ef4444" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -319,81 +388,40 @@ export default function Tracker() {
           <div className="bg-card rounded-xl border border-border/60 p-5 shadow-2xs flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-heading text-sm font-bold text-foreground">Top Campaigns</h3>
-              <span className="text-xs text-[#635bff] font-bold cursor-pointer hover:underline">View All</span>
+              <Link to="/campaigns" className="text-xs text-[#635bff] font-bold cursor-pointer hover:underline">View All</Link>
             </div>
 
             <div className="space-y-3 flex-1">
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#635bff]/10 text-[#635bff] border border-[#635bff]/20 flex items-center justify-center font-bold text-xs">
-                    Q3
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-foreground">Q3 Enterprise Nurture</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">12,450 Sent</div>
-                  </div>
+              {campaigns.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 py-12 text-center text-muted-foreground">
+                  <Layers className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                  <p className="text-xs font-semibold text-foreground">No campaigns found</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Campaign performance will rank here</p>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold text-xs text-foreground">52% Open</div>
-                  <div className="text-[10px] text-emerald-600 font-bold flex items-center justify-end">
-                    <TrendingUp className="h-3 w-3 mr-0.5" /> +4.2%
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20 flex items-center justify-center font-bold text-xs">
-                    C2
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-foreground">Cold Outreach v2</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">45,200 Sent</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-xs text-foreground">38% Open</div>
-                  <div className="text-[10px] text-muted-foreground font-bold flex items-center justify-end">
-                    <Minus className="h-3 w-3 mr-0.5" /> 0.0%
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center font-bold text-xs">
-                    W1
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-foreground">Webinar Invites</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">8,100 Sent</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-xs text-foreground">61% Open</div>
-                  <div className="text-[10px] text-emerald-600 font-bold flex items-center justify-end">
-                    <TrendingUp className="h-3 w-3 mr-0.5" /> +8.1%
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/20 flex items-center justify-center font-bold text-xs">
-                    R1
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-foreground">Re-engagement</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">15,000 Sent</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-xs text-foreground">15% Open</div>
-                  <div className="text-[10px] text-rose-500 font-bold flex items-center justify-end">
-                    <TrendingDown className="h-3 w-3 mr-0.5" /> -2.4%
-                  </div>
-                </div>
-              </div>
+              ) : (
+                campaigns.slice(0, 4).map((c) => {
+                  const campOpenRate = (c.sent_count || 0) > 0 ? (((c.total_opens || 0) / c.sent_count) * 100).toFixed(0) : '0';
+                  return (
+                    <div key={c.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-xs">
+                          {c.name ? c.name.slice(0, 2).toUpperCase() : 'CP'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-xs text-foreground truncate max-w-[130px]">{c.name}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">{(c.sent_count || 0).toLocaleString()} Sent</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-xs text-foreground">{campOpenRate}% Open</div>
+                        <div className="text-[10px] text-muted-foreground capitalize font-semibold">
+                          {c.status}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -539,6 +567,11 @@ export default function Tracker() {
           </div>
         </div>
       </div>
+
+      <KPITargetsModal
+        isOpen={kpiModalOpen}
+        onClose={() => setKpiModalOpen(false)}
+      />
     </AppShell>
   );
 }

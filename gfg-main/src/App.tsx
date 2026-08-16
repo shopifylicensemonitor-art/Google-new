@@ -126,6 +126,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   return <>{children}</>;
 };
 
+
 // ---------------------------------------------------------------------------
 // App Entry Component
 // ---------------------------------------------------------------------------
@@ -142,12 +143,12 @@ const App = () => {
       clarity.init(CLARITY_PROJECT_ID);
     }
 
-    // Capture JWT token from OAuth callback redirect
+    // Capture token from query search params (Google OAuth callback redirect)
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    const token = params.get("token") || params.get("access_token");
     if (token) {
       localStorage.setItem("auth_token", token);
-      const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+      const cleanUrl = window.location.pathname;
       window.history.replaceState({}, "", cleanUrl);
       navigateToRoute("/dashboard", { replace: true });
     }

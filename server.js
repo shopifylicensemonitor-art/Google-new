@@ -11,7 +11,10 @@ const path = require('path');
 const { getDb } = require('./db');
 const logger = require('./logger');
 
-const PORT = process.env.PORT || 3000;
+const args = process.argv.slice(2);
+const portArg = args.find(a => a.startsWith('--port='));
+const cliPort = portArg ? parseInt(portArg.split('=')[1], 10) : null;
+const PORT = cliPort || process.env.PORT || 3000;
 
 const fs = require('fs');
 
@@ -67,8 +70,6 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 (async () => {
-  await getDb();
-
   const os = require('os');
   const networkInterfaces = os.networkInterfaces();
   const localIps = [];
@@ -88,5 +89,6 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     logger.info(`API endpoints: http://localhost:${PORT}/api/health`);
   });
 
+  await getDb();
   require('./scheduler');
 })();

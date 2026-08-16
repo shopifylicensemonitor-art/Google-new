@@ -498,7 +498,7 @@ export default function Contacts({ requirePin }: ContactsProps) {
                 }`}
               >
                 <Users className="h-3.5 w-3.5 text-[#635bff]" />
-                Contact Lists ({lists.reduce((acc, l) => acc + (l.recipient_count || 0), 0)})
+                Contact Lists ({lists.reduce((acc, l) => acc + (l.count || 0), 0)})
               </Button>
 
               <Button
@@ -759,12 +759,17 @@ export default function Contacts({ requirePin }: ContactsProps) {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1">
-                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-sans text-[10px] font-medium border border-border/40">
-                              SaaS
-                            </span>
-                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-sans text-[10px] font-medium border border-border/40">
-                              Enterprise
-                            </span>
+                            {c.fields && Object.keys(c.fields).length > 0 ? (
+                              Object.entries(c.fields).slice(0, 2).map(([k, v]) => (
+                                <span key={k} className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-sans text-[10px] font-medium border border-border/40 truncate max-w-[120px]">
+                                  {k}: {String(v)}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground font-sans text-[10px] font-medium border border-border/40">
+                                {c.list_name}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-3 px-4 text-right text-muted-foreground font-mono">
@@ -850,23 +855,15 @@ export default function Contacts({ requirePin }: ContactsProps) {
                     <h2 className="font-heading text-base sm:text-lg font-bold text-foreground">
                       {getContactName(detailContact)}
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-[#635bff]/10 text-[#635bff] text-[10px] font-bold border border-[#635bff]/20">
-                      Decision Maker
-                    </span>
+                    {renderStatusBadge(detailContact.status)}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    VP of Operations at <strong className="text-foreground">{getContactCompany(detailContact)}</strong>
+                    {detailContact.fields?.title || detailContact.fields?.role || 'Contact'} at <strong className="text-foreground">{getContactCompany(detailContact)}</strong>
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1.5 hidden sm:flex">
-                  <Edit className="h-3.5 w-3.5" /> Edit
-                </Button>
-                <Button size="sm" className="h-8 text-xs font-semibold gap-1.5 bg-[#635bff] text-white hover:bg-[#493ee5] hidden sm:flex">
-                  <Send className="h-3.5 w-3.5" /> Manual Send
-                </Button>
                 <button
                   onClick={() => setDetailContact(null)}
                   className="p-1 text-muted-foreground hover:text-foreground rounded-lg"
@@ -901,204 +898,175 @@ export default function Contacts({ requirePin }: ContactsProps) {
             {/* 3-Pane Container */}
             <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
               
-              {/* Pane 1: Contact Info & Tags (col-span-3) */}
-              <div className={`lg:col-span-3 space-y-4 ${mobileTab !== 'overview' ? 'hidden sm:block' : 'block'}`}>
+              {/* Pane 1: Contact Info & Tags (col-span-4) */}
+              <div className={`lg:col-span-4 space-y-4 ${mobileTab !== 'overview' ? 'hidden sm:block' : 'block'}`}>
                 <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3">
                   <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 uppercase tracking-wider">
-                    Contact Info
+                    Contact Details
                   </h3>
                   
                   <div className="space-y-2.5 text-xs">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Email</span>
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Email Address</span>
                       <a href={`mailto:${detailContact.email}`} className="text-[#635bff] font-mono hover:underline break-all block">
                         {detailContact.email}
                       </a>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-500/10 px-1.5 py-0.2 rounded font-bold mt-1">
-                        <CheckCircle2 className="h-3 w-3" /> Verified
-                      </span>
                     </div>
 
                     <div className="space-y-0.5">
                       <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Phone</span>
-                      <p className="font-medium text-foreground">+1 (555) 019-2834</p>
+                      <p className="font-medium text-foreground">
+                        {detailContact.fields?.phone || detailContact.fields?.mobile || detailContact.fields?.telephone || 'Not provided'}
+                      </p>
                     </div>
 
                     <div className="space-y-0.5">
                       <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Location</span>
-                      <p className="font-medium text-foreground">San Francisco, CA</p>
-                      <span className="text-[10px] text-muted-foreground">PST (UTC-8)</span>
+                      <p className="font-medium text-foreground">
+                        {detailContact.fields?.location || detailContact.fields?.city || detailContact.fields?.country || 'Not specified'}
+                      </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Social Links</span>
-                      <div className="flex gap-2">
-                        <a href="#" className="p-1.5 bg-card border border-border/60 rounded text-muted-foreground hover:text-[#635bff]">
-                          <Globe className="h-3.5 w-3.5" />
-                        </a>
-                        <a href="#" className="p-1.5 bg-card border border-border/60 rounded text-muted-foreground hover:text-[#635bff]">
-                          <User className="h-3.5 w-3.5" />
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase block">List Division</span>
+                      <p className="font-medium text-foreground">{detailContact.list_name}</p>
+                    </div>
+
+                    {detailContact.fields?.website && (
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground font-semibold uppercase block">Website</span>
+                        <a href={detailContact.fields.website.startsWith('http') ? detailContact.fields.website : `https://${detailContact.fields.website}`} target="_blank" rel="noreferrer" className="text-[#635bff] hover:underline flex items-center gap-1">
+                          <Globe className="h-3 w-3" /> {detailContact.fields.website}
                         </a>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Tags */}
+                {/* Custom Fields & Tags */}
                 <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-2">
                   <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
-                    Tags
+                    Custom Properties &amp; Fields
                   </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
-                      Q3 Target
-                    </span>
-                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
-                      Enterprise
-                    </span>
-                    <span className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
-                      Tech
-                    </span>
-                    <button className="px-2 py-1 bg-primary/5 hover:bg-primary/10 text-[#635bff] border border-dashed border-[#635bff]/40 rounded-md text-[11px] font-bold">
-                      + Add Tag
-                    </button>
-                  </div>
+                  {detailContact.fields && Object.keys(detailContact.fields).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(detailContact.fields).map(([k, v]) => (
+                        <div key={k} className="px-2 py-1 bg-card border border-border/60 rounded-md text-[11px] font-medium text-muted-foreground">
+                          <strong className="text-foreground">{k}:</strong> {String(v)}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">No custom fields associated with this contact.</p>
+                  )}
                 </div>
               </div>
 
               {/* Pane 2: Activity Timeline (col-span-5) */}
               <div className={`lg:col-span-5 bg-card border border-border/60 rounded-xl p-4 flex flex-col ${mobileTab !== 'activity' ? 'hidden sm:block' : 'block'}`}>
                 <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 mb-4 uppercase tracking-wider flex items-center justify-between">
-                  <span>Activity Timeline</span>
+                  <span>Outreach Activity Timeline</span>
                   <History className="h-3.5 w-3.5 text-muted-foreground" />
                 </h3>
 
-                <div className="space-y-4 relative pl-4 border-l-2 border-border/60">
-                  {/* Timeline Node 1: Reply Received */}
-                  <div className="relative">
-                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600">
-                      <MessageSquare className="h-3 w-3" />
-                    </div>
-                    <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-2">
-                      <div className="flex justify-between items-center text-[10px] text-muted-foreground">
-                        <span className="font-bold text-foreground">Reply received</span>
-                        <span>Today, 10:42 AM</span>
-                      </div>
-                      <p className="text-muted-foreground bg-card p-2 rounded border border-border/40 italic">
-                        "Thanks for reaching out. We are evaluating options for Q4. Let's schedule a call next Tuesday."
-                      </p>
-                      <Button size="sm" className="h-6 text-[10px] font-bold bg-[#635bff] text-white hover:bg-[#493ee5]">
-                        Reply
-                      </Button>
-                    </div>
+                {loadingDetail ? (
+                  <div className="py-12 text-center text-muted-foreground text-xs">
+                    <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-[#635bff]" />
+                    Loading activity history...
                   </div>
+                ) : !detailHistory || (detailHistory.sends.length === 0 && detailHistory.logs.length === 0 && detailHistory.replies.length === 0) ? (
+                  <div className="text-center py-12 text-muted-foreground text-xs space-y-1">
+                    <Mail className="h-6 w-6 mx-auto opacity-30 text-[#635bff]" />
+                    <p className="font-semibold text-foreground">No Outreach History</p>
+                    <p className="text-[11px]">Sends, delivery events, and replies will appear here once this contact is enrolled in campaigns.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 relative pl-4 border-l-2 border-border/60 max-h-[380px] overflow-y-auto pr-1">
+                    {/* Replies */}
+                    {detailHistory.replies.map((reply: any) => (
+                      <div key={`reply-${reply.id}`} className="relative">
+                        <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600">
+                          <MessageSquare className="h-3 w-3" />
+                        </div>
+                        <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-1.5">
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                            <span className="font-bold text-emerald-600">Reply Received</span>
+                            <span>{new Date(reply.created_at).toLocaleString()}</span>
+                          </div>
+                          <p className="text-xs font-semibold text-foreground">{reply.subject || 'Re: Outreach'}</p>
+                          <p className="text-muted-foreground bg-card p-2 rounded border border-border/40 text-[11px] line-clamp-3">
+                            {reply.body_plain || reply.body_html?.replace(/<[^>]*>/g, '') || 'Message content received.'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
 
-                  {/* Timeline Node 2: Email Opened */}
-                  <div className="relative">
-                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-600">
-                      <Mail className="h-3 w-3" />
-                    </div>
-                    <div className="text-xs space-y-0.5 pt-0.5">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-foreground">Email opened (x3)</span>
-                        <span className="text-[10px] text-muted-foreground">Yesterday, 2:15 PM</span>
+                    {/* Sends */}
+                    {detailHistory.sends.map((send: any) => (
+                      <div key={`send-${send.id}`} className="relative">
+                        <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-primary">
+                          <Send className="h-3 w-3" />
+                        </div>
+                        <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-1">
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                            <span className="font-bold text-foreground">Campaign Email ({send.status})</span>
+                            <span>{send.scheduled_at ? new Date(send.scheduled_at).toLocaleString() : 'Queued'}</span>
+                          </div>
+                          <p className="text-foreground font-semibold text-[11px]">
+                            {send.campaign_name || `Campaign #${send.campaign_id}`}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-muted-foreground">Campaign: Enterprise Q4 Outreach - Step 2</p>
-                    </div>
-                  </div>
+                    ))}
 
-                  {/* Timeline Node 3: Email Sent */}
-                  <div className="relative">
-                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-muted border border-border/60 flex items-center justify-center text-muted-foreground">
-                      <Send className="h-3 w-3" />
-                    </div>
-                    <div className="p-3 bg-muted/30 border border-border/60 rounded-xl text-xs space-y-1">
-                      <div className="flex justify-between items-center text-[10px] text-muted-foreground">
-                        <span className="font-bold text-foreground">Email sent</span>
-                        <span>Yesterday, 9:00 AM</span>
+                    {/* Logs */}
+                    {detailHistory.logs.map((log: any) => (
+                      <div key={`log-${log.id}`} className="relative">
+                        <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-muted border border-border/60 flex items-center justify-center text-muted-foreground">
+                          <Info className="h-3 w-3" />
+                        </div>
+                        <div className="p-2.5 bg-muted/20 border border-border/40 rounded-xl text-xs space-y-0.5">
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                            <span className="font-medium text-foreground">{log.status}</span>
+                            <span>{new Date(log.created_at).toLocaleString()}</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">{log.message}</p>
+                        </div>
                       </div>
-                      <p className="text-muted-foreground font-mono text-[11px]">Subject: Checking in on Q4 Infrastructure Planning</p>
-                    </div>
+                    ))}
                   </div>
-
-                  {/* Timeline Node 4: Added to Sequence */}
-                  <div className="relative">
-                    <div className="absolute -left-[23px] top-0 w-6 h-6 rounded-full bg-muted border border-border/60 flex items-center justify-center text-muted-foreground">
-                      <Users className="h-3 w-3" />
-                    </div>
-                    <div className="text-xs space-y-0.5 pt-0.5">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-foreground">Added to sequence</span>
-                        <span className="text-[10px] text-muted-foreground">Oct 12, 2023</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">Enterprise Q4 Outreach</p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Pane 3: Campaign Context (col-span-4) */}
-              <div className={`lg:col-span-4 space-y-4 ${mobileTab !== 'campaigns' ? 'hidden sm:block' : 'block'}`}>
-                {/* Active Campaigns */}
+              {/* Pane 3: Campaign Context (col-span-3) */}
+              <div className={`lg:col-span-3 space-y-4 ${mobileTab !== 'campaigns' ? 'hidden sm:block' : 'block'}`}>
                 <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3">
-                  <div className="flex justify-between items-center border-b border-border/40 pb-2">
-                    <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
-                      Active Campaigns
-                    </h3>
-                    <span className="px-2 py-0.2 rounded-full bg-[#635bff]/10 text-[#635bff] text-[10px] font-bold">
-                      1 Active
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-card border border-[#635bff]/30 rounded-xl space-y-2 relative overflow-hidden">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#635bff]" />
-                    <div className="flex justify-between items-start text-xs">
-                      <h4 className="font-bold text-foreground">Enterprise Q4 Outreach</h4>
-                      <span className="px-2 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">
-                        Active
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-end pt-2 text-xs">
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Current Step</span>
-                        <span className="font-semibold text-foreground">Step 2 / 5 (Email)</span>
-                      </div>
-                      <button className="text-muted-foreground hover:text-destructive p-1 rounded">
-                        <PauseCircle className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Past Campaigns */}
-                <div className="p-4 bg-muted/20 border border-border/60 rounded-xl space-y-3 opacity-80">
-                  <h3 className="font-heading text-xs font-bold text-foreground border-b border-border/40 pb-2 uppercase tracking-wider">
-                    Past Campaigns
+                  <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider border-b border-border/40 pb-2">
+                    Enrolled Campaigns
                   </h3>
 
-                  <div className="p-3 bg-card border border-border/60 rounded-xl space-y-1 text-xs">
-                    <div className="flex justify-between items-center">
-                      <h4 className="font-medium text-foreground">Q2 Product Launch</h4>
-                      <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground text-[10px]">
-                        Completed
-                      </span>
+                  {detailHistory?.sends && detailHistory.sends.length > 0 ? (
+                    <div className="space-y-2">
+                      {Array.from(new Set(detailHistory.sends.map((s: any) => s.campaign_id))).map((campId: any) => {
+                        const campSend = detailHistory.sends.find((s: any) => s.campaign_id === campId);
+                        return (
+                          <div key={campId} className="p-3 bg-card border border-border/60 rounded-xl space-y-1">
+                            <div className="flex justify-between items-start text-xs">
+                              <h4 className="font-bold text-foreground truncate">{campSend?.campaign_name || `Campaign #${campId}`}</h4>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold capitalize bg-primary/10 text-primary">
+                                {campSend?.status || 'Active'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-[10px] text-muted-foreground">Finished: Jun 15, 2023</p>
-                  </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Not enrolled in any campaigns yet.</p>
+                  )}
                 </div>
               </div>
 
-            </div>
-
-            {/* Bottom Actions Bar (Mobile) */}
-            <div className="p-3 bg-card border-t border-border/60 sm:hidden flex gap-2">
-              <Button variant="outline" className="flex-1 h-10 text-xs font-bold">
-                Add to Campaign
-              </Button>
-              <Button className="flex-1 h-10 text-xs font-bold bg-[#635bff] text-white">
-                Reply
-              </Button>
             </div>
           </div>
         </div>,

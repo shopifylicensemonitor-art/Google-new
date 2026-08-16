@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle } from 'lucide-react';
 
 interface PasswordRequirement {
   label: string;
@@ -38,6 +38,7 @@ export default function PasswordStrength({ password, showRequirements = true }: 
   }, [password]);
 
   const metCount = requirements.filter((r) => r.met).length;
+  const isAllMet = metCount === requirements.length;
   const strengthPercentage = (metCount / requirements.length) * 100;
 
   const getStrengthColor = () => {
@@ -53,7 +54,7 @@ export default function PasswordStrength({ password, showRequirements = true }: 
     if (strengthPercentage <= 40) return 'Weak';
     if (strengthPercentage <= 60) return 'Fair';
     if (strengthPercentage <= 80) return 'Good';
-    return 'Strong';
+    return 'Strong ✓';
   };
 
   const getStrengthTextColor = () => {
@@ -61,20 +62,22 @@ export default function PasswordStrength({ password, showRequirements = true }: 
     if (strengthPercentage <= 40) return 'text-red-500';
     if (strengthPercentage <= 60) return 'text-yellow-600';
     if (strengthPercentage <= 80) return 'text-blue-600';
-    return 'text-green-600';
+    return 'text-green-500';
   };
 
+  if (!password) return null;
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 pt-1">
       {/* Strength Bar */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-bold text-foreground">Password Strength</label>
-          <span className={`text-xs font-bold ${getStrengthTextColor()}`}>
+          <label className="text-[11px] font-bold text-foreground">Password Strength</label>
+          <span className={`text-[11px] font-bold ${getStrengthTextColor()}`}>
             {getStrengthLabel()}
           </span>
         </div>
-        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full ${getStrengthColor()} transition-all duration-300`}
             style={{ width: `${strengthPercentage}%` }}
@@ -82,9 +85,9 @@ export default function PasswordStrength({ password, showRequirements = true }: 
         </div>
       </div>
 
-      {/* Requirements */}
-      {showRequirements && password && (
-        <div className="space-y-1.5">
+      {/* Requirements List - ONLY shown when requirements are NOT yet fully met */}
+      {showRequirements && !isAllMet && (
+        <div className="space-y-1.5 p-2.5 bg-muted/40 rounded-xl border border-border/40 animate-in fade-in slide-in-from-top-1 duration-200">
           <p className="text-[10px] uppercase font-mono font-bold text-muted-foreground">
             Password Requirements
           </p>
@@ -93,7 +96,7 @@ export default function PasswordStrength({ password, showRequirements = true }: 
               <div
                 key={idx}
                 className={`flex items-center gap-2 text-[11px] transition-colors ${
-                  req.met ? 'text-green-600' : 'text-muted-foreground'
+                  req.met ? 'text-green-500 line-through opacity-70' : 'text-muted-foreground'
                 }`}
               >
                 {req.met ? (
@@ -105,26 +108,6 @@ export default function PasswordStrength({ password, showRequirements = true }: 
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Validation Error */}
-      {password && strengthPercentage < 100 && (
-        <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-amber-800">
-            Your password must meet all requirements to ensure account security.
-          </p>
-        </div>
-      )}
-
-      {/* Success State */}
-      {password && strengthPercentage === 100 && (
-        <div className="p-2 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
-          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-green-800">
-            Great! Your password meets all security requirements.
-          </p>
         </div>
       )}
     </div>

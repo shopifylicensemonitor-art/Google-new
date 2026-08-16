@@ -25,20 +25,19 @@ const JWT_SECRETS = Array.from(new Set([
 const JWT_EXPIRY = '7d';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || process.env.VERIFICATION_CODE_TTL_MINUTES || 15);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:8080';
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000';
+const rateLimit = require('express-rate-limit');
+
+const emailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a few minutes before trying again.' }
+});
 
 function verifyToken(token) {
-  let lastError = null;
-
-  for (const secret of JWT_SECRETS) {
-    try {
-      return jwt.verify(token, secret);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error('Invalid JWT');
+  return verifyJwtToken(token);
 }
 
 /**
@@ -109,7 +108,7 @@ router.get('/google-url', (_req, res) => {
 });
 
 /** Email/password signup endpoint. */
-router.post('/signup', async (req, res) => {
+router.post('/signup', emailLimiter, async (req, res) => {
   const { email, password, name } = req.body;
 
   if (!email || !password || !name) {
@@ -132,9 +131,13 @@ router.post('/signup', async (req, res) => {
     const { sendVerificationEmail } = require('../utils/email');
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    const existing = await db.prepare('SELECT id, auth_provider, password_hash FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) {
-      return res.status(409).json({ error: 'Email already registered.' });
+      // If already registered via Google (no password), give a helpful message
+      if (existing.auth_provider === 'google' && !existing.password_hash) {
+        return res.status(409).json({ error: 'This email is registered with Google. Please sign in using the Google button.' });
+      }
+      return res.status(409).json({ error: 'Email already registered. Please sign in instead.' });
     }
 
     // GENERATE 6-DIGIT VERIFICATION CODE
@@ -143,7 +146,7 @@ router.post('/signup', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await db.prepare(
-      'INSERT INTO users (email, name, password_hash, role, email_verified, verification_code, verification_code_expires) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO users (email, name, password_hash, role, email_verified, verification_code, verification_code_expires, auth_provider) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       normalizedEmail,
       String(name).trim(),
@@ -151,18 +154,23 @@ router.post('/signup', async (req, res) => {
       'user',
       false, // email_verified = false
       verificationCode,
-      codeExpires.toISOString()
+      codeExpires.toISOString(),
+      'email'
     );
 
     const userId = result.lastInsertRowid;
-    const wsResult = await db.prepare(
-      'INSERT INTO workspaces (name) VALUES (?)'
-    ).run(`${String(name).trim() || 'My'}'s Workspace`);
-
-    const workspaceId = wsResult.lastInsertRowid;
-    await db.prepare(
-      'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
-    ).run(workspaceId, userId, 'admin');
+    // Create workspace for user (non-fatal if table doesn't exist)
+    try {
+      const wsResult = await db.prepare(
+        'INSERT INTO workspaces (name) VALUES (?)'
+      ).run(`${String(name).trim() || 'My'}'s Workspace`);
+      const workspaceId = wsResult.lastInsertRowid;
+      await db.prepare(
+        'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
+      ).run(workspaceId, userId, 'admin');
+    } catch (wsErr) {
+      logger.warn('Workspace creation skipped (table may not exist):', wsErr.message);
+    }
 
     // SEND VERIFICATION EMAIL
     const verificationLink = `${FRONTEND_ORIGIN}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
@@ -220,6 +228,14 @@ router.post('/signin', async (req, res) => {
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // CHECK IF USER SIGNED UP VIA GOOGLE ONLY (no password set)
+    if (!user.password_hash && user.auth_provider === 'google') {
+      return res.status(400).json({ 
+        error: 'This account uses Google Sign-In. Please use the Google button to sign in.',
+        useGoogle: true
+      });
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password_hash || '');
@@ -347,7 +363,7 @@ router.post('/refresh', async (req, res) => {
 });
 
 /** PHASE 5: Forgot password endpoint — generate reset token and send email */
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', emailLimiter, async (req, res) => {
   const { email } = req.body;
 
   if (!email || !email.trim()) {
@@ -496,9 +512,17 @@ router.post('/verify-email', async (req, res) => {
       'UPDATE users SET email_verified = true, verification_code = NULL, verification_code_expires = NULL WHERE id = ?'
     ).run(user.id);
 
+    // ISSUE JWT so user goes straight to dashboard
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY }
+    );
+
     res.json({
       success: true,
-      message: 'Email verified! You can now sign in.'
+      token,
+      message: 'Email verified! Redirecting to dashboard.'
     });
   } catch (err) {
     logger.error({ err }, 'Email verification error');
@@ -507,7 +531,7 @@ router.post('/verify-email', async (req, res) => {
 });
 
 /** Resend verification code endpoint */
-router.post('/resend-verification', async (req, res) => {
+router.post('/resend-verification', emailLimiter, async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
@@ -574,25 +598,21 @@ router.get('/callback', async (req, res) => {
     const name = data.name || email.split('@')[0];
     const picture = data.picture || '';
 
-    // Check admin restriction
-    if (ADMIN_EMAIL && email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-      // Redirect to frontend with error
-      const frontendUrl = process.env.FRONTEND_ORIGIN || '';
-      return res.redirect(frontendUrl + '/?auth_error=unauthorized');
-    }
-
-    // Upsert user in database
+    // Upsert user in database — link accounts if email already exists
     const db = await getDb();
-    const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = await db.prepare('SELECT id, auth_provider FROM users WHERE email = ?').get(email);
 
     if (existing) {
+      // LINK ACCOUNTS: if user registered via email, upgrade provider to 'both'
+      const newProvider = (existing.auth_provider === 'email') ? 'both' : 
+                          (existing.auth_provider === 'both') ? 'both' : 'google';
       await db.prepare(
-        "UPDATE users SET name = ?, picture = ?, last_login = datetime('now') WHERE email = ?"
-      ).run(name, picture, email);
+        "UPDATE users SET name = ?, picture = ?, email_verified = true, auth_provider = ?, last_login = datetime('now') WHERE email = ?"
+      ).run(name, picture, newProvider, email);
     } else {
       await db.prepare(
-        'INSERT INTO users (email, name, picture, role) VALUES (?, ?, ?, ?)'
-      ).run(email, name, picture, 'admin');
+        'INSERT INTO users (email, name, picture, role, email_verified, auth_provider) VALUES (?, ?, ?, ?, true, ?)'
+      ).run(email, name, picture, 'user', 'google');
     }
 
     // Fetch the full user row for the JWT payload
@@ -624,19 +644,45 @@ router.get('/me', async (req, res) => {
   try {
     const token = authHeader.split(' ')[1];
     const decoded = verifyToken(token);
+    const userId = decoded.id || decoded.sub;
+    const email = decoded.email;
+    const name = decoded.name || (decoded.user_metadata && (decoded.user_metadata.full_name || decoded.user_metadata.name)) || '';
+    const role = decoded.role === 'authenticated' ? 'user' : (decoded.role || 'user');
+
+    // Sync with public.users table if needed
+    try {
+      const db = await getDb();
+      let user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      if (!user && email) {
+        await db.prepare(
+          'INSERT INTO users (email, name, role, email_verified) VALUES (?, ?, ?, ?)'
+        ).run(email, name, role, true);
+        user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      }
+      if (user) {
+        return res.json({
+          id: user.id,
+          email: user.email,
+          name: user.name || name,
+          role: user.role || role,
+          picture: user.picture || '',
+        });
+      }
+    } catch (_) {}
+
     res.json({
-      id: decoded.id,
-      email: decoded.email,
-      name: decoded.name,
-      role: decoded.role,
+      id: userId,
+      email: email,
+      name: name,
+      role: role,
     });
   } catch (err) {
     res.status(401).json({ error: 'Invalid or expired token.' });
   }
 });
 
-/** Update current user's profile details. */
-router.post('/profile', async (req, res) => {
+/** Update current user's profile details (supports POST and PUT). */
+const handleProfileUpdate = async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided.' });
@@ -645,9 +691,9 @@ router.post('/profile', async (req, res) => {
   try {
     const token = authHeader.split(' ')[1];
     const decoded = verifyToken(token);
-    const { name, picture } = req.body;
+    const { name, picture, company_name } = req.body;
 
-    if (!name) {
+    if (!name && name !== '') {
       return res.status(400).json({ error: 'Name is required.' });
     }
 
@@ -657,6 +703,51 @@ router.post('/profile', async (req, res) => {
     ).run(name, picture || '', decoded.id);
 
     res.json({ success: true, message: 'Profile updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+router.post('/profile', handleProfileUpdate);
+router.put('/profile', handleProfileUpdate);
+
+/** Change current user's password. */
+router.post('/change-password', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided.' });
+  }
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+
+    const db = await getDb();
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const bcrypt = require('bcrypt');
+    if (user.password_hash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required.' });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isMatch) {
+        return res.status(400).json({ error: 'Current password is incorrect.' });
+      }
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
+
+    res.json({ success: true, message: 'Password changed successfully.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -718,6 +809,59 @@ router.post('/settings', async (req, res) => {
     }
 
     res.json({ success: true, message: 'Settings updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Get user reset security code status. */
+router.get('/reset-code', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided.' });
+  }
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+    const db = await getDb();
+
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get(`RESET_CODE_${decoded.id}`);
+    res.json({
+      configured: !!(row && row.value && row.value.trim() !== ''),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Configure / update user reset security code. */
+router.post('/reset-code', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided.' });
+  }
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+    const { reset_code } = req.body;
+
+    if (!reset_code || String(reset_code).trim().length < 3) {
+      return res.status(400).json({ error: 'Reset code must be at least 3 characters long.' });
+    }
+
+    const db = await getDb();
+    const key = `RESET_CODE_${decoded.id}`;
+    const existing = await db.prepare('SELECT key FROM settings WHERE key = ?').get(key);
+
+    if (existing) {
+      await db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(reset_code).trim(), key);
+    } else {
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, String(reset_code).trim());
+    }
+
+    res.json({ success: true, message: 'Security reset code configured successfully.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Logo } from '@/components/Logo';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,8 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import PinModal from '@/components/PinModal';
 import { 
   Send, Sparkles, ShieldCheck, FileSpreadsheet, Lock, 
-  RefreshCw, Layers, CheckCircle2, ArrowRight, Globe, HelpCircle, Key, Cpu
+  RefreshCw, Layers, CheckCircle2, ArrowRight, HelpCircle, Key, Cpu,
+  ChevronDown, Zap, BarChart3, Users
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -25,36 +27,50 @@ const DEMO_LEADS: DemoLead[] = [
   { email: 'marcus@notion.so', name: 'Marcus', store: 'notion.so', niche: 'Productivity SaaS' },
 ];
 
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.1,
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 24 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.6,
+      ease: [0.16, 1, 0.3, 1]
+    }
+  }
+};
+
+const cardHoverVariants = {
+  hover: {
+    y: -6,
+    scale: 1.015,
+    transition: { duration: 0.25, ease: "easeOut" }
+  }
+};
+
 export default function Landing() {
   const navigate = useNavigate();
   const [showPinModal, setShowPinModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState<DemoLead>(DEMO_LEADS[0]);
   const [sentLeads, setSentLeads] = useState<Record<string, boolean>>({});
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
   
   // Interactive variables demo state
   const [demoSubject, setDemoSubject] = useState('Quick question for {name} ({store})');
   const [demoBody, setDemoBody] = useState('Hey {name},\n\nWe love what you guys are building in the {niche} vertical. Are you currently accepting guest pitches?');
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('reveal-active');
-          }
-        });
-      },
-      { threshold: 0.1 }
-    );
-    const sections = document.querySelectorAll('.reveal-section');
-    sections.forEach((section) => observer.observe(section));
-    return () => {
-      sections.forEach((section) => observer.unobserve(section));
-    };
-  }, []);
-
   const handleLaunchConsole = () => {
-    navigate('/send');
+    navigate('/login');
   };
 
   const handlePinSuccess = () => {
@@ -63,7 +79,7 @@ export default function Landing() {
       title: 'Authentication Granted',
       description: 'Access authorized. Opening sending console...',
     });
-    navigate('/send');
+    navigate('/dashboard');
   };
 
   // Replace placeholders helper for demo
@@ -78,7 +94,7 @@ export default function Landing() {
     setSentLeads(prev => ({ ...prev, [email]: true }));
     toast({
       title: 'Outbound Mail Dispatched',
-      description: `Simulated mailto generated for ${email}`,
+      description: `Simulated mail preview generated for ${email}`,
     });
   };
 
@@ -119,104 +135,176 @@ export default function Landing() {
         ]}
       />
 
-      {/* Decorative Blur Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#635bff]/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute top-[30%] right-[-10%] w-[600px] h-[600px] bg-emerald-500/5 rounded-full blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] left-[20%] w-[500px] h-[500px] bg-[#635bff]/5 rounded-full blur-[120px] pointer-events-none" />
+      {/* Dynamic Animated Floating Ambient Glow Orbs */}
+      <motion.div 
+        animate={{
+          x: [0, 40, -20, 0],
+          y: [0, -30, 20, 0],
+          scale: [1, 1.1, 0.95, 1],
+        }}
+        transition={{
+          duration: 18,
+          repeat: Infinity,
+          ease: "easeInOut"
+        }}
+        className="absolute top-[-10%] left-[-10%] w-[550px] h-[550px] bg-[#635bff]/15 rounded-full blur-[140px] pointer-events-none" 
+      />
+      <motion.div 
+        animate={{
+          x: [0, -50, 30, 0],
+          y: [0, 40, -30, 0],
+          scale: [1, 1.15, 0.9, 1],
+        }}
+        transition={{
+          duration: 22,
+          repeat: Infinity,
+          ease: "easeInOut"
+        }}
+        className="absolute top-[35%] right-[-10%] w-[650px] h-[650px] bg-emerald-500/10 rounded-full blur-[160px] pointer-events-none" 
+      />
+      <motion.div 
+        animate={{
+          x: [0, 30, -30, 0],
+          y: [0, -40, 20, 0],
+        }}
+        transition={{
+          duration: 20,
+          repeat: Infinity,
+          ease: "easeInOut"
+        }}
+        className="absolute bottom-[-10%] left-[20%] w-[500px] h-[500px] bg-[#635bff]/10 rounded-full blur-[130px] pointer-events-none" 
+      />
 
-      {/* Header / Navbar */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-card/80 backdrop-blur-md">
+      {/* Header / Navbar with Glassmorphism */}
+      <motion.header 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="sticky top-0 z-40 w-full border-b border-border/60 bg-card/80 backdrop-blur-md"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center">
+          <Link to="/" className="flex items-center group">
             <Logo size="md" subtitle="Outreach Console" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <a href="#about" className="hover:text-foreground transition-colors">About</a>
-            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
-            <a href="#demo" className="hover:text-foreground transition-colors">Interactive Demo</a>
-            <a href="#security" className="hover:text-foreground transition-colors">Security</a>
-            <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
-            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
+            <a href="#about" className="hover:text-foreground hover:text-[#635bff] transition-colors">About</a>
+            <a href="#features" className="hover:text-foreground hover:text-[#635bff] transition-colors">Features</a>
+            <a href="#demo" className="hover:text-foreground hover:text-[#635bff] transition-colors">Interactive Demo</a>
+            <a href="#security" className="hover:text-foreground hover:text-[#635bff] transition-colors">Security</a>
+            <a href="#faq" className="hover:text-foreground hover:text-[#635bff] transition-colors">FAQ</a>
+            <Link to="/blog" className="hover:text-foreground hover:text-[#635bff] transition-colors">Blog</Link>
           </nav>
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <Button
-              onClick={handleLaunchConsole}
-              className="h-9 gap-1.5 rounded-lg bg-[#635bff] text-white font-bold px-4 shadow-2xs hover:bg-[#493ee5] transition-colors text-xs"
-            >
-              <Key className="h-3.5 w-3.5" />
-              Launch Console
-            </Button>
+            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
+              <Button
+                onClick={handleLaunchConsole}
+                className="h-9 gap-1.5 rounded-lg bg-[#635bff] text-white font-bold px-4 shadow-md hover:bg-[#493ee5] transition-colors text-xs"
+              >
+                <Key className="h-3.5 w-3.5" />
+                Launch Console
+              </Button>
+            </motion.div>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       {/* Hero Section */}
-      <main id="main-content" className="relative pt-12 pb-16 sm:pt-20 sm:pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 reveal-section">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#635bff]/20 bg-[#635bff]/10 text-[#635bff] text-xs font-bold">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>Peak Xender — Email Outreach &amp; Campaign Platform</span>
-        </div>
+      <main id="main-content" className="relative pt-12 pb-16 sm:pt-20 sm:pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-6"
+        >
+          <motion.div variants={itemVariants} className="inline-flex">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#635bff]/30 bg-[#635bff]/10 text-[#635bff] text-xs font-bold shadow-xs">
+              <Sparkles className="h-3.5 w-3.5 animate-pulse text-[#635bff]" />
+              <span>Peak Xender — Next-Gen Email Outreach Platform</span>
+            </div>
+          </motion.div>
 
-        <h1 className="font-heading text-4xl sm:text-6xl font-extrabold tracking-tight text-foreground max-w-4xl mx-auto leading-[1.15]">
-          Automated Email Outreach.<br />
-          <span className="text-[#635bff]">
-            Connect Gmail via OAuth &amp; Scale Delivery.
-          </span>
-        </h1>
-
-        <p className="text-base sm:text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-          Peak Xender is an automated email outreach and campaign management platform. Connect your Gmail account securely via Google OAuth to personalize templates, manage contact lists, and schedule automated outreach campaigns.
-        </p>
-
-        <div className="flex flex-wrap justify-center gap-3 pt-3">
-          <Button
-            size="lg"
-            onClick={handleLaunchConsole}
-            className="h-11 rounded-lg px-6 bg-[#635bff] hover:bg-[#493ee5] text-white font-bold shadow-2xs transition-all flex items-center gap-2 text-xs"
+          <motion.h1 
+            variants={itemVariants}
+            className="font-heading text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-foreground max-w-4xl mx-auto leading-[1.12]"
           >
-            Access Dashboard
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-          <a href="#demo">
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-11 rounded-lg px-6 border-border/60 bg-card text-foreground hover:bg-muted/40 transition-all text-xs font-bold"
-            >
-              Try Interactive Demo
-            </Button>
-          </a>
-        </div>
+            Automated Email Outreach.<br />
+            <span className="bg-gradient-to-r from-[#635bff] via-[#857dff] to-emerald-500 bg-clip-text text-transparent">
+              Connect Gmail &amp; Scale Delivery.
+            </span>
+          </motion.h1>
 
-        {/* Dashboard Preview / Card Mockup */}
-        <div className="pt-8 sm:pt-12 max-w-5xl mx-auto">
-          <div className="rounded-2xl border border-border/60 bg-card p-2 shadow-2xl relative">
-            <div className="rounded-xl overflow-hidden bg-muted/20 border border-border/60 p-4 sm:p-6 text-left space-y-6">
+          <motion.p 
+            variants={itemVariants}
+            className="text-base sm:text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed"
+          >
+            Peak Xender is an automated email outreach and campaign management platform. Connect your Gmail account securely via Google OAuth to personalize templates, manage contact lists, and schedule automated outreach campaigns.
+          </motion.p>
+
+          <motion.div variants={itemVariants} className="flex flex-wrap justify-center gap-3 pt-3">
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+              <Button
+                size="lg"
+                onClick={handleLaunchConsole}
+                className="h-11 rounded-xl px-7 bg-[#635bff] hover:bg-[#493ee5] text-white font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2 text-xs"
+              >
+                Access Dashboard
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+              <a href="#demo">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-11 rounded-xl px-6 border-border/70 bg-card text-foreground hover:bg-muted/50 transition-all text-xs font-bold"
+                >
+                  Try Interactive Demo
+                </Button>
+              </a>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+
+        {/* Dashboard Preview / Animated Card Mockup */}
+        <motion.div 
+          initial={{ opacity: 0, y: 40, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.8, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="pt-8 sm:pt-14 max-w-5xl mx-auto"
+        >
+          <div className="rounded-3xl border border-border/70 bg-card/60 backdrop-blur-xl p-2.5 sm:p-3.5 shadow-2xl relative group">
+            <div className="rounded-2xl overflow-hidden bg-background/90 border border-border/60 p-4 sm:p-7 text-left space-y-6">
               {/* Mock App Window Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-rose-500/80" />
-                  <span className="h-3 w-3 rounded-full bg-amber-500/80" />
-                  <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
-                  <span className="text-[10px] font-mono text-muted-foreground ml-2">console.peakxender.app</span>
+                  <span className="h-3 w-3 rounded-full bg-rose-500/80 transition-transform group-hover:scale-110" />
+                  <span className="h-3 w-3 rounded-full bg-amber-500/80 transition-transform group-hover:scale-110" />
+                  <span className="h-3 w-3 rounded-full bg-emerald-500/80 transition-transform group-hover:scale-110" />
+                  <span className="text-[11px] font-mono text-muted-foreground ml-2">console.peakxender.app</span>
                 </div>
-                <Badge variant="outline" className="border-border/60 bg-card text-muted-foreground text-[10px] font-mono">
-                  Live Analytics Active
+                <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 text-[10px] font-mono flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  Live Engine Active
                 </Badge>
               </div>
 
-              {/* Simulated Stats Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Simulated Stats Row with Staggered Motion */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
                 {[
                   { label: 'Outbox Sends', val: '4,821', trend: '+14% vs avg', icon: Send, color: 'text-[#635bff] bg-[#635bff]/10' },
                   { label: 'Spam Bypass Rate', val: '99.4%', trend: 'Optimal health', icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-500/10' },
                   { label: 'Active Senders', val: '12 SMTPs', trend: 'Rotations secure', icon: Cpu, color: 'text-indigo-600 bg-indigo-500/10' },
                   { label: 'Bounces Prevented', val: '143', trend: 'Auto-retries active', icon: RefreshCw, color: 'text-rose-500 bg-rose-500/10' },
                 ].map((item, idx) => (
-                  <div key={idx} className="bg-card border border-border/60 rounded-xl p-3.5 space-y-1 shadow-2xs">
+                  <motion.div 
+                    key={idx}
+                    whileHover={{ y: -3, scale: 1.02 }}
+                    transition={{ duration: 0.2 }}
+                    className="bg-card/70 border border-border/60 rounded-xl p-3.5 space-y-1 shadow-xs"
+                  >
                     <div className="flex justify-between items-start">
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{item.label}</span>
                       <div className={`p-1.5 rounded-lg ${item.color}`}>
@@ -227,22 +315,24 @@ export default function Landing() {
                       <h4 className="font-heading text-lg font-bold text-foreground">{item.val}</h4>
                       <p className="text-[10px] text-muted-foreground font-semibold">{item.trend}</p>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
 
-              {/* Chart Mockup */}
-              <div className="bg-card border border-border/60 rounded-xl p-4 space-y-2 shadow-2xs">
+              {/* Chart Mockup with Animated Bars */}
+              <div className="bg-card/70 border border-border/60 rounded-xl p-4 space-y-2 shadow-xs">
                 <div className="flex justify-between items-center">
                   <h5 className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Delivery Timeline (Rotated Batches)</h5>
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 </div>
-                <div className="h-24 flex items-end gap-1.5 pt-4">
+                <div className="h-28 flex items-end gap-2 pt-4">
                   {[35, 60, 45, 90, 75, 120, 110, 80, 130, 95, 140, 160].map((h, i) => (
-                    <div key={i} className="flex-1 bg-muted/40 rounded-t overflow-hidden h-full flex flex-col justify-end">
-                      <div 
-                        className="w-full bg-[#635bff] rounded-t-xs transition-all duration-700" 
-                        style={{ height: `${(h / 180) * 100}%` }} 
+                    <div key={i} className="flex-1 bg-muted/30 rounded-t-sm overflow-hidden h-full flex flex-col justify-end">
+                      <motion.div 
+                        initial={{ height: 0 }}
+                        animate={{ height: `${(h / 180) * 100}%` }}
+                        transition={{ duration: 0.8, delay: 0.4 + i * 0.04, ease: "easeOut" }}
+                        className="w-full bg-gradient-to-t from-[#635bff] to-[#8c85ff] rounded-t-sm" 
                       />
                     </div>
                   ))}
@@ -250,24 +340,28 @@ export default function Landing() {
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </main>
 
       {/* What is Peak Xender — App Purpose Section */}
-      <section id="about" className="py-16 sm:py-20 bg-muted/20 border-y border-border/60 relative reveal-section">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+      <section id="about" className="py-16 sm:py-24 bg-muted/20 border-y border-border/60 relative">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ duration: 0.6 }}
+          className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10"
+        >
           <div className="text-center space-y-2">
             <h2 className="text-xs uppercase tracking-widest text-[#635bff] font-bold">About This Application</h2>
             <h3 className="font-heading text-2xl sm:text-4xl font-extrabold tracking-tight text-foreground">What is Peak Xender?</h3>
           </div>
 
-          <div className="bg-card border border-border/60 rounded-2xl p-6 sm:p-8 space-y-5 text-xs sm:text-sm text-muted-foreground leading-relaxed shadow-2xs">
+          <div className="bg-card border border-border/60 rounded-3xl p-6 sm:p-9 space-y-5 text-xs sm:text-sm text-muted-foreground leading-relaxed shadow-sm">
             <p>
               <strong className="text-foreground">Peak Xender</strong> is an automated email outreach and campaign management platform designed for businesses and professionals who need to send personalized, high-volume email campaigns efficiently.
             </p>
-            <p>
-              The application enables users to:
-            </p>
+            <p>The application enables users to:</p>
             <ul className="list-disc list-inside space-y-2 pl-2 text-muted-foreground">
               <li>
                 <strong className="text-foreground">Connect Gmail accounts via Google OAuth 2.0</strong> — Users securely authorize Peak Xender to send emails on their behalf through Google's standard OAuth consent flow. Peak Xender uses the Gmail API (<code className="text-[#635bff] bg-[#635bff]/10 px-1.5 py-0.5 rounded font-mono text-xs">gmail.send</code> scope) to dispatch outreach emails from the user's own Gmail mailbox.
@@ -312,24 +406,38 @@ export default function Landing() {
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
       </section>
 
       {/* Bento Grid Showcase */}
-      <section id="features" className="py-20 bg-background relative reveal-section">
+      <section id="features" className="py-20 sm:py-28 bg-background relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-          <div className="text-center space-y-2">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center space-y-2"
+          >
             <h2 className="text-xs uppercase tracking-widest text-[#635bff] font-bold">Engineered for Volume</h2>
             <h3 className="font-heading text-2xl sm:text-4xl font-extrabold tracking-tight text-foreground">Advanced Anti-Spam Tooling</h3>
             <p className="text-muted-foreground max-w-xl mx-auto text-xs sm:text-sm">
               Standard email senders trigger fingerprint limits. Peak Xender reorganizes code structure locally to bypass automatic filtering.
             </p>
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Bento Card 1: Anti-Spam */}
-            <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4 hover:border-[#635bff]/40 transition-all shadow-2xs group">
-              <div className="p-3 w-12 h-12 rounded-xl bg-[#635bff]/10 text-[#635bff] flex items-center justify-center group-hover:scale-105 transition-transform">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.05 }}
+              whileHover="hover"
+              variants={cardHoverVariants}
+              className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-[#635bff]/50 transition-colors shadow-xs group"
+            >
+              <div className="p-3 w-12 h-12 rounded-2xl bg-[#635bff]/10 text-[#635bff] flex items-center justify-center group-hover:scale-110 transition-transform">
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
@@ -338,11 +446,19 @@ export default function Landing() {
                   Automatically randomizes space encodings, reorders URL parameters, and injects zero-width whitespace to destroy email copy similarity hashes.
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             {/* Bento Card 2: Headerless CSV Engine */}
-            <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4 hover:border-[#635bff]/40 transition-all shadow-2xs group">
-              <div className="p-3 w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.12 }}
+              whileHover="hover"
+              variants={cardHoverVariants}
+              className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-emerald-500/50 transition-colors shadow-xs group"
+            >
+              <div className="p-3 w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <FileSpreadsheet className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
@@ -351,11 +467,19 @@ export default function Landing() {
                   Imports lead lists of any layout. Automatically detects if headers are missing, checks first-row values for emails, generates unique keys, and maps variables with zero data loss.
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             {/* Bento Card 3: 100% Client-Side */}
-            <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4 hover:border-[#635bff]/40 transition-all shadow-2xs group">
-              <div className="p-3 w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.19 }}
+              whileHover="hover"
+              variants={cardHoverVariants}
+              className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-indigo-500/50 transition-colors shadow-xs group"
+            >
+              <div className="p-3 w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <Lock className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
@@ -364,12 +488,20 @@ export default function Landing() {
                   Nothing is uploaded to an external database. All parser logic, lead mappings, and email dispatch sequences execute entirely inside your own browser window.
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             {/* Bento Card 4: Rotated Senders */}
-            <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4 hover:border-[#635bff]/40 transition-all shadow-2xs group md:col-span-2">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              whileHover="hover"
+              variants={cardHoverVariants}
+              className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-rose-500/50 transition-colors shadow-xs group md:col-span-2"
+            >
               <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                <div className="p-3 w-12 h-12 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <div className="p-3 w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
                   <RefreshCw className="h-6 w-6" />
                 </div>
                 <div className="space-y-1.5">
@@ -379,55 +511,75 @@ export default function Landing() {
                   </p>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Bento Card 5: Smart BCC Batches */}
-            <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4 hover:border-[#635bff]/40 transition-all shadow-2xs group">
-              <div className="space-y-4">
-                <div className="p-3 w-12 h-12 rounded-xl bg-[#635bff]/10 text-[#635bff] flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Layers className="h-6 w-6" />
-                </div>
-                <div className="space-y-1.5">
-                  <h4 className="font-heading text-base font-bold text-foreground">Smart BCC Batching</h4>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Send to multiple target recipients simultaneously in private BCC queues. Configurable batch sizes and self-rerouting structures automate outbox dispatch loops.
-                  </p>
-                </div>
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.32 }}
+              whileHover="hover"
+              variants={cardHoverVariants}
+              className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-[#635bff]/50 transition-colors shadow-xs group"
+            >
+              <div className="p-3 w-12 h-12 rounded-2xl bg-[#635bff]/10 text-[#635bff] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Layers className="h-6 w-6" />
               </div>
-            </div>
+              <div className="space-y-1.5">
+                <h4 className="font-heading text-base font-bold text-foreground">Smart BCC Batching</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Send to multiple target recipients simultaneously in private BCC queues. Configurable batch sizes and self-rerouting structures automate outbox dispatch loops.
+                </p>
+              </div>
+            </motion.div>
           </div>
         </div>
       </section>
 
       {/* Interactive Editor Demo Section */}
-      <section id="demo" className="py-20 bg-muted/20 border-y border-border/60 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12 reveal-section">
-        <div className="text-center space-y-2">
+      <section id="demo" className="py-20 sm:py-28 bg-muted/20 border-y border-border/60 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="text-center space-y-2"
+        >
           <h2 className="text-xs uppercase tracking-widest text-emerald-600 font-bold">Interactive Sandbox</h2>
           <h3 className="font-heading text-2xl sm:text-4xl font-extrabold tracking-tight text-foreground">Live Variable Replacer</h3>
           <p className="text-muted-foreground max-w-xl mx-auto text-xs sm:text-sm">
             Select a demo lead below to see placeholders replaced instantly. Generate simulated drafts locally.
           </p>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left panel: editor fields (Span 5) */}
-          <div className="lg:col-span-5 space-y-4">
+          <motion.div 
+            initial={{ opacity: 0, x: -30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="lg:col-span-5 space-y-4"
+          >
             <div className="space-y-2">
               <label className="text-xs font-bold text-foreground">1. Select Demo Lead:</label>
               <div className="grid grid-cols-3 gap-2">
                 {DEMO_LEADS.map(lead => (
-                  <button
+                  <motion.button
                     key={lead.email}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
                     onClick={() => setSelectedLead(lead)}
-                    className={`p-3 rounded-xl border text-left text-xs transition-all cursor-pointer ${
+                    className={`p-3 rounded-2xl border text-left text-xs transition-all cursor-pointer relative ${
                       selectedLead.email === lead.email
-                        ? 'border-[#635bff] bg-[#635bff]/10 text-foreground font-bold shadow-2xs'
-                        : 'border-border/60 bg-card text-muted-foreground hover:bg-muted/30'
+                        ? 'border-[#635bff] bg-[#635bff]/10 text-foreground font-bold shadow-sm'
+                        : 'border-border/60 bg-card text-muted-foreground hover:bg-muted/40'
                     }`}
                   >
                     <p className="font-bold">{lead.name}</p>
                     <p className="text-[10px] text-muted-foreground truncate">{lead.store}</p>
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -452,88 +604,113 @@ export default function Landing() {
                 className="w-full bg-background border border-border/60 rounded-xl p-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-[#635bff] font-mono h-32 resize-none"
               />
             </div>
-          </div>
+          </motion.div>
 
           {/* Right panel: Live compilation & simulated action (Span 7) */}
-          <div className="lg:col-span-7 bg-card border border-border/60 rounded-2xl p-6 flex flex-col justify-between shadow-2xs">
+          <motion.div 
+            initial={{ opacity: 0, x: 30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="lg:col-span-7 bg-card border border-border/60 rounded-3xl p-6 sm:p-7 flex flex-col justify-between shadow-sm"
+          >
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground">Live Personalization Output</span>
-                <span className="text-[10px] font-mono font-bold text-emerald-600">Variables replaced OK</span>
+                <span className="text-[10px] font-mono font-bold text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Variables compiled
+                </span>
               </div>
 
-              <div className="space-y-2.5 bg-muted/30 p-4 rounded-xl border border-border/60 font-mono text-xs">
+              <div className="space-y-2.5 bg-muted/30 p-4 sm:p-5 rounded-2xl border border-border/60 font-mono text-xs">
                 <p className="text-muted-foreground"><strong className="text-foreground">To:</strong> {selectedLead.email}</p>
                 <p className="text-muted-foreground"><strong className="text-foreground">Subject:</strong> {getDemoPreview(demoSubject, selectedLead)}</p>
                 <div className="h-px bg-border/60 my-2" />
-                <p className="text-foreground whitespace-pre-wrap">{getDemoPreview(demoBody, selectedLead)}</p>
+                <p className="text-foreground whitespace-pre-wrap leading-relaxed">{getDemoPreview(demoBody, selectedLead)}</p>
               </div>
             </div>
 
             <div className="pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-[11px] text-muted-foreground font-mono">
-                Placeholders used: <code className="text-[#635bff] font-bold">{`{name}`}</code>, <code className="text-[#635bff] font-bold">{`{store}`}</code>, <code className="text-[#635bff] font-bold">{`{niche}`}</code>
+                Placeholders: <code className="text-[#635bff] font-bold">{`{name}`}</code>, <code className="text-[#635bff] font-bold">{`{store}`}</code>, <code className="text-[#635bff] font-bold">{`{niche}`}</code>
               </div>
               
-              <Button
-                disabled={!!sentLeads[selectedLead.email]}
-                onClick={() => simulateSend(selectedLead.email)}
-                className={`w-full sm:w-auto h-9.5 text-xs font-bold px-5 rounded-lg flex items-center justify-center gap-1.5 ${
-                  sentLeads[selectedLead.email]
-                    ? 'bg-muted text-muted-foreground border-none'
-                    : 'bg-[#635bff] text-white hover:bg-[#493ee5]'
-                }`}
-              >
-                {sentLeads[selectedLead.email] ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    Mail Sent (Simulated)
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-3.5 w-3.5" />
-                    Dispatch Simulated Link
-                  </>
-                )}
-              </Button>
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <Button
+                  disabled={!!sentLeads[selectedLead.email]}
+                  onClick={() => simulateSend(selectedLead.email)}
+                  className={`w-full sm:w-auto h-9.5 text-xs font-bold px-5 rounded-xl flex items-center justify-center gap-1.5 ${
+                    sentLeads[selectedLead.email]
+                      ? 'bg-muted text-muted-foreground border-none'
+                      : 'bg-[#635bff] text-white hover:bg-[#493ee5]'
+                  }`}
+                >
+                  {sentLeads[selectedLead.email] ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      Mail Sent (Simulated)
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-3.5 w-3.5" />
+                      Dispatch Simulated Link
+                    </>
+                  )}
+                </Button>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
       {/* Security Gating Details */}
-      <section id="security" className="py-20 bg-background border-t border-border/60 relative reveal-section">
-        <div className="max-w-4xl mx-auto px-4 text-center space-y-6">
-          <div className="h-14 w-14 bg-[#635bff]/10 border border-[#635bff]/20 text-[#635bff] rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-2xs">
-            <Lock className="h-7 w-7" />
+      <section id="security" className="py-20 bg-background border-t border-border/60 relative">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="max-w-4xl mx-auto px-4 text-center space-y-6"
+        >
+          <div className="h-16 w-16 bg-[#635bff]/10 border border-[#635bff]/30 text-[#635bff] rounded-3xl flex items-center justify-center mx-auto mb-2 shadow-sm">
+            <Lock className="h-8 w-8" />
           </div>
-          <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-foreground">Secure Access PIN Gate</h3>
+          <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-foreground">Secure Access Architecture</h3>
           <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed max-w-xl mx-auto">
-            Peak Xender runs as an enclosed environment. All administrative endpoints, sending lists, connected SMTP accounts, and background schedules are fully encrypted behind your local 4-digit PIN.
+            Peak Xender runs as an encrypted environment. All administrative endpoints, sending lists, connected accounts, and background schedules are fully secured with cryptographic JWT authentication and AES-256-GCM storage.
           </p>
           <div className="pt-2">
-            <Button
-              onClick={handleLaunchConsole}
-              className="h-10 px-6 font-bold text-xs bg-[#635bff] hover:bg-[#493ee5] text-white shadow-2xs"
-            >
-              Verify PIN to Access App
-            </Button>
+            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} className="inline-block">
+              <Button
+                onClick={handleLaunchConsole}
+                className="h-11 px-7 font-bold text-xs bg-[#635bff] hover:bg-[#493ee5] text-white rounded-xl shadow-md"
+              >
+                Sign In to Access Dashboard
+              </Button>
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
       </section>
 
-      {/* FAQ Section */}
-      <section id="faq" className="py-20 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10 reveal-section">
-        <div className="text-center space-y-2">
-          <HelpCircle className="h-6 w-6 text-[#635bff] mx-auto" />
+      {/* FAQ Section with Animated Accordion */}
+      <section id="faq" className="py-20 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="text-center space-y-2"
+        >
+          <HelpCircle className="h-7 w-7 text-[#635bff] mx-auto" />
           <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-foreground">Frequently Asked Questions</h3>
-        </div>
+        </motion.div>
 
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {[
             {
               q: 'Why run email outreach client-side?',
-              a: 'Running outreach client-side allows you to personalize and build outreach sequences with zero overhead. There are no expensive monthly database fees or external cloud storages holding your contact lists. You bypass standard API limits by generating customized mailto sequences directly inside your browser window.'
+              a: 'Running outreach client-side allows you to personalize and build outreach sequences with zero overhead. There are no expensive monthly database fees or external cloud storages holding your contact lists. You bypass standard API limits by generating customized sequences directly inside your browser window.'
             },
             {
               q: 'How does the SMTP/OAuth Rotation work?',
@@ -548,18 +725,51 @@ export default function Landing() {
               a: 'None! Since the CSV parsing algorithm executes in a Web Worker, it can handle cold lists of 5,000+ leads without freezing the main browser thread. It automatically standardizes headers and removes malformed rows.'
             }
           ].map((faq, i) => (
-            <div key={i} className="bg-card border border-border/60 rounded-xl p-5 space-y-2 shadow-2xs">
-              <h4 className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-2">
-                <span className="text-[#635bff] font-mono">Q.</span> {faq.q}
-              </h4>
-              <p className="text-xs text-muted-foreground leading-relaxed font-sans">{faq.a}</p>
-            </div>
+            <motion.div 
+              key={i} 
+              initial={{ opacity: 0, y: 15 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.4, delay: i * 0.08 }}
+              className="bg-card border border-border/60 rounded-2xl overflow-hidden shadow-xs"
+            >
+              <button
+                onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                className="w-full p-5 text-left flex items-center justify-between gap-4 cursor-pointer hover:bg-muted/20 transition-colors"
+              >
+                <h4 className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-2">
+                  <span className="text-[#635bff] font-mono font-extrabold">Q.</span> {faq.q}
+                </h4>
+                <motion.div
+                  animate={{ rotate: openFaq === i ? 180 : 0 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                </motion.div>
+              </button>
+
+              <AnimatePresence>
+                {openFaq === i && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-5 pb-5 pt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/40 font-sans">
+                      {faq.a}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           ))}
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-border/60 bg-card py-10 text-muted-foreground">
+      <footer className="mt-auto border-t border-border/60 bg-card py-12 text-muted-foreground">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             {/* Brand */}

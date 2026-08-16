@@ -29,10 +29,14 @@ function createPgAdapter() {
     connectionString: dbUrl,
     ssl: isSupabase || dbUrl.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
     connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
-    max: 20,
+    idleTimeoutMillis: 5000,
+    max: 5,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
+  });
+
+  pool.on('error', (err) => {
+    console.warn('Supabase PG pool connection error (transient, reconnecting):', err.message);
   });
 
   /** Convert SQLite-style `?` placeholders to PG-style `$1, $2, ...` */
@@ -44,6 +48,18 @@ function createPgAdapter() {
   /** Convert SQLite datetime('now') to PG NOW() */
   function convertDatetime(sql) {
     return sql.replace(/datetime\('now'\)/gi, 'NOW()');
+  }
+
+  function convertInsertOrIgnore(sql) {
+    const trimmed = (sql || '').trim();
+    if (/^INSERT\s+OR\s+IGNORE\s+INTO\s+/i.test(trimmed)) {
+      let converted = trimmed.replace(/^INSERT\s+OR\s+IGNORE\s+INTO\s+/i, 'INSERT INTO ');
+      if (!/ON\s+CONFLICT/i.test(converted)) {
+        converted = converted.replace(/;?\s*$/, ' ON CONFLICT DO NOTHING');
+      }
+      return converted;
+    }
+    return trimmed;
   }
 
   /** Append RETURNING id to INSERT statements so lastInsertRowid works */
@@ -62,7 +78,7 @@ function createPgAdapter() {
 
   /** Full SQL conversion pipeline */
   function convertSql(sql) {
-    return appendReturning(convertDatetime(convertPlaceholders(sql)));
+    return appendReturning(convertInsertOrIgnore(convertDatetime(convertPlaceholders(sql))));
   }
 
   const wrapped = {
@@ -406,6 +422,11 @@ const SQLITE_DDL = `
     content_variations TEXT,
     content_mode TEXT DEFAULT 'single',
     ignore_window INTEGER DEFAULT 0,
+    timezone TEXT DEFAULT 'Africa/Lagos',
+    account_ids TEXT,
+    target_limit INTEGER DEFAULT 0,
+    custom_filters TEXT,
+    format_type TEXT DEFAULT 'html',
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -463,7 +484,8 @@ const SQLITE_DDL = `
     verification_code TEXT,
     verification_code_expires TEXT,
     access_token_expires_at TEXT,
-    refresh_token_expires_at TEXT
+    refresh_token_expires_at TEXT,
+    auth_provider TEXT DEFAULT 'email'
   );
 
   CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -540,6 +562,7 @@ const SQLITE_DDL = `
 
   CREATE TABLE IF NOT EXISTS inbox_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
     account_id INTEGER,
     sender_email TEXT NOT NULL,
     recipient_email TEXT NOT NULL,
@@ -548,6 +571,8 @@ const SQLITE_DDL = `
     body_html TEXT,
     sentiment TEXT DEFAULT 'neutral',
     is_read INTEGER DEFAULT 0,
+    message_id TEXT,
+    thread_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -578,12 +603,7 @@ const PG_DDL = `
     smtp_port INTEGER,
     smtp_user TEXT,
     smtp_pass TEXT,
-    smtp_secure INTEGER DEFAULT 1,
-    imap_host TEXT,
-    imap_port INTEGER,
-    imap_user TEXT,
-    imap_pass TEXT,
-    imap_secure INTEGER DEFAULT 1,
+    smtp_secure INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -592,100 +612,102 @@ const PG_DDL = `
     list_name TEXT NOT NULL,
     email TEXT NOT NULL,
     fields TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(list_name, email)
   );
 
   CREATE TABLE IF NOT EXISTS campaigns (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
-    subject TEXT NOT NULL,
+    subject TEXT,
     body_html TEXT,
     body_plain TEXT,
-    contact_list TEXT NOT NULL,
-    delay_seconds INTEGER DEFAULT 30,
-    start_time TEXT DEFAULT '08:00',
-    end_time TEXT DEFAULT '22:00',
     status TEXT DEFAULT 'draft',
+    contact_list TEXT,
+    account_ids TEXT,
+    delay_seconds INTEGER DEFAULT 30,
+    daily_limit INTEGER DEFAULT 450,
+    start_time TEXT,
+    end_time TEXT,
+    schedule_cron TEXT,
+    track_opens INTEGER DEFAULT 1,
+    track_clicks INTEGER DEFAULT 1,
+    custom_domain TEXT,
+    content_mode TEXT DEFAULT 'single',
+    content_variations TEXT,
+    auto_followups TEXT,
     total_contacts INTEGER DEFAULT 0,
     sent_count INTEGER DEFAULT 0,
     failed_count INTEGER DEFAULT 0,
-    content_variations TEXT,
-    content_mode TEXT DEFAULT 'single',
     ignore_window INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  CREATE TABLE IF NOT EXISTS queue (
-    id SERIAL PRIMARY KEY,
-    campaign_id INTEGER NOT NULL REFERENCES campaigns(id),
-    recipient_email TEXT NOT NULL,
-    account_id INTEGER REFERENCES accounts(id),
-    status TEXT DEFAULT 'pending',
-    retry_count INTEGER DEFAULT 0,
-    scheduled_at TIMESTAMPTZ,
-    sent_at TIMESTAMPTZ,
-    error TEXT,
-    fields TEXT,
-    final_subject TEXT,
-    final_body TEXT,
-    opens_count INTEGER DEFAULT 0,
-    clicks_count INTEGER DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS logs (
-    id SERIAL PRIMARY KEY,
-    campaign_id INTEGER,
-    account_id INTEGER,
-    recipient_email TEXT,
-    status TEXT,
-    message TEXT,
-    queue_id INTEGER,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    timezone TEXT DEFAULT 'Africa/Lagos',
+    target_limit INTEGER DEFAULT 0,
+    custom_filters TEXT,
+    format_type TEXT DEFAULT 'html',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
   );
 
   CREATE TABLE IF NOT EXISTS templates (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
-    subject TEXT NOT NULL,
+    subject TEXT,
     body_html TEXT,
-    body_plain TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
-  CREATE TABLE IF NOT EXISTS users (
+  CREATE TABLE IF NOT EXISTS campaign_recipients (
     id SERIAL PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
-    name TEXT DEFAULT '',
-    picture TEXT DEFAULT '',
-    role TEXT DEFAULT 'admin',
-    last_login TIMESTAMPTZ DEFAULT NOW(),
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    fields TEXT,
+    status TEXT DEFAULT 'active',
+    current_step INTEGER DEFAULT 1,
+    last_sent_at TIMESTAMPTZ,
+    last_activity TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    password_hash TEXT,
-    failed_login_attempts INTEGER DEFAULT 0,
-    locked_until TIMESTAMPTZ,
-    email_verified BOOLEAN DEFAULT FALSE,
-    verification_code TEXT,
-    verification_code_expires TIMESTAMPTZ,
-    access_token_expires_at TIMESTAMPTZ,
-    refresh_token_expires_at TIMESTAMPTZ
+    UNIQUE(campaign_id, email)
   );
 
-  CREATE TABLE IF NOT EXISTS refresh_tokens (
+  CREATE TABLE IF NOT EXISTS campaign_steps (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    step_number INTEGER NOT NULL,
+    wait_days INTEGER DEFAULT 3,
+    subject TEXT,
+    body_html TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    revoked BOOLEAN DEFAULT FALSE
+    UNIQUE(campaign_id, step_number)
   );
 
-  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  CREATE TABLE IF NOT EXISTS queue (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    used_at TIMESTAMPTZ
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+    recipient_email TEXT NOT NULL,
+    fields TEXT,
+    final_subject TEXT,
+    final_body TEXT,
+    status TEXT DEFAULT 'pending',
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    sent_at TIMESTAMPTZ,
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    step_number INTEGER DEFAULT 1,
+    campaign_step_id INTEGER,
+    opens_count INTEGER DEFAULT 0,
+    clicks_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS logs (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    recipient_email TEXT,
+    status TEXT NOT NULL,
+    message TEXT,
+    queue_id INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -693,42 +715,23 @@ const PG_DDL = `
     value TEXT
   );
 
-  CREATE TABLE IF NOT EXISTS campaign_steps (
+  CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    step_number INTEGER NOT NULL,
-    subject TEXT NOT NULL,
-    body_html TEXT,
-    body_plain TEXT,
-    delay_seconds INTEGER DEFAULT 86400,
-    trigger_event TEXT DEFAULT 'wait',
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    picture TEXT,
+    role TEXT DEFAULT 'admin',
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
-  CREATE TABLE IF NOT EXISTS campaign_recipients (
-    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    recipient_email TEXT NOT NULL,
-    status TEXT DEFAULT 'active',
-    current_step INTEGER DEFAULT 1,
-    last_sent_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (campaign_id, recipient_email)
-  );
-
-  CREATE TABLE IF NOT EXISTS device_states (
-    device_id TEXT PRIMARY KEY,
-    ip_address TEXT,
-    state_data TEXT NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  CREATE TABLE IF NOT EXISTS ai_config (
+  CREATE TABLE IF NOT EXISTS tracking_events (
     id SERIAL PRIMARY KEY,
-    provider TEXT NOT NULL DEFAULT 'openrouter',
-    api_key_encrypted TEXT NOT NULL,
-    base_url TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
-    model TEXT NOT NULL DEFAULT 'openai/gpt-4o-mini',
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    queue_id INTEGER,
+    event_type TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    link_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
   CREATE TABLE IF NOT EXISTS ai_rules (
@@ -740,6 +743,7 @@ const PG_DDL = `
 
   CREATE TABLE IF NOT EXISTS inbox_messages (
     id SERIAL PRIMARY KEY,
+    user_id INTEGER,
     account_id INTEGER,
     sender_email TEXT NOT NULL,
     recipient_email TEXT NOT NULL,
@@ -748,6 +752,8 @@ const PG_DDL = `
     body_html TEXT,
     sentiment TEXT DEFAULT 'neutral',
     is_read INTEGER DEFAULT 0,
+    message_id TEXT,
+    thread_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -766,13 +772,14 @@ const PG_DDL = `
 // ============================================================================
 
 /** Tables whose rows belong to a single application user. */
-const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list'];
+const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list', 'inbox_messages'];
 
 const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
   CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
   CREATE INDEX IF NOT EXISTS idx_campaigns_user ON campaigns(user_id);
   CREATE INDEX IF NOT EXISTS idx_templates_user ON templates(user_id);
+  CREATE INDEX IF NOT EXISTS idx_inbox_messages_user ON inbox_messages(user_id);
 `;
 
 /**
@@ -805,6 +812,7 @@ ready = (async () => {
     CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_inbox_recipient ON inbox_messages(recipient_email);
     CREATE INDEX IF NOT EXISTS idx_inbox_created_at ON inbox_messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_inbox_message_id ON inbox_messages(message_id);
   `;
 
   if (usePg) {
@@ -833,9 +841,22 @@ ready = (async () => {
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ignore_window INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Africa/Lagos';");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS account_ids TEXT;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_limit INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_range_start INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_range_end INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS exclude_previously_contacted INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS custom_filters TEXT;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS format_type TEXT DEFAULT 'html';");
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ;");
+        await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'new';");
       } catch (_) {}
       // Email/password authentication columns
       try {
@@ -864,17 +885,19 @@ ready = (async () => {
       try {
         await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_expires_at TEXT;");
       } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT DEFAULT 'email';");
+      } catch (_) {}
       // Create refresh_tokens table if not exists (fallback for direct DB init)
       try {
         await adapter.exec(`
           CREATE TABLE IF NOT EXISTS refresh_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             token TEXT NOT NULL UNIQUE,
             expires_at TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now')),
-            revoked INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            revoked INTEGER DEFAULT 0
           );
         `);
       } catch (_) {}
@@ -899,6 +922,10 @@ ready = (async () => {
             UNIQUE(workspace_id, user_id)
           );
         `);
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS message_id TEXT;");
+        await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS thread_id TEXT;");
       } catch (_) {}
       // Multi-tenancy: owner column on all user-scoped tables.
       for (const t of TENANT_TABLES) {
@@ -970,6 +997,48 @@ ready = (async () => {
       await wrapped.exec("ALTER TABLE campaigns ADD COLUMN body_plain TEXT;");
     } catch (_) {}
     try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN timezone TEXT DEFAULT 'Africa/Lagos';");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN account_ids TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN target_limit INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN target_range_start INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN target_range_end INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN exclude_previously_contacted INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN custom_filters TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN format_type TEXT DEFAULT 'html';");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN timing_mode TEXT DEFAULT 'smart';");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN min_delay INTEGER DEFAULT 30;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN max_delay INTEGER DEFAULT 90;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN cooldown_enabled INTEGER DEFAULT 1;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN cooldown_batch_size INTEGER DEFAULT 15;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE campaigns ADD COLUMN cooldown_duration_minutes INTEGER DEFAULT 5;");
+    } catch (_) {}
+    try {
       await wrapped.exec("ALTER TABLE queue ADD COLUMN fields TEXT;");
     } catch (_) {}
     try {
@@ -996,6 +1065,21 @@ ready = (async () => {
     try {
       await wrapped.exec("ALTER TABLE logs ADD COLUMN queue_id INTEGER;");
     } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN message_id TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN thread_id TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN is_starred INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN starred_at TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN status TEXT DEFAULT 'new';");
+    } catch (_) {}
     // Email/password authentication columns
     try {
       await wrapped.exec("ALTER TABLE users ADD COLUMN password_hash TEXT;");
@@ -1015,6 +1099,9 @@ ready = (async () => {
     } catch (_) {}
     try {
       await wrapped.exec("ALTER TABLE users ADD COLUMN verification_code_expires TEXT;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'email';");
     } catch (_) {}
     // Workspace/multi-tenant support tables
     try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api, type Campaign, type CampaignRecipient, type ContactListInfo, type LogItem, type Template } from '../api';
+import { api, type Campaign, type CampaignRecipient, type Contact, type ContactListInfo, type LogItem, type Template, type Account } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { SwipeableListItem } from '@/components/SwipeableListItem';
@@ -15,7 +15,7 @@ import {
   Send, Plus, Trash2, Play, Pause, FileText, Info,
   Clock, Zap, CheckCircle2, ChevronRight, BarChart3, RotateCw, Pencil, Search, Filter,
   UploadCloud, ListFilter, Check, ArrowRight, ArrowLeft, Users, Mail, Layers, X,
-  Eye,
+  Eye, Sparkles, Tag, SlidersHorizontal, MousePointerClick, RefreshCw, Copy, Globe, Calculator, Brain,
 } from 'lucide-react';
 
 interface CampaignsProps {
@@ -33,6 +33,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [lists, setLists] = useState<ContactListInfo[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [showForm, setShowForm] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(true);
@@ -46,15 +47,42 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   } | null>(null);
   const [triggeringWorker, setTriggeringWorker] = useState<boolean>(false);
 
-  // Spintax & Preview States
+  // Audience & Filter State
   const [listTokens, setListTokens] = useState<string[]>([]);
-  const [previewItems, setPreviewItems] = useState<{ subject: string; body_html: string; recipient_email: string; sender_email: string | null }[]>([]);
-  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
-  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
-  const [campaignDetail, setCampaignDetail] = useState<Campaign | null>(null);
-  const [campaignRecipients, setCampaignRecipients] = useState<CampaignRecipient[]>([]);
-  const [campaignLogs, setCampaignLogs] = useState<LogItem[]>([]);
-  const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
+  const [selectedListContacts, setSelectedListContacts] = useState<Contact[]>([]);
+  const [loadingListContacts, setLoadingListContacts] = useState<boolean>(false);
+  const [prospectSearch, setProspectSearch] = useState<string>('');
+  const [prospectDomainFilter, setProspectDomainFilter] = useState<string>('all');
+  const [prospectStatusFilter, setProspectStatusFilter] = useState<string>('all');
+  const [customFilterRules, setCustomFilterRules] = useState<{ id: string; field: string; operator: string; value: string }[]>([]);
+  const [targetLimitMode, setTargetLimitMode] = useState<'all' | 'limit' | 'range'>('all');
+  const [targetLimit, setTargetLimit] = useState<number>(500);
+  const [targetRangeStart, setTargetRangeStart] = useState<number>(1);
+  const [targetRangeEnd, setTargetRangeEnd] = useState<number>(500);
+  const [excludePreviouslyContacted, setExcludePreviouslyContacted] = useState<boolean>(false);
+
+  // Message & Format State
+  const [formatType, setFormatType] = useState<'html' | 'plain'>('html');
+  const [activeEditorField, setActiveEditorField] = useState<'subject' | 'bodyHtml' | 'bodyPlain'>('subject');
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Multiple Subject Lines & Multiple Body Variations
+  const [subjectVariations, setSubjectVariations] = useState<string[]>(['']);
+  const [bodyVariations, setBodyVariations] = useState<string[]>(['']);
+
+  // Schedule & Senders State
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
+  const [timezone, setTimezone] = useState<string>('Africa/Lagos');
+  const [calcHours, setCalcHours] = useState<number>(4);
+  const [calcMinutes, setCalcMinutes] = useState<number>(0);
+
+  // Cold Email Timing Randomizer & Cooldown State
+  const [timingMode, setTimingMode] = useState<'smart' | 'fixed' | 'stealth' | 'burst' | 'custom'>('smart');
+  const [minDelay, setMinDelay] = useState<number>(30);
+  const [maxDelay, setMaxDelay] = useState<number>(90);
+  const [cooldownEnabled, setCooldownEnabled] = useState<boolean>(true);
+  const [cooldownBatchSize, setCooldownBatchSize] = useState<number>(15);
+  const [cooldownDurationMinutes, setCooldownDurationMinutes] = useState<number>(5);
 
   // Edit State
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
@@ -63,12 +91,33 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   const [editSubject, setEditSubject] = useState<string>('');
   const [editBodyHtml, setEditBodyHtml] = useState<string>('');
   const [editBodyPlain, setEditBodyPlain] = useState<string>('');
+  const [editFormatType, setEditFormatType] = useState<'html' | 'plain'>('html');
   const [editDelay, setEditDelay] = useState<number>(30);
   const [editStartTime, setEditStartTime] = useState<string>('08:00');
   const [editEndTime, setEditEndTime] = useState<string>('22:00');
   const [editIgnoreWindow, setEditIgnoreWindow] = useState<boolean>(true);
+  const [editTimezone, setEditTimezone] = useState<string>('Africa/Lagos');
+  const [editSelectedAccountIds, setEditSelectedAccountIds] = useState<number[]>([]);
+  const [editCustomFilterRules, setEditCustomFilterRules] = useState<{ id: string; field: string; operator: string; value: string }[]>([]);
+  const [editTargetLimitMode, setEditTargetLimitMode] = useState<'all' | 'limit' | 'range'>('all');
+  const [editTargetLimit, setEditTargetLimit] = useState<number>(0);
+  const [editTargetRangeStart, setEditTargetRangeStart] = useState<number>(0);
+  const [editTargetRangeEnd, setEditTargetRangeEnd] = useState<number>(0);
+  const [editExcludePreviouslyContacted, setEditExcludePreviouslyContacted] = useState<boolean>(false);
+  const [editSubjectVariations, setEditSubjectVariations] = useState<string[]>(['']);
+  const [editBodyVariations, setEditBodyVariations] = useState<string[]>(['']);
+  const [editListTokens, setEditListTokens] = useState<string[]>([]);
   const [editWorkflowSteps, setEditWorkflowSteps] = useState<{ id: number; trigger_event: string; delay_seconds: number; subject: string; body_html: string; body_plain?: string }[]>([]);
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
+
+  // Preview & Details State
+  const [previewItems, setPreviewItems] = useState<{ subject: string; body_html: string; recipient_email: string; sender_email: string | null }[]>([]);
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
+  const [campaignDetail, setCampaignDetail] = useState<Campaign | null>(null);
+  const [campaignRecipients, setCampaignRecipients] = useState<CampaignRecipient[]>([]);
+  const [campaignLogs, setCampaignLogs] = useState<LogItem[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
 
   // Campaign Filtering State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -79,10 +128,6 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   // Form State & Stepper Wizard
   const [formStep, setFormStep] = useState<number>(1);
-  const [audienceSource, setAudienceSource] = useState<'list' | 'csv'>('list');
-  const [filterCategory, setFilterCategory] = useState<string>('Industry');
-  const [filterCondition, setFilterCondition] = useState<string>('is');
-  const [filterValue, setFilterValue] = useState<string>('Software');
   const [name, setName] = useState<string>('');
   const [selectedList, setSelectedList] = useState<string>('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -90,7 +135,9 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   const [bodyHtml, setBodyHtml] = useState<string>('');
   const [bodyPlain, setBodyPlain] = useState<string>('');
   const [showPreview, setShowPreview] = useState<boolean>(false);
+  const [showFallbackEditor, setShowFallbackEditor] = useState<boolean>(false);
   const [workflowSteps, setWorkflowSteps] = useState<{ id: number; trigger_event: string; delay_seconds: number; subject: string; body_html: string; body_plain?: string }[]>([]);
+  const [expandedStepIds, setExpandedStepIds] = useState<Set<number>>(new Set());
   const [speed, setSpeed] = useState<number>(30);
   const [startTime, setStartTime] = useState<string>('08:00');
   const [endTime, setEndTime] = useState<string>('22:00');
@@ -104,20 +151,100 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   useEffect(() => {
     if (selectedList) {
-      api.getContacts(selectedList, 1).then(contacts => {
-        if (contacts.length > 0 && contacts[0].fields) {
-          const keys = Object.keys(contacts[0].fields);
-          setListTokens(keys);
-        } else {
-          setListTokens([]);
-        }
+      setLoadingListContacts(true);
+      api.getContacts(selectedList, 300).then(contacts => {
+        setSelectedListContacts(contacts);
+        const tokenSet = new Set<string>();
+        contacts.forEach(c => {
+          if (c.fields) {
+            Object.keys(c.fields).forEach(k => tokenSet.add(k));
+          }
+        });
+        setListTokens(Array.from(tokenSet));
       }).catch(() => {
+        setSelectedListContacts([]);
         setListTokens([]);
+      }).finally(() => {
+        setLoadingListContacts(false);
       });
     } else {
+      setSelectedListContacts([]);
       setListTokens([]);
     }
   }, [selectedList]);
+
+  useEffect(() => {
+    if (editContactList) {
+      api.getContacts(editContactList, 100).then(contacts => {
+        const tokenSet = new Set<string>();
+        contacts.forEach(c => {
+          if (c.fields) {
+            Object.keys(c.fields).forEach(k => tokenSet.add(k));
+          }
+        });
+        setEditListTokens(Array.from(tokenSet));
+      }).catch(() => {
+        setEditListTokens([]);
+      });
+    } else {
+      setEditListTokens([]);
+    }
+  }, [editContactList]);
+
+  const allPersonalizationTokens = Array.from(new Set([
+    'first_name',
+    'last_name',
+    'email',
+    'company',
+    'date',
+    ...listTokens
+  ]));
+
+  const handleCopyToken = (token: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const tokenStr = `{{${token}}}`;
+    navigator.clipboard.writeText(tokenStr);
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken(null), 2000);
+    toast({
+      title: 'Copied to Clipboard!',
+      description: `Variable ${tokenStr} copied.`
+    });
+  };
+
+  const handleInsertToken = (token: string, target?: 'subject' | 'bodyHtml' | 'bodyPlain') => {
+    const field = target || activeEditorField;
+    const tokenStr = `{{${token}}}`;
+    if (field === 'subject') {
+      setSubject(prev => prev ? `${prev} ${tokenStr}` : tokenStr);
+      setSubjectVariations(prev => {
+        const next = [...prev];
+        if (next.length === 0) return [tokenStr];
+        next[0] = next[0] ? `${next[0]} ${tokenStr}` : tokenStr;
+        return next;
+      });
+    } else if (field === 'bodyPlain') {
+      setBodyPlain(prev => prev ? `${prev} ${tokenStr}` : tokenStr);
+      setBodyVariations(prev => {
+        const next = [...prev];
+        if (next.length === 0) return [tokenStr];
+        next[0] = next[0] ? `${next[0]} ${tokenStr}` : tokenStr;
+        return next;
+      });
+    } else {
+      setBodyHtml(prev => prev ? `${prev} ${tokenStr}` : tokenStr);
+      setBodyVariations(prev => {
+        const next = [...prev];
+        if (next.length === 0) return [tokenStr];
+        next[0] = next[0] ? `${next[0]} ${tokenStr}` : tokenStr;
+        return next;
+      });
+    }
+    toast({
+      title: `Inserted {{${token}}}`,
+      description: `Added to ${field === 'subject' ? 'Subject' : field === 'bodyPlain' ? 'Plain Text' : 'HTML Body'}.`
+    });
+  };
 
   const handlePreview = async (id: number) => {
     setLoadingPreview(true);
@@ -186,16 +313,18 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   const loadData = async () => {
     try {
-      const [cRes, lRes, tRes, sRes, wRes] = await Promise.all([
+      const [cRes, lRes, tRes, sRes, wRes, aRes] = await Promise.all([
         api.getCampaigns(),
         api.getContactLists(),
         api.getTemplates(),
         api.getSettings(),
-        api.getWorkerStatus().catch(() => null)
+        api.getWorkerStatus().catch(() => null),
+        api.getAccounts().catch(() => [])
       ]);
       setCampaigns(cRes);
       setLists(lRes);
       setTemplates(tRes);
+      setAccounts(aRes || []);
       // Settings endpoint returns SCHEDULER_ENABLED as 'true'|'false'
       setSchedulerEnabled(sRes && sRes.SCHEDULER_ENABLED === 'true');
       if (wRes) setWorkerStatus(wRes);
@@ -224,6 +353,8 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
       setSubject(t.subject);
       setBodyHtml(t.body_html);
       setBodyPlain(t.body_plain);
+      setSubjectVariations([t.subject]);
+      setBodyVariations([formatType === 'plain' ? t.body_plain : t.body_html]);
       toast({
         title: 'Template loaded',
         description: `Subject and bodies updated with "${t.name}" content.`
@@ -246,41 +377,83 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
       let finalBodyHtml = bodyHtml;
       let finalBodyPlain = bodyPlain;
 
+      const validSubjects = subjectVariations.filter(s => s.trim());
+      const validBodies = bodyVariations.filter(b => b.trim());
+
+      let finalVariations: any = null;
+
       if (contentMode === 'rotation') {
-        const invalid = variations.some(v => !v.subject || !v.body_html);
-        if (invalid || variations.length === 0) {
-          toast({
-            variant: 'destructive',
-            title: 'Empty variations',
-            description: 'All rotational variations must have a subject line and body content.'
-          });
-          return;
+        if (validSubjects.length > 0 || validBodies.length > 0) {
+          finalVariations = {
+            subjects: validSubjects.length > 0 ? validSubjects : [subject],
+            bodies: validBodies.length > 0 ? validBodies : [formatType === 'plain' ? bodyPlain : bodyHtml]
+          };
+          finalSubject = validSubjects[0] || subject;
+          finalBodyHtml = validBodies[0] || bodyHtml;
+          finalBodyPlain = formatType === 'plain' ? (validBodies[0] || bodyPlain) : bodyPlain;
+        } else {
+          const invalid = variations.some(v => !v.subject || !v.body_html);
+          if (invalid || variations.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'Empty variations',
+              description: 'All rotational variations must have a subject line and body content.'
+            });
+            return;
+          }
+          finalVariations = variations;
+          finalSubject = variations[0].subject;
+          finalBodyHtml = variations[0].body_html;
+          finalBodyPlain = '';
         }
-        finalSubject = variations[0].subject;
-        finalBodyHtml = variations[0].body_html;
-        finalBodyPlain = '';
       }
+
+      const activeFilters = customFilterRules.filter(r => r.field && (r.value !== '' || r.operator === 'is_empty' || r.operator === 'is_not_empty'));
+      const targetCount = targetLimitMode === 'limit' && targetLimit > 0 ? targetLimit : 0;
+      const startRange = targetLimitMode === 'range' && targetRangeStart > 0 ? targetRangeStart : 0;
+      const endRange = targetLimitMode === 'range' && targetRangeEnd >= targetRangeStart ? targetRangeEnd : 0;
 
       setLoading(true);
       try {
         const res = await api.createCampaign({
           name,
           subject: finalSubject,
-          body_html: finalBodyHtml,
+          body_html: formatType === 'plain' ? '' : finalBodyHtml,
           body_plain: finalBodyPlain,
           contact_list: selectedList || undefined,
           delay_seconds: speed,
           start_time: startTime,
           end_time: endTime,
           ignore_window: ignoreWindow ? 1 : 0,
-          steps: workflowSteps.map((s, idx) => ({ step_number: idx + 2, subject: s.subject, body_html: s.body_html, body_plain: s.body_plain || '', delay_seconds: s.delay_seconds, trigger_event: s.trigger_event })),
+          timezone: timezone || 'Africa/Lagos',
+          account_ids: selectedAccountIds.length > 0 ? selectedAccountIds : undefined,
+          target_limit: targetCount,
+          target_range_start: startRange,
+          target_range_end: endRange,
+          exclude_previously_contacted: excludePreviouslyContacted ? 1 : 0,
+          custom_filters: activeFilters.length > 0 ? activeFilters : undefined,
+          format_type: formatType,
+          timing_mode: timingMode,
+          min_delay: minDelay,
+          max_delay: maxDelay,
+          cooldown_enabled: cooldownEnabled ? 1 : 0,
+          cooldown_batch_size: cooldownBatchSize,
+          cooldown_duration_minutes: cooldownDurationMinutes,
+          steps: workflowSteps.map((s, idx) => ({
+            step_number: idx + 2,
+            subject: s.subject,
+            body_html: formatType === 'plain' ? '' : s.body_html,
+            body_plain: s.body_plain || (formatType === 'plain' ? s.body_html : ''),
+            delay_seconds: s.delay_seconds,
+            trigger_event: s.trigger_event
+          })),
           content_mode: contentMode,
-          content_variations: contentMode === 'rotation' ? (variations as any) : null
+          content_variations: finalVariations
         });
 
         toast({
           title: 'Campaign created',
-          description: `"${name}" was saved as draft. You can edit it later or launch it once recipients are available.`
+          description: `"${name}" was saved as draft with Africa/Lagos (WAT) schedule.`
         });
 
         if (launchImmediately) {
@@ -292,7 +465,14 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
             });
           } else {
             try {
-              const launchRes = await api.launchCampaign(res.id);
+              const launchRes = await api.launchCampaign(res.id, {
+                account_ids: selectedAccountIds.length > 0 ? selectedAccountIds : undefined,
+                custom_filters: activeFilters.length > 0 ? activeFilters : undefined,
+                target_limit: targetCount,
+                target_range_start: startRange,
+                target_range_end: endRange,
+                exclude_previously_contacted: excludePreviouslyContacted ? 1 : 0
+              });
               if (launchRes && launchRes.processing_started === false) {
                 toast({
                   variant: 'destructive',
@@ -315,7 +495,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
           }
         }
 
-        // Reset
+        // Reset Form
         setShowForm(false);
         setFormStep(1);
         setName('');
@@ -324,11 +504,19 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
         setSubject('');
         setBodyHtml('');
         setBodyPlain('');
+        setFormatType('html');
         setSpeed(30);
         setStartTime('08:00');
         setEndTime('22:00');
+        setTimezone('Africa/Lagos');
+        setSelectedAccountIds([]);
+        setCustomFilterRules([]);
+        setTargetLimitMode('all');
+        setTargetLimit(50000);
         setContentMode('single');
         setVariations([{ subject: '', body_html: '' }]);
+        setSubjectVariations(['']);
+        setBodyVariations(['']);
         setWorkflowSteps([]);
         loadData();
       } catch (e: any) {
@@ -508,33 +696,77 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     }
   };
 
-
   const handleOpenEdit = (c: Campaign) => {
     setEditingCampaign(c);
     setEditName(c.name);
     setEditContactList(c.contact_list || '');
-    setEditSubject(c.subject);
+    setEditSubject(c.subject || '');
     setEditBodyHtml(c.body_html || '');
     setEditBodyPlain(c.body_plain || '');
+    setEditFormatType((c.format_type as any) || 'html');
     setEditDelay(c.delay_seconds || 30);
     setEditStartTime(c.start_time || '08:00');
     setEditEndTime(c.end_time || '22:00');
     setEditIgnoreWindow(Boolean(c.ignore_window ?? 1));
+    setEditTimezone(c.timezone || 'Africa/Lagos');
     setEditContentMode(c.content_mode || 'single');
 
-    let parsed: { subject: string; body_html: string }[] = [];
+    let accIds: number[] = [];
+    if (c.account_ids) {
+      try {
+        const raw = typeof c.account_ids === 'string' ? JSON.parse(c.account_ids) : c.account_ids;
+        if (Array.isArray(raw)) accIds = raw.map(Number);
+      } catch (_) {}
+    }
+    setEditSelectedAccountIds(accIds);
+
+    let parsedFilters: any[] = [];
+    if (c.custom_filters) {
+      try {
+        const raw = typeof c.custom_filters === 'string' ? JSON.parse(c.custom_filters) : c.custom_filters;
+        if (Array.isArray(raw)) parsedFilters = raw;
+      } catch (_) {}
+    }
+    setEditCustomFilterRules(parsedFilters);
+
+    const tLim = c.target_limit || 0;
+    const rStart = c.target_range_start || 0;
+    const rEnd = c.target_range_end || 0;
+    setEditTargetLimit(tLim);
+    setEditTargetRangeStart(rStart);
+    setEditTargetRangeEnd(rEnd);
+    setEditExcludePreviouslyContacted(Boolean(c.exclude_previously_contacted));
+    if (rStart > 0 && rEnd >= rStart) {
+      setEditTargetLimitMode('range');
+    } else if (tLim > 0) {
+      setEditTargetLimitMode('limit');
+    } else {
+      setEditTargetLimitMode('all');
+    }
+
+    let parsedVariations: { subject: string; body_html: string }[] = [];
+    let parsedSubjList: string[] = [c.subject || ''];
+    let parsedBodyList: string[] = [c.body_html || c.body_plain || ''];
+
     if (c.content_variations) {
       try {
-        const arr = JSON.parse(c.content_variations);
-        if (Array.isArray(arr) && arr.length > 0) parsed = arr;
-      } catch {
-        // Ignore malformed content_variations JSON
-      }
+        const parsed = JSON.parse(c.content_variations);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsedVariations = parsed;
+          parsedSubjList = parsed.map(p => p.subject).filter(Boolean);
+          parsedBodyList = parsed.map(p => p.body_html).filter(Boolean);
+        } else if (parsed && typeof parsed === 'object') {
+          if (Array.isArray(parsed.subjects)) parsedSubjList = parsed.subjects;
+          if (Array.isArray(parsed.bodies)) parsedBodyList = parsed.bodies;
+        }
+      } catch (_) {}
     }
-    if (parsed.length === 0) {
-      parsed = [{ subject: c.subject || '', body_html: c.body_html || '' }];
+    if (parsedVariations.length === 0) {
+      parsedVariations = [{ subject: c.subject || '', body_html: c.body_html || '' }];
     }
-    setEditVariations(parsed);
+    setEditVariations(parsedVariations);
+    setEditSubjectVariations(parsedSubjList.length > 0 ? parsedSubjList : ['']);
+    setEditBodyVariations(parsedBodyList.length > 0 ? parsedBodyList : ['']);
 
     const parsedSteps = Array.isArray(c.steps) && c.steps.length > 0
       ? c.steps.map((step, idx) => ({
@@ -554,16 +786,36 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     if (!editingCampaign) return;
     setSavingEdit(true);
     try {
-      const finalSubj = editContentMode === 'rotation' && editVariations.length > 0 ? editVariations[0].subject : editSubject;
-      const finalHtml = editContentMode === 'rotation' && editVariations.length > 0 ? editVariations[0].body_html : editBodyHtml;
+      const validSubjects = editSubjectVariations.filter(s => s.trim());
+      const validBodies = editBodyVariations.filter(b => b.trim());
+
+      let finalVariations: any = null;
+      if (editContentMode === 'rotation') {
+        if (validSubjects.length > 0 || validBodies.length > 0) {
+          finalVariations = {
+            subjects: validSubjects.length > 0 ? validSubjects : [editSubject],
+            bodies: validBodies.length > 0 ? validBodies : [editFormatType === 'plain' ? editBodyPlain : editBodyHtml]
+          };
+        } else if (editVariations.length > 0) {
+          finalVariations = editVariations;
+        }
+      }
+
+      const finalSubj = editContentMode === 'rotation' && validSubjects.length > 0 ? validSubjects[0] : editSubject;
+      const finalHtml = editContentMode === 'rotation' && validBodies.length > 0 ? validBodies[0] : (editFormatType === 'plain' ? '' : editBodyHtml);
       const nextSteps = editWorkflowSteps.map((step, idx) => ({
         step_number: idx + 2,
         subject: step.subject,
-        body_html: step.body_html,
-        body_plain: step.body_plain || '',
+        body_html: editFormatType === 'plain' ? '' : step.body_html,
+        body_plain: step.body_plain || (editFormatType === 'plain' ? step.body_html : ''),
         delay_seconds: step.delay_seconds,
         trigger_event: step.trigger_event,
       }));
+
+      const activeFilters = editCustomFilterRules.filter(r => r.field && (r.value !== '' || r.operator === 'is_empty' || r.operator === 'is_not_empty'));
+      const targetCount = editTargetLimitMode === 'limit' && editTargetLimit > 0 ? editTargetLimit : 0;
+      const startRange = editTargetLimitMode === 'range' && editTargetRangeStart > 0 ? editTargetRangeStart : 0;
+      const endRange = editTargetLimitMode === 'range' && editTargetRangeEnd >= editTargetRangeStart ? editTargetRangeEnd : 0;
 
       await api.updateCampaign(editingCampaign.id, {
         name: editName,
@@ -571,12 +823,20 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
         subject: finalSubj,
         body_html: finalHtml,
         body_plain: editBodyPlain,
+        format_type: editFormatType,
         delay_seconds: editDelay,
         start_time: editStartTime,
         end_time: editEndTime,
         ignore_window: editIgnoreWindow ? 1 : 0,
+        timezone: editTimezone || 'Africa/Lagos',
+        account_ids: editSelectedAccountIds.length > 0 ? editSelectedAccountIds : undefined,
+        target_limit: targetCount,
+        target_range_start: startRange,
+        target_range_end: endRange,
+        exclude_previously_contacted: editExcludePreviouslyContacted ? 1 : 0,
+        custom_filters: activeFilters.length > 0 ? activeFilters : undefined,
         content_mode: editContentMode,
-        content_variations: editContentMode === 'rotation' ? (editVariations as any) : null,
+        content_variations: finalVariations,
         steps: nextSteps,
       });
       toast({
@@ -722,24 +982,34 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
           </div>
 
           {/* Top Dashboard Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Active Campaigns</p>
-              <p className="font-heading text-2xl font-bold text-foreground">{campaigns.filter(c => c.status === 'sending').length || campaigns.length}</p>
-            </div>
-            <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Sent (30d)</p>
-              <p className="font-heading text-2xl font-bold text-foreground">{(campaigns.reduce((acc, c) => acc + (c.sent_count || 0), 0) || 8402).toLocaleString()}</p>
-            </div>
-            <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Avg Open Rate</p>
-              <p className="font-heading text-2xl font-bold text-foreground">42.8%</p>
-            </div>
-            <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Replies</p>
-              <p className="font-heading text-2xl font-bold text-foreground">{campaigns.reduce((acc, c) => acc + Math.round((c.sent_count || 0) * 0.042), 0) || 341}</p>
-            </div>
-          </div>
+          {(() => {
+            const activeCount = campaigns.filter(c => c.status === 'sending').length;
+            const totalSent = campaigns.reduce((acc, c) => acc + (c.sent_count || 0), 0);
+            const totalOpens = campaigns.reduce((acc, c) => acc + (c.total_opens || 0), 0);
+            const totalClicks = campaigns.reduce((acc, c) => acc + (c.total_clicks || 0), 0);
+            const avgOpenRate = totalSent > 0 ? `${((totalOpens / totalSent) * 100).toFixed(1)}%` : '0.0%';
+
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Active Campaigns</p>
+                  <p className="font-heading text-2xl font-bold text-foreground">{activeCount}</p>
+                </div>
+                <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Sent</p>
+                  <p className="font-heading text-2xl font-bold text-foreground">{totalSent.toLocaleString()}</p>
+                </div>
+                <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Avg Open Rate</p>
+                  <p className="font-heading text-2xl font-bold text-foreground">{avgOpenRate}</p>
+                </div>
+                <div className="bg-card border border-border/60 rounded-xl p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Opens</p>
+                  <p className="font-heading text-2xl font-bold text-foreground">{totalOpens.toLocaleString()}</p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Stepper Campaign Builder Form */}
           {showForm && (
@@ -796,75 +1066,471 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               {formStep === 1 && (
                 <div className="py-4 space-y-4">
                   <div>
-                    <h3 className="text-sm font-bold text-foreground mb-1">Select Audience Source</h3>
-                    <p className="text-xs text-muted-foreground">Choose who will receive this cold outreach sequence.</p>
+                    <h3 className="text-sm font-bold text-foreground mb-1">Target Contact List &amp; Audience Filters</h3>
+                    <p className="text-xs text-muted-foreground">Select your prospect list, apply custom field criteria (e.g. revenue, company size), and define volume limits.</p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div
-                      onClick={() => setAudienceSource('list')}
-                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                        audienceSource === 'list' ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border/60 hover:border-primary/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <Users className="h-5 w-5 text-primary" />
-                        <span className="font-bold text-xs text-foreground">Select Contact List</span>
+                  <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-primary" />
+                        <span className="font-bold text-xs text-foreground">Assigned Contact List</span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground mb-3">Choose from existing database lists.</p>
+                      {selectedList && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Total List: <strong className="text-foreground">{lists.find(l => l.list_name === selectedList)?.count ?? 0} leads</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    {lists.length === 0 ? (
+                      <div className="text-xs text-muted-foreground p-4 border border-dashed rounded-xl bg-background text-center">
+                        No contact lists found. Please upload contacts in the Contacts section first.
+                      </div>
+                    ) : (
                       <select
                         value={selectedList}
                         onChange={e => setSelectedList(e.target.value)}
-                        className="w-full bg-background text-xs rounded-lg border border-input p-2.5 focus:ring-1 focus:ring-primary"
+                        className="w-full bg-background text-xs sm:text-sm rounded-xl border border-input p-2.5 focus:ring-1 focus:ring-primary font-medium"
                       >
-                        <option value="">Choose a contact list division...</option>
+                        <option value="">Select a contact list...</option>
                         {lists.map(l => (
                           <option key={l.list_name} value={l.list_name}>
                             {l.list_name} ({l.count} recipients)
                           </option>
                         ))}
                       </select>
-                    </div>
+                    )}
 
-                    <div
-                      onClick={() => setAudienceSource('csv')}
-                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                        audienceSource === 'csv' ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border/60 hover:border-primary/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <UploadCloud className="h-5 w-5 text-primary" />
-                        <span className="font-bold text-xs text-foreground">Import CSV</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mb-3">Upload a list of new contacts directly.</p>
-                      <div className="border-2 border-dashed border-border rounded-lg p-3 text-center text-xs text-muted-foreground bg-muted/20">
-                        Drag and drop CSV or click to browse
-                      </div>
-                    </div>
-                  </div>
+                    {selectedList && (
+                      <div className="pt-4 border-t border-border/20 space-y-4">
+                        {/* Dynamic CSV Headers Bar with 1-Click Copy */}
+                        {listTokens.length > 0 && (
+                          <div className="p-3 bg-background rounded-xl border border-border/60 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                <Tag className="h-3 w-3 text-primary" /> Detected Contact CSV Headers (Click to Copy):
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">{listTokens.length} columns detected</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {listTokens.map(t => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={(e) => handleCopyToken(t, e)}
+                                  className="px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-mono text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                  title="Click to copy variable token"
+                                >
+                                  {copiedToken === t ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-2.5 w-2.5 opacity-60" />}
+                                  <span>{`{{${t}}}`}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
-                  {/* Segment Filters */}
-                  <div className="p-4 rounded-xl bg-muted/20 border border-border/40 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <ListFilter className="h-4 w-4 text-primary" />
-                      <h4 className="text-xs font-bold text-foreground">Segment Filters</h4>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                      <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-background rounded-lg border border-input p-2">
-                        <option value="Industry">Industry</option>
-                        <option value="Title">Job Title</option>
-                        <option value="Location">Location</option>
-                      </select>
-                      <select value={filterCondition} onChange={e => setFilterCondition(e.target.value)} className="bg-background rounded-lg border border-input p-2">
-                        <option value="is">is</option>
-                        <option value="is not">is not</option>
-                        <option value="contains">contains</option>
-                      </select>
-                      <input type="text" value={filterValue} onChange={e => setFilterValue(e.target.value)} placeholder="e.g. Software" className="bg-background rounded-lg border border-input p-2" />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
-                      <span>Estimated Audience Size: <strong className="text-foreground">{selectedList ? (lists.find(l => l.list_name === selectedList)?.count || 1240) : 1240}</strong></span>
-                    </div>
+                        {/* Custom Attribute Filter Rule Builder */}
+                        <div className="p-3.5 bg-background rounded-xl border border-border/60 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <Filter className="h-3.5 w-3.5 text-primary" />
+                              Custom Attribute Filters ({customFilterRules.length})
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const defaultField = listTokens[0] || 'company';
+                                setCustomFilterRules([...customFilterRules, { id: String(Date.now()), field: defaultField, operator: 'contains', value: '' }]);
+                              }}
+                              className="h-7 text-[10px] gap-1 font-semibold"
+                            >
+                              <Plus className="h-3 w-3" /> Add Filter Rule
+                            </Button>
+                          </div>
+
+                          {customFilterRules.length === 0 ? (
+                            <p className="text-[11px] text-muted-foreground italic">
+                              No custom filter applied. All contacts in list will be targeted. Click "+ Add Filter Rule" to filter by attributes like revenue, job title, city, or tags.
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {customFilterRules.map((rule, idx) => (
+                                <div key={rule.id || idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-muted/20 p-2 rounded-lg border border-border/40 text-xs">
+                                  <div className="sm:col-span-4">
+                                    <select
+                                      value={rule.field}
+                                      onChange={e => {
+                                        const next = [...customFilterRules];
+                                        next[idx].field = e.target.value;
+                                        setCustomFilterRules(next);
+                                      }}
+                                      className="w-full bg-background text-xs rounded-md border border-input p-1.5 font-mono"
+                                    >
+                                      {Array.from(new Set(['email', 'first_name', 'last_name', 'company', ...listTokens])).map(f => (
+                                        <option key={f} value={f}>{f}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="sm:col-span-3">
+                                    <select
+                                      value={rule.operator}
+                                      onChange={e => {
+                                        const next = [...customFilterRules];
+                                        next[idx].operator = e.target.value;
+                                        setCustomFilterRules(next);
+                                      }}
+                                      className="w-full bg-background text-xs rounded-md border border-input p-1.5 font-medium"
+                                    >
+                                      <option value="contains">Contains text</option>
+                                      <option value="not_contains">Does not contain</option>
+                                      <option value="equals">Equals exactly (=)</option>
+                                      <option value="not_equals">Not equal to (!=)</option>
+                                      <option value="starts_with">Starts with</option>
+                                      <option value="ends_with">Ends with</option>
+                                      <option value="gt">&gt; Greater than (&gt;)</option>
+                                      <option value="gte">&gt;= Greater or equal (&gt;=)</option>
+                                      <option value="lt">&lt; Less than (&lt;)</option>
+                                      <option value="lte">&lt;= Less or equal (&lt;=)</option>
+                                      <option value="is_empty">Is empty / No value</option>
+                                      <option value="is_not_empty">Is not empty / Has value</option>
+                                    </select>
+                                  </div>
+                                  <div className="sm:col-span-4">
+                                    {rule.operator !== 'is_empty' && rule.operator !== 'is_not_empty' && (
+                                      <input
+                                        type="text"
+                                        placeholder="Value (e.g. 20000, CEO, London)..."
+                                        value={rule.value}
+                                        onChange={e => {
+                                          const next = [...customFilterRules];
+                                          next[idx].value = e.target.value;
+                                          setCustomFilterRules(next);
+                                        }}
+                                        className="w-full bg-background text-xs rounded-md border border-input p-1.5"
+                                      />
+                                    )}
+                                  </div>
+                                  <div className="sm:col-span-1 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => setCustomFilterRules(customFilterRules.filter((_, i) => i !== idx))}
+                                      className="text-destructive hover:opacity-80 p-1"
+                                      title="Remove filter"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Target Lead Volume & Range Slicing Box */}
+                        <div className="p-3.5 bg-background rounded-xl border border-border/60 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
+                              Target Lead Volume &amp; Range Slicing
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setTargetLimitMode('all'); }}
+                              className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all ${
+                                targetLimitMode === 'all'
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/60 text-muted-foreground hover:bg-muted/30'
+                              }`}
+                            >
+                              <span className="block font-bold">All Matching Leads</span>
+                              <span className="text-[10px] opacity-80">Send to all contacts in list without caps</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setTargetLimitMode('limit'); if (!targetLimit) setTargetLimit(500); }}
+                              className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all ${
+                                targetLimitMode === 'limit'
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/60 text-muted-foreground hover:bg-muted/30'
+                              }`}
+                            >
+                              <span className="block font-bold">First N Leads (Max Cap)</span>
+                              <span className="text-[10px] opacity-80">Send from contact 1 up to contact N</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setTargetLimitMode('range'); if (!targetRangeStart) setTargetRangeStart(1); if (!targetRangeEnd) setTargetRangeEnd(500); }}
+                              className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all ${
+                                targetLimitMode === 'range'
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/60 text-muted-foreground hover:bg-muted/30'
+                              }`}
+                            >
+                              <span className="block font-bold">Row Range / Slice</span>
+                              <span className="text-[10px] opacity-80">Send precise slice (e.g. row 500 to 600)</span>
+                            </button>
+                          </div>
+
+                          {targetLimitMode === 'limit' && (
+                            <div className="pt-2 flex flex-wrap items-center gap-2">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase shrink-0">Max Recipients:</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={targetLimit}
+                                onChange={e => setTargetLimit(Math.max(1, Number(e.target.value)))}
+                                className="w-36 bg-muted/30 text-xs font-bold rounded-lg border border-input px-3 py-1.5"
+                                placeholder="500"
+                              />
+                              <span className="text-xs text-muted-foreground">contacts (1 to {targetLimit})</span>
+                              <div className="flex gap-1 ml-auto">
+                                {[100, 250, 500, 1000, 2500, 5000].map(cnt => (
+                                  <button
+                                    key={cnt}
+                                    type="button"
+                                    onClick={() => setTargetLimit(cnt)}
+                                    className="px-2 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-muted-foreground font-medium border border-border/40"
+                                  >
+                                    {cnt}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {targetLimitMode === 'range' && (
+                            <div className="pt-2 space-y-2">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-1.5">
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase shrink-0">From Row:</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={targetRangeStart}
+                                    onChange={e => setTargetRangeStart(Math.max(1, Number(e.target.value)))}
+                                    className="w-24 bg-muted/30 text-xs font-bold rounded-lg border border-input px-3 py-1.5"
+                                    placeholder="1"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase shrink-0">To Row:</label>
+                                  <input
+                                    type="number"
+                                    min={targetRangeStart}
+                                    value={targetRangeEnd}
+                                    onChange={e => setTargetRangeEnd(Math.max(targetRangeStart, Number(e.target.value)))}
+                                    className="w-24 bg-muted/30 text-xs font-bold rounded-lg border border-input px-3 py-1.5"
+                                    placeholder="500"
+                                  />
+                                </div>
+                                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
+                                  Targeting {Math.max(0, targetRangeEnd - targetRangeStart + 1)} contacts (Rows {targetRangeStart} to {targetRangeEnd})
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                                <span className="font-bold">Quick presets:</span>
+                                {[
+                                  { label: '1 – 500', start: 1, end: 500 },
+                                  { label: '501 – 1000', start: 501, end: 1000 },
+                                  { label: '1001 – 1500', start: 1001, end: 1500 },
+                                  { label: '1501 – 2000', start: 1501, end: 2000 },
+                                  { label: '1 – 1000', start: 1, end: 1000 },
+                                ].map(p => (
+                                  <button
+                                    key={p.label}
+                                    type="button"
+                                    onClick={() => { setTargetRangeStart(p.start); setTargetRangeEnd(p.end); }}
+                                    className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-medium border border-border/40"
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sent Memory & Deduplication Box */}
+                        <div className="p-3.5 bg-background rounded-xl border border-border/60 flex items-center justify-between gap-4">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <Brain className="h-4 w-4 text-primary" />
+                              <span className="text-xs font-bold text-foreground">Sent Memory &amp; Cross-Campaign Deduplication</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              Automatically exclude leads who have already been sent an email in any prior campaign or Direct Send.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExcludePreviouslyContacted(!excludePreviouslyContacted)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 ${
+                              excludePreviouslyContacted
+                                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                : 'bg-muted text-muted-foreground border-border/60 hover:bg-muted/80'
+                            }`}
+                          >
+                            {excludePreviouslyContacted ? '✓ Exclude Contacted (Active)' : 'Off (Include All)'}
+                          </button>
+                        </div>
+
+                        {/* Audience Filter & Inspection Table */}
+                        {(() => {
+                          const filteredProspects = selectedListContacts.filter(c => {
+                            const q = prospectSearch.toLowerCase();
+                            const matchesQ = !q || c.email.toLowerCase().includes(q) || (c.fields && Object.values(c.fields).some(v => String(v).toLowerCase().includes(q)));
+                            const domain = c.email.split('@')[1] || '';
+                            const matchesDomain = prospectDomainFilter === 'all' || domain === prospectDomainFilter;
+                            const matchesStatus = prospectStatusFilter === 'all' || (c.status || 'pending') === prospectStatusFilter;
+                            if (!matchesQ || !matchesDomain || !matchesStatus) return false;
+
+                            if (customFilterRules.length > 0) {
+                              return customFilterRules.every(rule => {
+                                if (!rule.field) return true;
+                                const op = String(rule.operator || 'contains').toLowerCase().trim();
+                                const fVal = String(c.fields?.[rule.field] ?? (c as any)[rule.field] ?? '').toLowerCase().trim();
+                                const targetVal = String(rule.value !== undefined ? rule.value : '').toLowerCase().trim();
+                                const numFVal = parseFloat(fVal);
+                                const numTargetVal = parseFloat(targetVal);
+
+                                if (op === 'is_empty') return fVal === '';
+                                if (op === 'is_not_empty') return fVal !== '';
+                                if (rule.value === undefined || rule.value === '') return true;
+
+                                switch (op) {
+                                  case 'equals':
+                                  case '=':
+                                    return fVal === targetVal;
+                                  case 'not_equals':
+                                  case '!=':
+                                    return fVal !== targetVal;
+                                  case 'contains':
+                                    return fVal.includes(targetVal);
+                                  case 'not_contains':
+                                    return !fVal.includes(targetVal);
+                                  case 'starts_with':
+                                    return fVal.startsWith(targetVal);
+                                  case 'ends_with':
+                                    return fVal.endsWith(targetVal);
+                                  case 'gt':
+                                  case '>':
+                                    return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal > numTargetVal : fVal > targetVal;
+                                  case 'lt':
+                                  case '<':
+                                    return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal < numTargetVal : fVal < targetVal;
+                                  case 'gte':
+                                  case '>=':
+                                    return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal >= numTargetVal : fVal >= targetVal;
+                                  case 'lte':
+                                  case '<=':
+                                    return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal <= numTargetVal : fVal <= targetVal;
+                                  default:
+                                    return true;
+                                }
+                              });
+                            }
+                            return true;
+                          });
+
+                          let effectiveProspects = filteredProspects;
+                          if (targetLimitMode === 'range' && targetRangeStart > 0 && targetRangeEnd >= targetRangeStart) {
+                            effectiveProspects = filteredProspects.slice(Math.max(0, targetRangeStart - 1), Math.min(filteredProspects.length, targetRangeEnd));
+                          } else if (targetLimitMode === 'limit' && targetLimit > 0) {
+                            effectiveProspects = filteredProspects.slice(0, targetLimit);
+                          }
+                          const effectiveCount = effectiveProspects.length;
+
+                          return (
+                            <div className="p-3 bg-background rounded-xl border border-border/60 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                  <Eye className="h-3.5 w-3.5 text-primary" />
+                                  Matching Audience Inspection
+                                </span>
+                                <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                                  {effectiveCount} contacts targeted {
+                                    targetLimitMode === 'range'
+                                      ? `(Slice: Rows ${targetRangeStart} to ${targetRangeEnd})`
+                                      : targetLimitMode === 'limit' && targetLimit > 0
+                                        ? `(Capped at ${targetLimit})`
+                                        : `(All matching)`
+                                  }
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <div className="relative">
+                                  <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
+                                  <input
+                                    type="text"
+                                    placeholder="Search by keyword..."
+                                    value={prospectSearch}
+                                    onChange={e => setProspectSearch(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 bg-muted/30 border border-input rounded-lg text-xs focus:ring-1 focus:ring-primary"
+                                  />
+                                </div>
+                                <div>
+                                  <select
+                                    value={prospectDomainFilter}
+                                    onChange={e => setProspectDomainFilter(e.target.value)}
+                                    className="w-full py-1.5 px-2.5 bg-muted/30 border border-input rounded-lg text-xs focus:ring-1 focus:ring-primary"
+                                  >
+                                    <option value="all">All Domains</option>
+                                    {Array.from(new Set(selectedListContacts.map(c => c.email.split('@')[1]).filter(Boolean))).map(d => (
+                                      <option key={d} value={d}>@{d}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <select
+                                    value={prospectStatusFilter}
+                                    onChange={e => setProspectStatusFilter(e.target.value)}
+                                    className="w-full py-1.5 px-2.5 bg-muted/30 border border-input rounded-lg text-xs focus:ring-1 focus:ring-primary"
+                                  >
+                                    <option value="all">All Delivery Statuses</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="queued">Queued</option>
+                                    <option value="sent">Sent</option>
+                                    <option value="failed">Failed</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Filtered Preview Table */}
+                              <div className="max-h-40 overflow-y-auto border border-border/40 rounded-lg">
+                                <table className="w-full text-left text-[11px]">
+                                  <thead className="bg-muted/40 text-muted-foreground uppercase text-[9px] font-bold sticky top-0">
+                                    <tr>
+                                      <th className="p-2">Recipient Email</th>
+                                      <th className="p-2">Name / Company / Title</th>
+                                      <th className="p-2">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border/20">
+                                    {filteredProspects.slice(0, 15).map((c, i) => (
+                                      <tr key={c.id || i} className="hover:bg-muted/20">
+                                        <td className="p-2 font-mono">{c.email}</td>
+                                        <td className="p-2 text-muted-foreground">{c.fields?.company || c.fields?.title || c.fields?.first_name || '-'}</td>
+                                        <td className="p-2 capitalize">
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600">
+                                            {c.status || 'Ready'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -876,15 +1542,139 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                     <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Campaign Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Q4 Enterprise Outreach"
+                      placeholder="e.g. Q4 Growth Outreach"
                       value={name}
                       onChange={e => setName(e.target.value)}
-                      className="w-full bg-background text-xs sm:text-sm rounded-xl border border-input px-3.5 py-2.5 focus:ring-1 focus:ring-primary"
+                      className="w-full bg-background text-xs sm:text-sm rounded-xl border border-input px-3.5 py-2.5 focus:ring-1 focus:ring-primary font-medium"
                     />
                   </div>
 
+                  {/* Message Format Selection Checklist / Toggle */}
+                  <div className="p-3 bg-muted/15 border border-border/60 rounded-xl space-y-2">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Message Format Mode</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormatType('html')}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          formatType === 'html'
+                            ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                            : 'border-border/60 text-muted-foreground hover:bg-muted/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${formatType === 'html' ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'}`}>
+                            {formatType === 'html' && <Check className="h-2.5 w-2.5" />}
+                          </div>
+                          <span className="text-xs font-bold">HTML Rich Format</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1 pl-6">
+                          Includes rich styling, images, links, and live HTML rendering preview.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormatType('plain')}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          formatType === 'plain'
+                            ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                            : 'border-border/60 text-muted-foreground hover:bg-muted/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${formatType === 'plain' ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'}`}>
+                            {formatType === 'plain' && <Check className="h-2.5 w-2.5" />}
+                          </div>
+                          <span className="text-xs font-bold">Plain Text Only</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1 pl-6">
+                          Pure text message for highest deliverability and inbox placement.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Personalization Reference Headers Bar with 1-Click Insert & 1-Click Copy */}
+                  <div className="p-3.5 bg-muted/20 border border-border/60 rounded-xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                        <Tag className="h-3.5 w-3.5 text-primary" />
+                        Dynamic Personalization Headers (Click to insert or copy):
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Targeting: {activeEditorField === 'subject' ? 'Subject Line' : activeEditorField === 'bodyPlain' ? 'Plain Text' : 'HTML Body'}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {allPersonalizationTokens.map(tok => (
+                        <div
+                          key={tok}
+                          className="inline-flex items-center rounded-lg border border-border/60 bg-card hover:border-primary/40 text-foreground transition-all shadow-2xs overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleInsertToken(tok)}
+                            className="px-2.5 py-1 hover:bg-primary/10 text-foreground hover:text-primary font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            title="Click to insert variable"
+                          >
+                            <span>{`{{${tok}}}`}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyToken(tok, e)}
+                            className="px-1.5 py-1 border-l border-border/40 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Copy variable to clipboard"
+                          >
+                            {copiedToken === tok ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-2.5 w-2.5" />}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Sentence & Word Spintax Helper Tip */}
+                    <div className="pt-2 border-t border-border/20 flex items-start gap-2 text-[11px] text-muted-foreground">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p>
+                          <strong className="text-foreground">Full Sentence Spintax Engine:</strong> Use <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono text-primary font-bold">&#123;Sentence A|Sentence B&#125;</code> for full paragraphs or sentences with embedded variables.
+                        </p>
+                        <div className="flex flex-wrap gap-3 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sample = "{Hi {{first_name}}, hope your week is going great at {{company}}.|Hello {{first_name}}, reaching out to your team at {{company}} with a quick question.}";
+                              if (formatType === 'plain') {
+                                setBodyPlain(prev => prev ? `${prev}\n\n${sample}` : sample);
+                              } else {
+                                setBodyHtml(prev => prev ? `${prev}\n<p>${sample}</p>` : `<p>${sample}</p>`);
+                              }
+                              toast({ title: 'Sentence Spintax Inserted', description: 'Added multi-sentence rotational options.' });
+                            }}
+                            className="text-primary hover:underline font-mono font-semibold cursor-pointer"
+                          >
+                            + Insert Sample Sentence Spintax
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sampleGreeting = "{Hi|Hello|Hey}";
+                              setSubject(`${sampleGreeting} {{first_name}} - quick note`);
+                              setSubjectVariations([`${sampleGreeting} {{first_name}} - quick note`]);
+                              toast({ title: 'Spintax Subject Applied', description: 'Set rotational greeting in Subject.' });
+                            }}
+                            className="text-primary hover:underline font-mono font-semibold cursor-pointer"
+                          >
+                            + Insert Spintax Subject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Load Template (Optional)</label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Load Pre-built Template (Optional)</label>
                     <select
                       value={selectedTemplateId}
                       onChange={e => handleTemplateSelect(e.target.value)}
@@ -897,13 +1687,29 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                     </select>
                   </div>
 
-                  {/* Mode Toggles */}
+                  {/* Mode Toggles: Single Layout vs Rotational Variations */}
                   <div className="grid grid-cols-2 gap-2">
-                    <div onClick={() => setContentMode('single')} className={`p-3 rounded-xl border cursor-pointer text-center ${contentMode === 'single' ? 'border-primary bg-primary/5 font-bold text-primary' : 'border-border/60 text-muted-foreground'}`}>
-                      <span className="text-xs block">Single Layout</span>
+                    <div
+                      onClick={() => setContentMode('single')}
+                      className={`p-3 rounded-xl border cursor-pointer text-center transition-all ${
+                        contentMode === 'single'
+                          ? 'border-primary bg-primary/10 font-bold text-primary shadow-sm'
+                          : 'border-border/60 text-muted-foreground hover:bg-muted/20'
+                      }`}
+                    >
+                      <span className="text-xs block font-bold">Single Layout</span>
+                      <span className="text-[10px] opacity-75">1 Subject line and 1 Body message</span>
                     </div>
-                    <div onClick={() => setContentMode('rotation')} className={`p-3 rounded-xl border cursor-pointer text-center ${contentMode === 'rotation' ? 'border-primary bg-primary/5 font-bold text-primary' : 'border-border/60 text-muted-foreground'}`}>
-                      <span className="text-xs block">Rotational Variations</span>
+                    <div
+                      onClick={() => setContentMode('rotation')}
+                      className={`p-3 rounded-xl border cursor-pointer text-center transition-all ${
+                        contentMode === 'rotation'
+                          ? 'border-primary bg-primary/10 font-bold text-primary shadow-sm'
+                          : 'border-border/60 text-muted-foreground hover:bg-muted/20'
+                      }`}
+                    >
+                      <span className="text-xs block font-bold">Rotational Variations (Deliverability Matrix)</span>
+                      <span className="text-[10px] opacity-75">Multiple Subjects × Multiple Bodies</span>
                     </div>
                   </div>
 
@@ -914,269 +1720,873 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                         <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Subject Line</label>
                         <input
                           type="text"
-                          placeholder="e.g. Quick question regarding {{email}}"
+                          placeholder="e.g. Quick question regarding {{company}}"
                           value={subject}
-                          onChange={e => setSubject(e.target.value)}
-                          className="w-full bg-background text-xs rounded-xl border border-input px-3.5 py-2.5 focus:ring-1 focus:ring-primary"
+                          onFocus={() => setActiveEditorField('subject')}
+                          onChange={e => {
+                            setSubject(e.target.value);
+                            setSubjectVariations([e.target.value]);
+                          }}
+                          className="w-full bg-background text-xs rounded-xl border border-input px-3.5 py-2.5 focus:ring-1 focus:ring-primary font-medium"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HTML Body</label>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              onClick={() => setShowPreview(!showPreview)}
-                              className="h-7 text-[10px] text-muted-foreground hover:text-foreground"
-                            >
-                              <Eye className="h-3.5 w-3.5 mr-1" />
-                              {showPreview ? 'Hide Preview' : 'Preview'}
-                            </Button>
+
+                      {/* HTML Mode: HTML Editor & Preview */}
+                      {formatType === 'html' && (
+                        <>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HTML Body</label>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => setShowPreview(!showPreview)}
+                                  className="h-7 text-[10px] text-muted-foreground hover:text-foreground"
+                                >
+                                  <Eye className="h-3.5 w-3.5 mr-1" />
+                                  {showPreview ? 'Hide Preview' : 'Live HTML Preview'}
+                                </Button>
+                                <VoiceToTextButton
+                                  size="sm"
+                                  label="Voice Input"
+                                  onTranscript={(text) => {
+                                    setBodyHtml(prev => prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`);
+                                    setBodyPlain(prev => prev ? `${prev}\n${text}` : text);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className={`grid ${showPreview ? 'grid-cols-1 md:grid-cols-2 gap-4' : 'grid-cols-1'} items-start`}>
+                              <textarea
+                                placeholder="<h2>Hello!</h2><p>Writing regarding your outreach...</p>"
+                                value={bodyHtml}
+                                onFocus={() => setActiveEditorField('bodyHtml')}
+                                onChange={e => {
+                                  setBodyHtml(e.target.value);
+                                  setBodyVariations([e.target.value]);
+                                }}
+                                className={`w-full bg-background text-xs rounded-xl border border-input p-3 min-h-[160px] font-mono focus:ring-1 focus:ring-primary ${showPreview ? 'h-[160px]' : ''}`}
+                              />
+                              {showPreview && (
+                                <div className="w-full h-[160px] bg-white text-black p-4 rounded-xl border border-border/60 overflow-y-auto shadow-inner text-sm">
+                                  <div dangerouslySetInnerHTML={{ __html: bodyHtml || '<p style="color:#999;font-style:italic">Live rendered HTML preview...</p>' }} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Collapsible Plain Text Fallback */}
+                          <div className="pt-1">
+                            {!showFallbackEditor && !bodyPlain ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowFallbackEditor(true)}
+                                className="text-[11px] text-muted-foreground hover:text-primary font-medium flex items-center gap-1.5 transition-colors py-1"
+                              >
+                                <Plus className="h-3 w-3" /> Add Plain Text Fallback (Optional)
+                              </button>
+                            ) : (
+                              <div className="space-y-1 p-2.5 rounded-lg bg-muted/20 border border-border/60 animate-in fade-in duration-150">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Plain Text Fallback</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowFallbackEditor(false);
+                                      if (!bodyPlain) setBodyPlain('');
+                                    }}
+                                    className="text-[10px] text-muted-foreground hover:text-foreground"
+                                  >
+                                    Collapse
+                                  </button>
+                                </div>
+                                <textarea
+                                  placeholder="Plain text fallback for clients that disable HTML..."
+                                  value={bodyPlain}
+                                  onFocus={() => setActiveEditorField('bodyPlain')}
+                                  onChange={e => setBodyPlain(e.target.value)}
+                                  className="w-full bg-background text-xs rounded-lg border border-input p-2.5 min-h-[60px] focus:ring-1 focus:ring-primary"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Plain Text Only Mode: Single text editor without any HTML UI */}
+                      {formatType === 'plain' && (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Plain Text Message Content</label>
                             <VoiceToTextButton
                               size="sm"
                               label="Voice Input"
                               onTranscript={(text) => {
-                                setBodyHtml(prev => prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`);
                                 setBodyPlain(prev => prev ? `${prev}\n${text}` : text);
                               }}
                             />
                           </div>
-                        </div>
-                        <div className={`grid ${showPreview ? 'grid-cols-2 gap-4' : 'grid-cols-1'} items-start`}>
                           <textarea
-                            placeholder="<h2>Hello!</h2><p>Writing regarding your outreach...</p>"
-                            value={bodyHtml}
-                            onChange={e => setBodyHtml(e.target.value)}
-                            className={`w-full bg-background text-xs rounded-xl border border-input p-3 min-h-[160px] font-mono focus:ring-1 focus:ring-primary ${showPreview ? 'h-[160px]' : ''}`}
+                            placeholder="Hi {{first_name}},\n\nReaching out regarding {{company}}...\n\nBest regards,\nYour Name"
+                            value={bodyPlain}
+                            onFocus={() => setActiveEditorField('bodyPlain')}
+                            onChange={e => {
+                              setBodyPlain(e.target.value);
+                              setBodyVariations([e.target.value]);
+                            }}
+                            className="w-full bg-background text-xs sm:text-sm rounded-xl border border-input p-3 min-h-[160px] font-sans focus:ring-1 focus:ring-primary leading-relaxed"
                           />
-                          {showPreview && (
-                            <div className="w-full h-[160px] bg-white text-black p-4 rounded-xl border border-border/60 overflow-y-auto shadow-inner text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: bodyHtml || '<p style="color:#999;font-style:italic">No HTML content yet...</p>' }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Rotational Variations: Multiple Subject Lines & Multiple Body Variations */}
+                  {contentMode === 'rotation' && (
+                    <div className="space-y-4 border border-border/40 rounded-xl p-4 bg-muted/10">
+                      {/* Matrix Combination Live Indicator */}
+                      <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-between">
+                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                          <RotateCw className="h-4 w-4" />
+                          Deliverability Matrix: {subjectVariations.filter(s => s.trim()).length || 1} Subjects × {bodyVariations.filter(b => b.trim()).length || 1} Bodies = {(subjectVariations.filter(s => s.trim()).length || 1) * (bodyVariations.filter(b => b.trim()).length || 1)} Unique Outreaches
+                        </span>
+                        <span className="text-[10px] text-primary font-semibold">Rotated evenly per lead</span>
+                      </div>
+
+                      {/* 1. Multiple Subject Lines */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                            <Tag className="h-3.5 w-3.5 text-primary" />
+                            Multiple Subject Lines ({subjectVariations.length})
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            type="button"
+                            onClick={() => setSubjectVariations([...subjectVariations, ''])}
+                            className="h-7 text-[10px] font-semibold gap-1"
+                          >
+                            <Plus className="h-3 w-3" /> Add Subject Line
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          {subjectVariations.map((subj, sIdx) => (
+                            <div key={sIdx} className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono font-bold text-muted-foreground w-6 text-center shrink-0">#{sIdx + 1}</span>
+                              <input
+                                type="text"
+                                placeholder={`Subject line variation #${sIdx + 1}...`}
+                                value={subj}
+                                onFocus={() => setActiveEditorField('subject')}
+                                onChange={e => {
+                                  const next = [...subjectVariations];
+                                  next[sIdx] = e.target.value;
+                                  setSubjectVariations(next);
+                                }}
+                                className="w-full bg-background text-xs rounded-lg border border-input p-2 font-medium"
+                              />
+                              {subjectVariations.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSubjectVariations(subjectVariations.filter((_, i) => i !== sIdx))}
+                                  className="text-destructive hover:opacity-80 p-1"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
-                          )}
+                          ))}
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Plain Text Fallback</label>
-                        <textarea
-                          placeholder="Plain text content..."
-                          value={bodyPlain}
-                          onChange={e => setBodyPlain(e.target.value)}
-                          className="w-full bg-background text-xs rounded-xl border border-input p-3 min-h-[60px] focus:ring-1 focus:ring-primary"
-                        />
+
+                      {/* 2. Multiple Body Variations */}
+                      <div className="space-y-2 pt-3 border-t border-border/20">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                            <FileText className="h-3.5 w-3.5 text-primary" />
+                            Multiple Body Variations ({bodyVariations.length}) [{formatType.toUpperCase()}]
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            type="button"
+                            onClick={() => setBodyVariations([...bodyVariations, ''])}
+                            className="h-7 text-[10px] font-semibold gap-1"
+                          >
+                            <Plus className="h-3 w-3" /> Add Body Variation
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          {bodyVariations.map((body, bIdx) => (
+                            <div key={bIdx} className="p-3 border border-border/40 bg-background rounded-xl space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase">Body Variation #{bIdx + 1}</span>
+                                {bodyVariations.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setBodyVariations(bodyVariations.filter((_, i) => i !== bIdx))}
+                                    className="text-destructive hover:opacity-80 p-1"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                              <textarea
+                                placeholder={formatType === 'html' ? `<p>Hello {{first_name}}, option #${bIdx + 1}...</p>` : `Hi {{first_name}},\n\nVariation #${bIdx + 1}...`}
+                                value={body}
+                                onFocus={() => setActiveEditorField(formatType === 'plain' ? 'bodyPlain' : 'bodyHtml')}
+                                onChange={e => {
+                                  const next = [...bodyVariations];
+                                  next[bIdx] = e.target.value;
+                                  setBodyVariations(next);
+                                }}
+                                className={`w-full bg-muted/20 text-xs rounded-lg border border-input p-2.5 min-h-[90px] ${formatType === 'html' ? 'font-mono' : 'font-sans leading-relaxed'}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Step 3: Follow-up */}
+              {/* Step 3: Follow-up Sequences */}
               {formStep === 3 && (
                 <div className="py-4 space-y-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground mb-1">Rotational Variations & Follow-ups</h3>
-                    <p className="text-xs text-muted-foreground">Cycle multiple subject line and body variations to keep deliverability high.</p>
-                  </div>
-
-                  <div className="space-y-3 border border-border/40 rounded-xl p-4 bg-muted/10">
-                    <div className="flex justify-between items-center pb-2 border-b border-border/20">
-                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <RotateCw className="h-3.5 w-3.5 text-primary" />
-                        Variations ({variations.length})
-                      </span>
-                      <Button size="sm" variant="outline" type="button" onClick={() => setVariations([...variations, { subject: '', body_html: '' }])} className="h-7 text-xs font-semibold">
-                        <Plus className="h-3.5 w-3.5 mr-1" /> Add Variation
-                      </Button>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /> Post-Outreach Automated Follow-up Sequences</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Configure subsequent automated touches triggered if a prospect does not reply or open.</p>
                     </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      type="button" 
+                      onClick={() => setWorkflowSteps([...workflowSteps, { id: Date.now(), trigger_event: 'wait', delay_seconds: 86400, subject: 'Re: ' + (subject || 'Following up'), body_html: '', body_plain: '' }])}
+                      className="h-8 text-xs font-semibold gap-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Follow-up Step
+                    </Button>
+                  </div>
+                  {workflowSteps.length === 0 ? (
+                    <div className="p-8 text-center border border-dashed rounded-xl bg-muted/10 text-xs text-muted-foreground space-y-2">
+                      <Layers className="h-8 w-8 mx-auto opacity-30 text-primary" />
+                      <p className="font-semibold text-foreground">No Follow-up Sequence Added</p>
+                      <p>Campaign will only send the initial outreach email (Step 1). Click "Add Follow-up Step" to trigger automatic multi-touch sequences.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {workflowSteps.map((step, index) => {
+                        const isExpanded = expandedStepIds.has(step.id) || (!step.body_html && !step.body_plain);
+                        const toggleExpand = () => {
+                          setExpandedStepIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(step.id)) next.delete(step.id);
+                            else next.add(step.id);
+                            return next;
+                          });
+                        };
 
-                    <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
-                      {variations.map((v, idx) => (
-                        <div key={idx} className="p-3 border border-border/40 bg-background rounded-xl space-y-2 relative">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase">Variation #{idx + 1}</span>
-                            {variations.length > 1 && (
-                              <button type="button" onClick={() => setVariations(variations.filter((_, i) => i !== idx))} className="text-destructive hover:opacity-80 p-1">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                        return (
+                          <div key={step.id} className="rounded-xl border border-border/70 bg-card overflow-hidden shadow-2xs transition-all">
+                            {/* Compact Step Header & Summary Bar */}
+                            <div 
+                              onClick={toggleExpand}
+                              className="px-3.5 py-2.5 bg-muted/30 hover:bg-muted/50 cursor-pointer flex items-center justify-between gap-3 border-b border-border/40 select-none"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="bg-primary text-primary-foreground h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-extrabold shrink-0">
+                                  {index + 2}
+                                </span>
+                                <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-foreground truncate">
+                                    Step #{index + 2}: {step.subject || '(No subject set)'}
+                                  </span>
+                                  <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 shrink-0">
+                                    {step.trigger_event === 'wait' ? 'Wait Delay' : step.trigger_event} · {Math.round(step.delay_seconds / 3600)}h
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={toggleExpand}
+                                  className="p-1 text-muted-foreground hover:text-foreground rounded"
+                                  title={isExpanded ? "Collapse step" : "Expand step"}
+                                >
+                                  <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  type="button"
+                                  onClick={() => setWorkflowSteps(workflowSteps.filter(s => s.id !== step.id))}
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                  title="Delete step"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Collapsible Step Body Editor */}
+                            {isExpanded && (
+                              <div className="p-3.5 space-y-3 bg-background/50 animate-in fade-in duration-150">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Trigger Condition</label>
+                                    <select
+                                      value={step.trigger_event}
+                                      onChange={(e) => {
+                                        const newSteps = [...workflowSteps];
+                                        newSteps[index].trigger_event = e.target.value;
+                                        setWorkflowSteps(newSteps);
+                                      }}
+                                      className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary font-medium"
+                                    >
+                                      <option value="wait">Wait Time (Always Send)</option>
+                                      <option value="unopened">If Previous Email Unopened</option>
+                                      <option value="opened">If Previous Email Opened</option>
+                                      <option value="clicked">If Link Clicked</option>
+                                      <option value="no_reply">If No Reply Received</option>
+                                    </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Wait Delay</label>
+                                    <select
+                                      value={step.delay_seconds}
+                                      onChange={(e) => {
+                                        const newSteps = [...workflowSteps];
+                                        newSteps[index].delay_seconds = Number(e.target.value);
+                                        setWorkflowSteps(newSteps);
+                                      }}
+                                      className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary font-medium"
+                                    >
+                                      <option value={3600}>1 Hour</option>
+                                      <option value={43200}>12 Hours</option>
+                                      <option value={86400}>1 Day (24h)</option>
+                                      <option value={172800}>2 Days (48h)</option>
+                                      <option value={259200}>3 Days (72h)</option>
+                                      <option value={432000}>5 Days</option>
+                                      <option value={604800}>7 Days</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Subject Line</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="Re: Following up..."
+                                    value={step.subject}
+                                    onChange={(e) => {
+                                      const newSteps = [...workflowSteps];
+                                      newSteps[index].subject = e.target.value;
+                                      setWorkflowSteps(newSteps);
+                                    }}
+                                    className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary font-medium"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Message Content</label>
+                                  <textarea 
+                                    placeholder="Hi {{first_name}}, just checking in on my previous email..."
+                                    value={formatType === 'plain' ? (step.body_plain || step.body_html) : step.body_html}
+                                    onChange={(e) => {
+                                      const newSteps = [...workflowSteps];
+                                      newSteps[index].body_html = e.target.value;
+                                      newSteps[index].body_plain = e.target.value;
+                                      setWorkflowSteps(newSteps);
+                                    }}
+                                    className="w-full bg-background text-xs rounded-lg border border-input p-2.5 min-h-[80px] font-mono focus:ring-1 focus:ring-primary leading-relaxed"
+                                  />
+                                </div>
+                              </div>
                             )}
                           </div>
-                          <input
-                            type="text"
-                            placeholder="Subject line..."
-                            value={v.subject}
-                            onChange={e => {
-                              const newV = [...variations];
-                              newV[idx].subject = e.target.value;
-                              setVariations(newV);
-                            }}
-                            className="w-full bg-muted/30 text-xs rounded-lg border border-input p-2"
-                          />
-                          <textarea
-                            placeholder="Body content..."
-                            value={v.body_html}
-                            onChange={e => {
-                              const newV = [...variations];
-                              newV[idx].body_html = e.target.value;
-                              setVariations(newV);
-                            }}
-                            className="w-full bg-muted/30 text-xs font-mono rounded-lg border border-input p-2 min-h-[70px]"
-                          />
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  </div>
-
-                  {/* Campaign Workflow Builder */}
-                  <div className="pt-6 border-t border-border/40 mt-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /> Automated Workflow</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">Define a sequence of automated email steps triggered by specific events.</p>
-                      </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        type="button" 
-                        onClick={() => setWorkflowSteps([...workflowSteps, { id: Date.now(), trigger_event: 'wait', delay_seconds: 86400, subject: '', body_html: '' }])}
-                        className="h-8 text-xs font-semibold gap-1"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add Step
-                      </Button>
-                    </div>
-                    
-                    {workflowSteps.length > 0 && (
-                      <div className="space-y-4">
-                        {workflowSteps.map((step, index) => (
-                          <div key={step.id} className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3 relative">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              type="button"
-                              onClick={() => setWorkflowSteps(workflowSteps.filter(s => s.id !== step.id))}
-                              className="absolute top-2 right-2 h-6 w-6 text-muted-foreground hover:text-destructive"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                            <div className="flex items-center gap-2 text-xs font-bold text-foreground">
-                              <span className="bg-primary/20 text-primary h-5 w-5 rounded-full flex items-center justify-center">{index + 2}</span>
-                              Follow-up Step
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Trigger Event</label>
-                                <select
-                                  value={step.trigger_event}
-                                  onChange={(e) => {
-                                    const newSteps = [...workflowSteps];
-                                    newSteps[index].trigger_event = e.target.value;
-                                    setWorkflowSteps(newSteps);
-                                  }}
-                                  className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
-                                >
-                                  <option value="wait">Wait Time (No Action)</option>
-                                  <option value="opened">If Email Opened</option>
-                                  <option value="clicked">If Link Clicked</option>
-                                  <option value="unopened">If Not Opened</option>
-                                </select>
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Wait Duration</label>
-                                <select
-                                  value={step.delay_seconds}
-                                  onChange={(e) => {
-                                    const newSteps = [...workflowSteps];
-                                    newSteps[index].delay_seconds = Number(e.target.value);
-                                    setWorkflowSteps(newSteps);
-                                  }}
-                                  className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
-                                >
-                                  <option value={3600}>1 Hour</option>
-                                  <option value={86400}>1 Day</option>
-                                  <option value={172800}>2 Days</option>
-                                  <option value={259200}>3 Days</option>
-                                  <option value={604800}>7 Days</option>
-                                </select>
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Subject Line</label>
-                              <input 
-                                type="text"
-                                placeholder="Re: Following up..."
-                                value={step.subject}
-                                onChange={(e) => {
-                                  const newSteps = [...workflowSteps];
-                                  newSteps[index].subject = e.target.value;
-                                  setWorkflowSteps(newSteps);
-                                }}
-                                className="w-full bg-background text-xs rounded-lg border border-input p-2 outline-none focus:ring-1 focus:ring-primary"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase">HTML Body</label>
-                              <textarea 
-                                placeholder="Just checking in..."
-                                value={step.body_html}
-                                onChange={(e) => {
-                                  const newSteps = [...workflowSteps];
-                                  newSteps[index].body_html = e.target.value;
-                                  setWorkflowSteps(newSteps);
-                                }}
-                                className="w-full bg-background text-xs rounded-lg border border-input p-2 min-h-[80px] font-mono focus:ring-1 focus:ring-primary"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               )}
 
-              {/* Step 4: Schedule */}
+              {/* Step 4: Schedule, Senders & Smart Rate Calculator */}
               {formStep === 4 && (
-                <div className="py-4 space-y-4">
+                <div className="py-4 space-y-5">
                   <div>
-                    <h3 className="text-sm font-bold text-foreground mb-1">Dispatch Speed & Schedule</h3>
-                    <p className="text-xs text-muted-foreground">Set dispatch interval delays and sending window constraints.</p>
+                    <h3 className="text-sm font-bold text-foreground mb-1">Sender Accounts, West Africa Time (WAT) &amp; Dispatch Speed</h3>
+                    <p className="text-xs text-muted-foreground">Select specific sending mailboxes, configure sending windows in Lagos time (WAT), and calculate optimal dispatch rate.</p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    {speedOptions.map(opt => (
-                      <div
-                        key={opt.value}
-                        onClick={() => setSpeed(opt.value)}
-                        className={`p-3 rounded-xl border cursor-pointer text-center ${speed === opt.value ? 'border-primary bg-primary/5 font-bold text-primary' : 'border-border/60 text-muted-foreground'}`}
-                      >
-                        <span className="text-xs block font-bold">{opt.label}</span>
-                        <span className="text-[10px] opacity-80">{opt.sub}</span>
+                  {/* 1. Sender Email Account(s) Selector */}
+                  <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-primary" />
+                        <span className="font-bold text-xs text-foreground">Sender Email Accounts</span>
                       </div>
-                    ))}
+                      <div className="flex items-center gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAccountIds(accounts.map(a => a.id))}
+                          className="text-primary hover:underline font-semibold"
+                        >
+                          Select All
+                        </button>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAccountIds([])}
+                          className="text-muted-foreground hover:underline font-semibold"
+                        >
+                          Clear Selection
+                        </button>
+                      </div>
+                    </div>
+
+                    {accounts.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        No connected accounts found. System will fallback to any active connected mailboxes.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {accounts.map(acc => {
+                          const isSelected = selectedAccountIds.includes(acc.id);
+                          return (
+                            <div
+                              key={acc.id}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedAccountIds(selectedAccountIds.filter(id => id !== acc.id));
+                                } else {
+                                  setSelectedAccountIds([...selectedAccountIds, acc.id]);
+                                }
+                              }}
+                              className={`p-2.5 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${
+                                isSelected
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/60 bg-background text-muted-foreground hover:bg-muted/20'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <span className="text-xs font-bold block truncate text-foreground">{acc.display_name || acc.email}</span>
+                                <span className="text-[10px] text-muted-foreground block truncate">{acc.email}</span>
+                              </div>
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'}`}>
+                                {isSelected && <Check className="h-3 w-3" />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      {selectedAccountIds.length === 0 ? 'All active accounts will be rotated evenly.' : `Round-robin sending will rotate exclusively across the ${selectedAccountIds.length} selected account(s).`}
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Delay (sec)</label>
-                      <input type="number" value={speed} onChange={e => setSpeed(Number(e.target.value))} className="w-full bg-background text-xs rounded-lg border border-input p-2 mt-1" />
+                  {/* 2. West Africa Time (WAT / Lagos UTC+1) & Sending Window */}
+                  <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-primary" />
+                        <span className="font-bold text-xs text-foreground">Timezone: Africa/Lagos (WAT, UTC+1)</span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        Default Timezone (Lagos UTC+1)
+                      </span>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Start Time</label>
-                      <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full bg-background text-xs rounded-lg border border-input p-2 mt-1" />
+
+                    <div className="flex items-center gap-2 p-2.5 bg-background border border-border/40 rounded-xl">
+                      <input
+                        type="checkbox"
+                        id="ignoreWindowCheckStep"
+                        checked={ignoreWindow}
+                        onChange={e => setIgnoreWindow(e.target.checked)}
+                        className="h-4 w-4 rounded border-input text-primary"
+                      />
+                      <label htmlFor="ignoreWindowCheckStep" className="text-xs font-semibold text-foreground cursor-pointer">
+                        Run 24/7 Immediately (Ignore daily time window restrictions)
+                      </label>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Stop Time</label>
-                      <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-full bg-background text-xs rounded-lg border border-input p-2 mt-1" />
-                    </div>
+
+                    {!ignoreWindow && (
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase">Start Window (WAT)</label>
+                          <input
+                            type="time"
+                            value={startTime}
+                            onChange={e => setStartTime(e.target.value)}
+                            className="w-full bg-background text-xs rounded-lg border border-input p-2 mt-1 font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase">End Window (WAT)</label>
+                          <input
+                            type="time"
+                            value={endTime}
+                            onChange={e => setEndTime(e.target.value)}
+                            className="w-full bg-background text-xs rounded-lg border border-input p-2 mt-1 font-semibold"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2 p-3 bg-muted/30 border border-border/40 rounded-xl">
-                    <input type="checkbox" id="ignoreWindowCheckStep" checked={ignoreWindow} onChange={e => setIgnoreWindow(e.target.checked)} className="h-4 w-4 rounded border-input text-primary" />
-                    <label htmlFor="ignoreWindowCheckStep" className="text-xs font-semibold text-foreground cursor-pointer">
-                      Ignore Sending Window (Send 24/7 immediately)
-                    </label>
-                  </div>
+                  {/* 3. Smart Dispatch Rate Calculator */}
+                  {(() => {
+                    const filteredCount = selectedListContacts.length || (lists.find(l => l.list_name === selectedList)?.count ?? 100);
+                    const effectiveTargetBasis = targetLimitMode === 'custom' && targetLimit > 0 ? Math.min(targetLimit, filteredCount) : filteredCount;
+                    const totalDurationSeconds = (calcHours * 3600) + (calcMinutes * 60);
+                    const calculatedDelay = Math.max(1, Math.floor(totalDurationSeconds / Math.max(1, effectiveTargetBasis)));
+                    const emailsPerMin = (60 / calculatedDelay).toFixed(1);
+
+                    return (
+                      <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                            <Calculator className="h-4 w-4" />
+                            Smart Dispatch Rate Calculator
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">Targeting: <strong>{effectiveTargetBasis} leads</strong></span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Desired Outreach Duration:</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                max={72}
+                                value={calcHours}
+                                onChange={e => setCalcHours(Math.max(0, Number(e.target.value)))}
+                                className="w-20 bg-background text-xs font-bold rounded-lg border border-input p-2"
+                              />
+                              <span className="text-xs text-muted-foreground">hours</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                value={calcMinutes}
+                                onChange={e => setCalcMinutes(Math.max(0, Number(e.target.value)))}
+                                className="w-20 bg-background text-xs font-bold rounded-lg border border-input p-2"
+                              />
+                              <span className="text-xs text-muted-foreground">mins</span>
+                            </div>
+                          </div>
+
+                          <div className="p-2.5 bg-background rounded-xl border border-border/40 text-xs space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Computed Speed:</span>
+                              <strong className="text-primary font-mono">{calculatedDelay}s delay ({emailsPerMin} emails/min)</strong>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setSpeed(calculatedDelay);
+                                toast({
+                                  title: 'Dispatch Rate Applied!',
+                                  description: `Configured campaign delay to ${calculatedDelay}s (~${emailsPerMin} emails/min) for ${effectiveTargetBasis} contacts.`
+                                });
+                              }}
+                              className="w-full h-7 text-[11px] font-bold bg-primary text-primary-foreground mt-1"
+                            >
+                              Apply Calculated Rate ({calculatedDelay}s)
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 4. Cold Email Timing Randomizer Selector & 24hr Capacity Analysis */}
+                  {(() => {
+                    const filteredCount = selectedListContacts.length || (lists.find(l => l.list_name === selectedList)?.count ?? 100);
+                    const effectiveTargetBasis = targetLimitMode === 'limit' && targetLimit > 0 ? Math.min(targetLimit, filteredCount) : filteredCount;
+                    const numSenders = Math.max(1, selectedAccountIds.length || accounts.length || 1);
+                    const avgDelay = timingMode === 'fixed' ? speed : Math.round((minDelay + maxDelay) / 2);
+                    const cooldownAdditionalSeconds = cooldownEnabled && cooldownBatchSize > 0
+                      ? Math.floor(effectiveTargetBasis / cooldownBatchSize) * (cooldownDurationMinutes * 60)
+                      : 0;
+                    const totalEstimatedSeconds = (effectiveTargetBasis * avgDelay) + cooldownAdditionalSeconds;
+                    const estimatedTotalHours = totalEstimatedSeconds / 3600;
+                    const estHoursInt = Math.floor(estimatedTotalHours);
+                    const estMinsInt = Math.round((estimatedTotalHours - estHoursInt) * 60);
+
+                    // 24hr throughput calculation
+                    const theoretical24h = Math.floor(86400 / Math.max(1, avgDelay));
+                    const maxQuota24h = numSenders * 450;
+                    const effective24hCapacity = Math.min(theoretical24h, maxQuota24h);
+
+                    const targetTimeframeHours = calcHours + (calcMinutes / 60);
+                    const willExtend = !ignoreWindow && targetTimeframeHours > 0 && estimatedTotalHours > targetTimeframeHours;
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Randomizer Mode Selection */}
+                        <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <Sparkles className="h-4 w-4 text-primary" />
+                              Cold Email Timing Randomizer
+                            </span>
+                            <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                              Anti-Spam & Deliverability Guard
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Natural jitter humanizes sending patterns to prevent spam filters, mailbox throttling, and bot flags.
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                            {/* Preset 1: Smart Anti-Spam */}
+                            <div
+                              onClick={() => {
+                                setTimingMode('smart');
+                                setMinDelay(30);
+                                setMaxDelay(90);
+                                setSpeed(60);
+                                setCooldownEnabled(true);
+                                setCooldownBatchSize(15);
+                                setCooldownDurationMinutes(5);
+                              }}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                timingMode === 'smart'
+                                  ? 'border-primary bg-primary/10 shadow-sm'
+                                  : 'border-border/60 bg-background hover:bg-muted/20'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                                  🛡️ Smart Anti-Spam Jitter
+                                </span>
+                                {timingMode === 'smart' && <Check className="h-3.5 w-3.5 text-primary" />}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Random 30s – 90s delay with 5min rest every 15 emails. (Recommended for Gmail / Outlook cold outreach).
+                              </p>
+                            </div>
+
+                            {/* Preset 2: Ultra Stealth */}
+                            <div
+                              onClick={() => {
+                                setTimingMode('stealth');
+                                setMinDelay(60);
+                                setMaxDelay(180);
+                                setSpeed(120);
+                                setCooldownEnabled(true);
+                                setCooldownBatchSize(10);
+                                setCooldownDurationMinutes(10);
+                              }}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                timingMode === 'stealth'
+                                  ? 'border-primary bg-primary/10 shadow-sm'
+                                  : 'border-border/60 bg-background hover:bg-muted/20'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                                  🥷 Ultra Stealth Mode
+                                </span>
+                                {timingMode === 'stealth' && <Check className="h-3.5 w-3.5 text-primary" />}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Random 60s – 180s delay with 10min pause every 10 emails. Ideal for newly warmed mailboxes.
+                              </p>
+                            </div>
+
+                            {/* Preset 3: Balanced Cold Outreach */}
+                            <div
+                              onClick={() => {
+                                setTimingMode('burst');
+                                setMinDelay(15);
+                                setMaxDelay(45);
+                                setSpeed(30);
+                                setCooldownEnabled(true);
+                                setCooldownBatchSize(25);
+                                setCooldownDurationMinutes(3);
+                              }}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                timingMode === 'burst'
+                                  ? 'border-primary bg-primary/10 shadow-sm'
+                                  : 'border-border/60 bg-background hover:bg-muted/20'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                                  ⚡ Balanced Outreach
+                                </span>
+                                {timingMode === 'burst' && <Check className="h-3.5 w-3.5 text-primary" />}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Random 15s – 45s delay with 3min breather every 25 emails. Higher volume with natural jitter.
+                              </p>
+                            </div>
+
+                            {/* Preset 4: Custom Range */}
+                            <div
+                              onClick={() => setTimingMode('custom')}
+                              className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                timingMode === 'custom'
+                                  ? 'border-primary bg-primary/10 shadow-sm'
+                                  : 'border-border/60 bg-background hover:bg-muted/20'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                                  ⚙️ Custom Range &amp; Cooldown
+                                </span>
+                                {timingMode === 'custom' && <Check className="h-3.5 w-3.5 text-primary" />}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Fine-tune exact minimum and maximum seconds and custom batch resting intervals.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Custom Parameters Form */}
+                          {timingMode === 'custom' && (
+                            <div className="p-3 bg-background rounded-xl border border-border/40 space-y-3 mt-2">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Min Delay (seconds)</label>
+                                  <input
+                                    type="number"
+                                    min={5}
+                                    max={600}
+                                    value={minDelay}
+                                    onChange={e => setMinDelay(Math.max(1, Number(e.target.value)))}
+                                    className="w-full bg-muted/20 text-xs rounded-lg border border-input p-2 mt-1 font-mono font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Max Delay (seconds)</label>
+                                  <input
+                                    type="number"
+                                    min={minDelay}
+                                    max={1200}
+                                    value={maxDelay}
+                                    onChange={e => setMaxDelay(Math.max(minDelay, Number(e.target.value)))}
+                                    className="w-full bg-muted/20 text-xs rounded-lg border border-input p-2 mt-1 font-mono font-bold"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-1 border-t border-border/20">
+                                <input
+                                  type="checkbox"
+                                  id="cooldownCheck"
+                                  checked={cooldownEnabled}
+                                  onChange={e => setCooldownEnabled(e.target.checked)}
+                                  className="h-3.5 w-3.5 rounded border-input text-primary"
+                                />
+                                <label htmlFor="cooldownCheck" className="text-xs font-semibold text-foreground cursor-pointer">
+                                  Enable Periodic Batch Cooldown (Rest periods between email bursts)
+                                </label>
+                              </div>
+
+                              {cooldownEnabled && (
+                                <div className="grid grid-cols-2 gap-3 pt-1">
+                                  <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Batch Size (emails)</label>
+                                    <input
+                                      type="number"
+                                      min={5}
+                                      max={200}
+                                      value={cooldownBatchSize}
+                                      onChange={e => setCooldownBatchSize(Math.max(1, Number(e.target.value)))}
+                                      className="w-full bg-muted/20 text-xs rounded-lg border border-input p-2 mt-1 font-mono font-bold"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Cooldown Pause (minutes)</label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={60}
+                                      value={cooldownDurationMinutes}
+                                      onChange={e => setCooldownDurationMinutes(Math.max(1, Number(e.target.value)))}
+                                      className="w-full bg-muted/20 text-xs rounded-lg border border-input p-2 mt-1 font-mono font-bold"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 24-Hour Estimation & Timeframe Feasibility Alert */}
+                        <div className={`p-4 rounded-xl border space-y-3 ${
+                          willExtend
+                            ? 'border-amber-500/40 bg-amber-500/5'
+                            : 'border-emerald-500/40 bg-emerald-500/5'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold flex items-center gap-1.5">
+                              <Calculator className="h-4 w-4 text-primary" />
+                              24-Hour Outreach Capacity &amp; Timeframe Calculation
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              willExtend
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                            }`}>
+                              {willExtend ? '⚠️ Timeframe Extension Alert' : '✅ Within Timeframe'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="p-2.5 bg-background rounded-lg border border-border/40 space-y-0.5">
+                              <span className="text-[10px] text-muted-foreground block">Target Contacts</span>
+                              <strong className="text-foreground font-mono">{effectiveTargetBasis} leads</strong>
+                            </div>
+                            <div className="p-2.5 bg-background rounded-lg border border-border/40 space-y-0.5">
+                              <span className="text-[10px] text-muted-foreground block">Active Senders</span>
+                              <strong className="text-foreground font-mono">{numSenders} mailbox{numSenders > 1 ? 'es' : ''}</strong>
+                            </div>
+                            <div className="p-2.5 bg-background rounded-lg border border-border/40 space-y-0.5">
+                              <span className="text-[10px] text-muted-foreground block">Avg Delay / Send</span>
+                              <strong className="text-foreground font-mono">{avgDelay}s (±{Math.abs(maxDelay - minDelay) / 2}s)</strong>
+                            </div>
+                            <div className="p-2.5 bg-background rounded-lg border border-border/40 space-y-0.5">
+                              <span className="text-[10px] text-muted-foreground block">Estimated Duration</span>
+                              <strong className="text-primary font-mono">{estHoursInt}h {estMinsInt}m</strong>
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-background rounded-lg border border-border/40 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Estimated 24-Hour Max Volume:</span>
+                              <strong className="text-emerald-600 dark:text-emerald-400 font-mono">
+                                ~{effective24hCapacity.toLocaleString()} emails / 24hrs
+                              </strong>
+                            </div>
+
+                            {willExtend ? (
+                              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-[11px] leading-relaxed">
+                                <strong>⚠️ Campaign will extend past timeframe:</strong> With the selected randomization delay (average {avgDelay}s), delivering {effectiveTargetBasis} emails will take approx <strong>{estHoursInt} hours {estMinsInt} minutes</strong>, exceeding your desired {calcHours}h target window.
+                                <div className="mt-1 opacity-90">
+                                  💡 <em>Recommendation: Select more sender accounts to distribute volume or adjust the randomizer range to a faster preset.</em>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px]">
+                                ✨ <strong>On Schedule:</strong> {effectiveTargetBasis} emails will easily complete within approx <strong>{estHoursInt}h {estMinsInt}m</strong>, fully complying with your target window.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1184,26 +2594,54 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               {formStep === 5 && (
                 <div className="py-4 space-y-4">
                   <div>
-                    <h3 className="text-sm font-bold text-foreground mb-1">Campaign Summary Review</h3>
-                    <p className="text-xs text-muted-foreground">Verify your sequence parameters before saving or launching.</p>
+                    <h3 className="text-sm font-bold text-foreground mb-1">Campaign Configuration Summary</h3>
+                    <p className="text-xs text-muted-foreground">Verify all parameters and deliverability settings before saving or launching.</p>
                   </div>
 
                   <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3 text-xs">
-                    <div className="flex justify-between py-1 border-b border-border/20">
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
                       <span className="text-muted-foreground font-medium">Campaign Name:</span>
                       <span className="font-bold text-foreground">{name || 'Untitled Campaign'}</span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-border/20">
-                      <span className="text-muted-foreground font-medium">Target List:</span>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Target Contact List:</span>
                       <span className="font-bold text-foreground">{selectedList || 'None selected'}</span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-border/20">
-                      <span className="text-muted-foreground font-medium">Content Mode:</span>
-                      <span className="font-bold text-foreground">{contentMode === 'rotation' ? `Rotational (${variations.length} variations)` : 'Single Layout'}</span>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Custom Attribute Filters:</span>
+                      <span className="font-bold text-foreground">{customFilterRules.length > 0 ? `${customFilterRules.length} rule(s) active` : 'All list leads targeted'}</span>
                     </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-muted-foreground font-medium">Dispatch Delay:</span>
-                      <span className="font-bold text-foreground">{speed}s delay</span>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Target Volume Limit:</span>
+                      <span className="font-bold text-foreground">{targetLimitMode === 'custom' && targetLimit > 0 ? `Capped to ${targetLimit} contacts` : 'Unlimited'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Message Format:</span>
+                      <span className="font-bold text-foreground uppercase">{formatType}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Rotational Combinations:</span>
+                      <span className="font-bold text-foreground">
+                        {contentMode === 'rotation'
+                          ? `${subjectVariations.filter(s => s.trim()).length || 1} Subjects × ${bodyVariations.filter(b => b.trim()).length || 1} Bodies (${(subjectVariations.filter(s => s.trim()).length || 1) * (bodyVariations.filter(b => b.trim()).length || 1)} combinations)`
+                          : 'Single Layout'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Automated Follow-ups:</span>
+                      <span className="font-bold text-foreground">{workflowSteps.length} follow-up step(s)</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Selected Sender Accounts:</span>
+                      <span className="font-bold text-foreground">{selectedAccountIds.length > 0 ? `${selectedAccountIds.length} account(s) selected` : 'All connected mailboxes'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                      <span className="text-muted-foreground font-medium">Timezone &amp; Window:</span>
+                      <span className="font-bold text-foreground">Africa/Lagos (WAT UTC+1) · {ignoreWindow ? '24/7 Immediate' : `${startTime} - ${endTime}`}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5">
+                      <span className="text-muted-foreground font-medium">Dispatch Speed:</span>
+                      <span className="font-bold text-primary font-mono">{speed}s delay ({(60 / speed).toFixed(1)} emails/min)</span>
                     </div>
                   </div>
                 </div>
@@ -1695,6 +3133,35 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 </div>
               </div>
 
+              {/* Format Selection in Edit */}
+              <div className="space-y-1.5">
+                <label className="block font-semibold text-muted-foreground uppercase text-[10px]">Message Format Mode</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditFormatType('html')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      editFormatType === 'html'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 hover:bg-muted/40 text-muted-foreground'
+                    }`}
+                  >
+                    HTML Rich Format
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditFormatType('plain')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      editFormatType === 'plain'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 hover:bg-muted/40 text-muted-foreground'
+                    }`}
+                  >
+                    Plain Text Only
+                  </button>
+                </div>
+              </div>
+
               {/* Delivery Mode Toggle */}
               <div className="space-y-1.5">
                 <label className="block font-semibold text-muted-foreground uppercase text-[10px]">Content Delivery Mode</label>
@@ -1724,6 +3191,44 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 </div>
               </div>
 
+              {/* Personalization Reference Bar for Edit with 1-Click Copy */}
+              <div className="p-2.5 bg-muted/40 border border-border/60 rounded-xl space-y-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Tag className="h-3 w-3 text-primary" /> Personalization Headers (Click to insert or copy):
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {Array.from(new Set(['first_name', 'last_name', 'email', 'company', 'date', ...editListTokens])).map(tok => (
+                    <div
+                      key={tok}
+                      className="inline-flex items-center rounded border border-border/60 bg-background text-[10px] font-mono font-semibold"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editFormatType === 'plain') {
+                            setEditBodyPlain(prev => prev ? `${prev} {{${tok}}}` : `{{${tok}}}`);
+                          } else {
+                            setEditBodyHtml(prev => prev ? `${prev} {{${tok}}}` : `{{${tok}}}`);
+                          }
+                          toast({ title: `Added {{${tok}}}`, description: 'Appended variable.' });
+                        }}
+                        className="px-1.5 py-0.5 hover:text-primary cursor-pointer"
+                      >
+                        {`{{${tok}}}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyToken(tok, e)}
+                        className="px-1 py-0.5 border-l border-border/40 text-muted-foreground hover:text-foreground cursor-pointer"
+                        title="Copy variable"
+                      >
+                        <Copy className="h-2 w-2" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Single Mode Input */}
               {editContentMode === 'single' && (
                 <div className="space-y-3">
@@ -1733,21 +3238,43 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                       type="text"
                       required
                       value={editSubject}
-                      onChange={e => setEditSubject(e.target.value)}
-                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none"
+                      onChange={e => {
+                        setEditSubject(e.target.value);
+                        setEditSubjectVariations([e.target.value]);
+                      }}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none font-medium"
                     />
                   </div>
 
-                  <div>
-                    <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Email HTML Body</label>
-                    <textarea
-                      required
-                      rows={5}
-                      value={editBodyHtml}
-                      onChange={e => setEditBodyHtml(e.target.value)}
-                      className="w-full p-3 text-xs font-mono rounded-xl border border-input bg-muted focus:border-primary focus:outline-none"
-                    />
-                  </div>
+                  {editFormatType === 'html' ? (
+                    <div>
+                      <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Email HTML Body</label>
+                      <textarea
+                        required
+                        rows={5}
+                        value={editBodyHtml}
+                        onChange={e => {
+                          setEditBodyHtml(e.target.value);
+                          setEditBodyVariations([e.target.value]);
+                        }}
+                        className="w-full p-3 text-xs font-mono rounded-xl border border-input bg-muted focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Plain Text Body Content</label>
+                      <textarea
+                        required
+                        rows={5}
+                        value={editBodyPlain}
+                        onChange={e => {
+                          setEditBodyPlain(e.target.value);
+                          setEditBodyVariations([e.target.value]);
+                        }}
+                        className="w-full p-3 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none leading-relaxed"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1755,63 +3282,89 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               {editContentMode === 'rotation' && (
                 <div className="space-y-3 border border-border/40 rounded-xl p-3 bg-muted/20">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold flex items-center gap-1.5">
-                      <RotateCw className="h-3.5 w-3.5 text-primary" />
-                      Variations ({editVariations.length})
+                    <span className="text-xs font-bold flex items-center gap-1.5 text-primary">
+                      <RotateCw className="h-3.5 w-3.5" />
+                      Matrix: {editSubjectVariations.filter(s => s.trim()).length || 1} Subjects × {editBodyVariations.filter(b => b.trim()).length || 1} Bodies
                     </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setEditVariations([...editVariations, { subject: '', body_html: '' }])}
-                      className="h-7 text-[10px] gap-1"
-                    >
-                      <Plus className="h-3 w-3" /> Add Variation
-                    </Button>
                   </div>
 
-                  <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                    {editVariations.map((v, idx) => (
-                      <div key={idx} className="p-3 border border-border/20 bg-background rounded-xl space-y-2 relative">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">Variation #{idx + 1}</span>
-                          {editVariations.length > 1 && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                const next = [...editVariations];
-                                next.splice(idx, 1);
-                                setEditVariations(next);
-                              }}
-                              className="h-5 w-5 p-0 text-destructive"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
+                  {/* Multiple Subjects */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Multiple Subject Lines</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditSubjectVariations([...editSubjectVariations, ''])}
+                        className="h-6 text-[9px] gap-1"
+                      >
+                        <Plus className="h-2.5 w-2.5" /> Add Subject
+                      </Button>
+                    </div>
+                    {editSubjectVariations.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5">
                         <input
                           type="text"
-                          placeholder="Subject line..."
-                          value={v.subject}
+                          placeholder={`Subject variation #${idx + 1}...`}
+                          value={s}
                           onChange={e => {
-                            const next = [...editVariations];
-                            next[idx].subject = e.target.value;
-                            setEditVariations(next);
+                            const next = [...editSubjectVariations];
+                            next[idx] = e.target.value;
+                            setEditSubjectVariations(next);
                           }}
                           className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-input bg-muted"
                         />
+                        {editSubjectVariations.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setEditSubjectVariations(editSubjectVariations.filter((_, i) => i !== idx))}
+                            className="text-destructive p-1"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Multiple Bodies */}
+                  <div className="space-y-2 pt-2 border-t border-border/20">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Multiple Body Variations [{editFormatType.toUpperCase()}]</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditBodyVariations([...editBodyVariations, ''])}
+                        className="h-6 text-[9px] gap-1"
+                      >
+                        <Plus className="h-2.5 w-2.5" /> Add Body
+                      </Button>
+                    </div>
+                    {editBodyVariations.map((b, idx) => (
+                      <div key={idx} className="p-2 border border-border/30 rounded-lg bg-background space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] font-bold text-muted-foreground">Body #{idx + 1}</span>
+                          {editBodyVariations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setEditBodyVariations(editBodyVariations.filter((_, i) => i !== idx))}
+                              className="text-destructive p-0.5"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                         <textarea
-                          placeholder="HTML Body..."
                           rows={3}
-                          value={v.body_html}
+                          value={b}
                           onChange={e => {
-                            const next = [...editVariations];
-                            next[idx].body_html = e.target.value;
-                            setEditVariations(next);
+                            const next = [...editBodyVariations];
+                            next[idx] = e.target.value;
+                            setEditBodyVariations(next);
                           }}
-                          className="w-full p-2 text-xs font-mono rounded-lg border border-input bg-muted"
+                          className={`w-full p-2 text-xs rounded border border-input bg-muted ${editFormatType === 'html' ? 'font-mono' : 'font-sans'}`}
                         />
                       </div>
                     ))}
@@ -1819,14 +3372,222 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 </div>
               )}
 
-              <div>
-                <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Plain Text Fallback</label>
-                <textarea
-                  rows={2}
-                  value={editBodyPlain}
-                  onChange={e => setEditBodyPlain(e.target.value)}
-                  className="w-full p-2.5 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none"
-                />
+              {/* Sender Email Accounts Selector */}
+              <div className="space-y-1.5 p-3 rounded-xl border border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-muted-foreground uppercase text-[10px] flex items-center gap-1">
+                    <Mail className="h-3 w-3 text-primary" /> Sender Mailboxes
+                  </label>
+                  <span className="text-[10px] text-primary font-semibold">
+                    {editSelectedAccountIds.length === 0 ? 'All Accounts' : `${editSelectedAccountIds.length} Selected`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
+                  {accounts.map(acc => {
+                    const isSel = editSelectedAccountIds.includes(acc.id);
+                    return (
+                      <div
+                        key={acc.id}
+                        onClick={() => {
+                          if (isSel) setEditSelectedAccountIds(editSelectedAccountIds.filter(id => id !== acc.id));
+                          else setEditSelectedAccountIds([...editSelectedAccountIds, acc.id]);
+                        }}
+                        className={`p-2 rounded-lg border text-[11px] cursor-pointer flex items-center justify-between ${
+                          isSel ? 'border-primary bg-primary/10 text-primary font-bold' : 'border-border/40 bg-background text-muted-foreground'
+                        }`}
+                      >
+                        <span className="truncate pr-1">{acc.display_name || acc.email}</span>
+                        {isSel && <Check className="h-3 w-3 shrink-0" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Custom Filter Rules for Edit */}
+              <div className="space-y-1.5 p-3 rounded-xl border border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-muted-foreground uppercase text-[10px] flex items-center gap-1">
+                    <Filter className="h-3 w-3 text-primary" /> Custom Attribute Filters ({editCustomFilterRules.length})
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditCustomFilterRules([...editCustomFilterRules, { id: String(Date.now()), field: 'company', operator: 'contains', value: '' }])}
+                    className="h-6 text-[9px] gap-1"
+                  >
+                    <Plus className="h-2.5 w-2.5" /> Add Filter
+                  </Button>
+                </div>
+                {editCustomFilterRules.map((rule, idx) => (
+                  <div key={rule.id || idx} className="grid grid-cols-12 gap-1 items-center bg-background p-1.5 rounded border text-xs">
+                    <input
+                      type="text"
+                      placeholder="Field (e.g. company, city, revenue)"
+                      value={rule.field}
+                      onChange={e => {
+                        const next = [...editCustomFilterRules];
+                        next[idx].field = e.target.value;
+                        setEditCustomFilterRules(next);
+                      }}
+                      className="col-span-4 bg-muted p-1 rounded text-[11px] font-mono"
+                    />
+                    <select
+                      value={rule.operator}
+                      onChange={e => {
+                        const next = [...editCustomFilterRules];
+                        next[idx].operator = e.target.value;
+                        setEditCustomFilterRules(next);
+                      }}
+                      className="col-span-4 bg-muted p-1 rounded text-[11px]"
+                    >
+                      <option value="contains">Contains text</option>
+                      <option value="not_contains">Does not contain</option>
+                      <option value="equals">Equals (=)</option>
+                      <option value="not_equals">Not equal (!=)</option>
+                      <option value="starts_with">Starts with</option>
+                      <option value="gt">&gt; Greater than</option>
+                      <option value="gte">&gt;= Greater/Equal</option>
+                      <option value="lt">&lt; Less than</option>
+                      <option value="lte">&lt;= Less/Equal</option>
+                      <option value="is_empty">Is empty</option>
+                      <option value="is_not_empty">Is not empty</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Value"
+                      value={rule.value}
+                      onChange={e => {
+                        const next = [...editCustomFilterRules];
+                        next[idx].value = e.target.value;
+                        setEditCustomFilterRules(next);
+                      }}
+                      className="col-span-3 bg-muted p-1 rounded text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditCustomFilterRules(editCustomFilterRules.filter((_, i) => i !== idx))}
+                      className="col-span-1 text-destructive text-center"
+                    >
+                      <Trash2 className="h-3 w-3 mx-auto" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Target Volume & Range Slicing for Edit */}
+              <div className="p-3 rounded-xl bg-muted/20 border border-border/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                    <SlidersHorizontal className="h-3 w-3 text-primary" /> Target Lead Volume &amp; Slicing
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setEditTargetLimitMode('all'); setEditTargetLimit(0); setEditTargetRangeStart(0); setEditTargetRangeEnd(0); }}
+                    className={`p-1.5 rounded-lg border text-[11px] font-semibold text-center transition-all ${
+                      editTargetLimitMode === 'all'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    All Leads
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditTargetLimitMode('limit'); if (!editTargetLimit) setEditTargetLimit(500); }}
+                    className={`p-1.5 rounded-lg border text-[11px] font-semibold text-center transition-all ${
+                      editTargetLimitMode === 'limit'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    First N (Cap)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditTargetLimitMode('range'); if (!editTargetRangeStart) setEditTargetRangeStart(1); if (!editTargetRangeEnd) setEditTargetRangeEnd(500); }}
+                    className={`p-1.5 rounded-lg border text-[11px] font-semibold text-center transition-all ${
+                      editTargetLimitMode === 'range'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/40 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    Row Range (Slice)
+                  </button>
+                </div>
+
+                {editTargetLimitMode === 'limit' && (
+                  <div className="pt-1 flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase shrink-0">Max Recipients:</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={editTargetLimit}
+                      onChange={e => setEditTargetLimit(Math.max(1, Number(e.target.value)))}
+                      className="w-28 bg-background p-1.5 rounded-lg border border-input text-xs font-bold"
+                      placeholder="500"
+                    />
+                    <span className="text-[10px] text-muted-foreground">contacts</span>
+                  </div>
+                )}
+
+                {editTargetLimitMode === 'range' && (
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">From:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editTargetRangeStart}
+                        onChange={e => setEditTargetRangeStart(Math.max(1, Number(e.target.value)))}
+                        className="w-20 bg-background p-1.5 rounded-lg border border-input text-xs font-bold"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">To:</label>
+                      <input
+                        type="number"
+                        min={editTargetRangeStart}
+                        value={editTargetRangeEnd}
+                        onChange={e => setEditTargetRangeEnd(Math.max(editTargetRangeStart, Number(e.target.value)))}
+                        className="w-20 bg-background p-1.5 rounded-lg border border-input text-xs font-bold"
+                      />
+                    </div>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                      {Math.max(0, editTargetRangeEnd - editTargetRangeStart + 1)} leads (Rows {editTargetRangeStart}–{editTargetRangeEnd})
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Sent Memory for Edit */}
+              <div className="p-2.5 rounded-xl bg-muted/20 border border-border/40 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Brain className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[11px] font-bold text-foreground">Sent Memory (Exclude Contacted)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditExcludePreviouslyContacted(!editExcludePreviouslyContacted)}
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                    editExcludePreviouslyContacted
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted text-muted-foreground border-border/40'
+                  }`}
+                >
+                  {editExcludePreviouslyContacted ? '✓ Active' : 'Off'}
+                </button>
+              </div>
+
+              {/* Timezone and Window */}
+              <div className="p-2.5 rounded-xl border border-border/40 bg-muted/20 flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1 font-semibold text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5 text-primary" /> Timezone:
+                </span>
+                <span className="font-bold text-foreground">Africa/Lagos (WAT UTC+1)</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1834,14 +3595,14 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                   <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Delay (seconds)</label>
                   <input
                     type="number"
-                    min={5}
+                    min={1}
                     value={editDelay}
                     onChange={e => setEditDelay(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-input bg-muted focus:border-primary focus:outline-none font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Start Time</label>
+                  <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">Start Time (WAT)</label>
                   <input
                     type="time"
                     value={editStartTime}
@@ -1850,7 +3611,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">End Time</label>
+                  <label className="block font-semibold text-muted-foreground mb-1 uppercase text-[10px]">End Time (WAT)</label>
                   <input
                     type="time"
                     value={editEndTime}

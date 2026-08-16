@@ -29,14 +29,32 @@ const { parseSpintax } = require('./execution/spintax');
 
 /**
  * Check if the current time is within the campaign's allowed sending window.
+ * Defaults to West Africa Time (Africa/Lagos, UTC+1).
  */
 function isWithinSendingWindow(campaign) {
-  if (campaign.ignore_window || campaign.start_time === '00:00' && (campaign.end_time === '23:59' || campaign.end_time === '24:00')) {
+  if (campaign.ignore_window || (campaign.start_time === '00:00' && (campaign.end_time === '23:59' || campaign.end_time === '24:00'))) {
     return true;
   }
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
+  const tz = campaign.timezone || 'Africa/Lagos';
+  let hours = 0;
+  let minutes = 0;
+  try {
+    const timeParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(new Date());
+    for (const p of timeParts) {
+      if (p.type === 'hour') hours = parseInt(p.value, 10) % 24;
+      if (p.type === 'minute') minutes = parseInt(p.value, 10);
+    }
+  } catch (_) {
+    const now = new Date();
+    hours = now.getHours();
+    minutes = now.getMinutes();
+  }
+
   const currentTime = hours * 60 + minutes;
 
   const [startH = 8, startM = 0] = (campaign.start_time || '08:00').split(':').map(Number);
@@ -61,31 +79,54 @@ function isWithinSendingWindow(campaign) {
 
 /**
  * If campaign has content_variations, pick one based on the queue item index.
+ * Supports both array of { subject, body_html } and { subjects: [...], bodies: [...] }.
  * Returns { subject, body_html }.
  */
 function getContent(campaign, queueItem) {
-  const subject = campaign.c_subject || campaign.subject;
-  const body_html = campaign.c_body_html || campaign.body_html;
+  const defaultSubject = campaign.c_subject || campaign.subject || '';
+  const defaultBody = campaign.c_body_html || campaign.body_html || campaign.c_body_plain || campaign.body_plain || '';
   if (campaign.content_mode !== 'rotation' || !campaign.content_variations) {
     return {
-      subject: subject,
-      body_html: body_html,
+      subject: defaultSubject,
+      body_html: defaultBody,
     };
   }
 
   try {
-    const variations = JSON.parse(campaign.content_variations);
-    if (!Array.isArray(variations) || variations.length === 0) {
-      return { subject: subject, body_html: body_html };
+    const variations = typeof campaign.content_variations === 'string'
+      ? JSON.parse(campaign.content_variations)
+      : campaign.content_variations;
+
+    const itemIdx = Math.max(0, (queueItem?.id || 1) - 1);
+
+    // Format A: { subjects: [...], bodies: [...] }
+    if (variations && (Array.isArray(variations.subjects) || Array.isArray(variations.bodies))) {
+      const subjectsList = (variations.subjects || []).filter(Boolean);
+      const bodiesList = (variations.bodies || []).filter(Boolean);
+      const chosenSubject = subjectsList.length > 0
+        ? subjectsList[itemIdx % subjectsList.length]
+        : defaultSubject;
+      const chosenBody = bodiesList.length > 0
+        ? bodiesList[itemIdx % bodiesList.length]
+        : defaultBody;
+      return {
+        subject: chosenSubject,
+        body_html: chosenBody,
+      };
     }
-    const index = (queueItem.id - 1) % variations.length;
-    const v = variations[index];
-    return {
-      subject: v.subject || subject,
-      body_html: v.body_html || body_html,
-    };
+
+    // Format B: Array of { subject, body_html }
+    if (Array.isArray(variations) && variations.length > 0) {
+      const v = variations[itemIdx % variations.length];
+      return {
+        subject: v.subject || defaultSubject,
+        body_html: v.body_html || defaultBody,
+      };
+    }
+
+    return { subject: defaultSubject, body_html: defaultBody };
   } catch {
-    return { subject: subject, body_html: body_html };
+    return { subject: defaultSubject, body_html: defaultBody };
   }
 }
 
@@ -352,13 +393,14 @@ async function syncContactListsToActiveCampaigns(db) {
 // ---------------------------------------------------------------------------
 
 async function processNextItem() {
-  let db;
   try {
-    db = await getDb();
-  } catch (err) {
-    logger.error({ err }, 'DB not ready');
-    return;
-  }
+    let db;
+    try {
+      db = await getDb();
+    } catch (err) {
+      logger.error({ err }, 'DB not ready');
+      return { processedCount: 0 };
+    }
 
   // Synchronize contact list changes to active campaign queues on worker tick
   await syncContactListsToActiveCampaigns(db);
@@ -383,7 +425,7 @@ async function processNextItem() {
 
   if (!items || items.length === 0) {
     await completeEmptySendingCampaigns(db);
-    return;
+    return { processedCount: 0 };
   }
 
   const accountSentInBatch = {};
@@ -619,7 +661,12 @@ async function processNextItem() {
     }
   });
 
-  await Promise.all(workers);
+    await Promise.all(workers);
+    return { processedCount: items.length };
+  } catch (err) {
+    logger.error({ err }, 'Error in processNextItem execution');
+    return { processedCount: 0, error: err.message };
+  }
 }
 
 async function completeCampaignIfNoActiveQueue(db, campaignId) {
@@ -712,47 +759,98 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
 })();
 
 // ---------------------------------------------------------------------------
-// Cron: every 15 seconds (Continuous Server-Side Background Worker)
-// DISABLED in Netlify environment (uses scheduled functions instead)
+// Immediate Real-Time Dispatch Worker (Instant Execution)
 // ---------------------------------------------------------------------------
 
 const isNetlifyServerless = process.env.NETLIFY === 'true';
 const schedulerEnabled = !isNetlifyServerless && process.env.DISABLE_SCHEDULER !== 'true';
-let sendTask;
+let dispatchInterval = null;
 let resetTask;
 let lastTickAt = null;
+let isDispatching = false;
+
+/**
+ * Trigger immediate dispatch of all ready queue items without waiting for any timer.
+ * Automatically drains pending items in real-time.
+ */
+async function triggerImmediateDispatch() {
+  if (isDispatching) return;
+  isDispatching = true;
+  try {
+    lastTickAt = new Date().toISOString();
+    let loops = 0;
+    while (loops < 50) {
+      loops++;
+      const result = await processNextItem();
+      if (!result || !result.processedCount || result.processedCount === 0) {
+        break;
+      }
+      // Small tick between batches to prevent CPU saturation while maintaining immediate throughput
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error during immediate dispatch execution');
+  } finally {
+    isDispatching = false;
+  }
+}
 
 if (schedulerEnabled) {
-  sendTask = cron.schedule('*/15 * * * * *', async () => {
+  // Real-time 1-second continuous pulse to pick up newly ready items immediately
+  dispatchInterval = setInterval(async () => {
     try {
-      lastTickAt = new Date().toISOString();
-      await processNextItem();
+      if (!isDispatching) {
+        lastTickAt = new Date().toISOString();
+        await processNextItem();
+      }
     } catch (err) {
-      logger.error({ err }, 'Unexpected error in cron send task');
+      logger.error({ err }, 'Unexpected error in real-time dispatch loop');
     }
-  });
+  }, 1000);
 
   // Daily reset of account send counters at midnight
   resetTask = cron.schedule('0 0 * * *', async () => {
     try {
       const db = await getDb();
       await db.prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now')").run();
-      logger.info('Daily send counters reset');
+      logger.info('Daily send counters reset at midnight');
     } catch (err) {
       logger.error({ err }, 'Counter reset error');
     }
   });
 
-  logger.info('Email worker started (every 15s continuous background dispatch)');
+  // Background periodic inbox sync every 5 minutes
+  let inboxSyncCron = cron.schedule('*/5 * * * *', async () => {
+    try {
+      const db = await getDb();
+      const accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND (type = 'oauth' OR refresh_token IS NOT NULL)").all();
+      if (!accounts || accounts.length === 0) return;
+      const { syncAccountInbox } = require('./routes/inbox');
+      for (const account of accounts) {
+        try {
+          await syncAccountInbox(account, db, account.user_id || 1);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  });
+
+  logger.info('Immediate Email Worker active (continuous real-time dispatch with instant launch execution)');
 } else {
-  sendTask = { stop: () => {} };
   resetTask = { stop: () => {} };
-  logger.info('Email worker is disabled in local development. Set NODE_ENV=production or ENABLE_SCHEDULER=true to enable it.');
+  logger.info('Email worker is disabled in local development. Set ENABLE_SCHEDULER=true to enable it.');
 }
 
 function stopScheduler() {
-  sendTask.stop();
-  resetTask.stop();
+  if (dispatchInterval) {
+    clearInterval(dispatchInterval);
+    dispatchInterval = null;
+  }
+  if (resetTask && resetTask.stop) {
+    resetTask.stop();
+  }
+  if (inboxSyncCron && inboxSyncCron.stop) {
+    inboxSyncCron.stop();
+  }
   logger.info('Email worker stopped');
 }
 
@@ -763,16 +861,16 @@ async function getWorkerStatus() {
     const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue WHERE status = 'pending'").get();
     return {
       active: schedulerEnabled,
-      interval: '15s',
+      interval: '1s (Immediate Real-Time)',
       lastTickAt,
       activeCampaigns: activeCampaigns ? activeCampaigns.count : 0,
       pendingQueue: pendingQueue ? pendingQueue.count : 0,
-      mode: 'Server-Side Continuous Worker (Independent of Browser)'
+      mode: 'Immediate Real-Time Dispatch Engine'
     };
   } catch (err) {
     return {
       active: schedulerEnabled,
-      interval: '15s',
+      interval: '1s (Immediate Real-Time)',
       lastTickAt,
       error: err.message
     };
@@ -781,7 +879,10 @@ async function getWorkerStatus() {
 
 module.exports = {
   processNextItem,
+  triggerImmediateDispatch,
   personalise,
+  getContent,
+  isWithinSendingWindow,
   completeCampaignIfNoActiveQueue,
   stopScheduler,
   syncContactListsToActiveCampaigns,

@@ -47,6 +47,7 @@ export default function Templates({ requirePin }: TemplatesProps) {
   const [subject, setSubject] = useState<string>('');
   const [bodyHtml, setBodyHtml] = useState<string>('');
   const [bodyPlain, setBodyPlain] = useState<string>('');
+  const [showFallback, setShowFallback] = useState<boolean>(false);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
 
   const previewRef = useRef<HTMLIFrameElement | null>(null);
@@ -527,17 +528,41 @@ export default function Templates({ requirePin }: TemplatesProps) {
               </div>
             </div>
 
-            {/* Plain Text Fallback */}
-            <div className="space-y-1">
-              <label className="font-bold text-foreground">
-                Plain-Text Fallback (Spam Guard Backup)
-              </label>
-              <textarea
-                value={bodyPlain}
-                onChange={(e) => setBodyPlain(e.target.value)}
-                placeholder="Enter plain text fallback version..."
-                className="w-full bg-background text-xs rounded-xl border border-border/80 p-3 min-h-[70px] focus:outline-none focus:ring-1 focus:ring-[#635bff] leading-relaxed"
-              />
+            {/* Collapsible Plain Text Fallback */}
+            <div className="pt-1">
+              {!showFallback && !bodyPlain ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFallback(true)}
+                  className="text-xs text-muted-foreground hover:text-primary font-medium flex items-center gap-1.5 transition-colors py-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Plain-Text Fallback (Optional)
+                </button>
+              ) : (
+                <div className="space-y-1.5 p-3 rounded-xl bg-muted/20 border border-border/70 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-foreground">
+                      Plain-Text Fallback (Spam Guard Backup)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFallback(false);
+                        if (!bodyPlain) setBodyPlain('');
+                      }}
+                      className="text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      Collapse
+                    </button>
+                  </div>
+                  <textarea
+                    value={bodyPlain}
+                    onChange={(e) => setBodyPlain(e.target.value)}
+                    placeholder="Enter plain text fallback version..."
+                    className="w-full bg-background text-xs rounded-lg border border-border/80 p-2.5 min-h-[60px] focus:outline-none focus:ring-1 focus:ring-[#635bff] leading-relaxed"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

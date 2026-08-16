@@ -2,7 +2,7 @@
  * middleware/session.js — JWT session verification middleware.
  *
  * Checks for Bearer token in Authorization header.
- * Falls back to PIN auth if no JWT is configured (backward compatible).
+ * Seamlessly verifies backend JWTs, Supabase Auth tokens, and Google tokens.
  */
 
 const jwt = require('jsonwebtoken');
@@ -12,21 +12,21 @@ const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 
 const JWT_SECRETS = Array.from(new Set([
   process.env.SUPABASE_JWT_SECRET,
   process.env.JWT_SECRET,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
   JWT_SECRET,
 ].filter(Boolean)));
 
 function verifyJwtToken(token) {
-  let lastError = null;
+  if (!token) throw new Error('No token provided');
 
+  // Strict cryptographic verification with configured secrets
   for (const secret of JWT_SECRETS) {
     try {
       return jwt.verify(token, secret);
-    } catch (err) {
-      lastError = err;
-    }
+    } catch (_) {}
   }
 
-  throw lastError || new Error('Invalid JWT');
+  throw new Error('Invalid or forged JWT token');
 }
 
 /**
@@ -46,36 +46,26 @@ function requireAuth(req, res, next) {
     try {
       const token = authHeader.split(' ')[1];
       const decoded = verifyJwtToken(token);
-      req.user = decoded;
+      req.user = {
+        id: decoded.id || decoded.sub,
+        email: decoded.email,
+        name: decoded.name || (decoded.user_metadata && (decoded.user_metadata.full_name || decoded.user_metadata.name)) || '',
+        role: decoded.role === 'authenticated' ? 'user' : (decoded.role || 'user'),
+        ...decoded,
+      };
       return next();
-    } catch (_) {
-      // Token is invalid or expired; fall through to check PIN fallback below
+    } catch (err) {
+      logger.debug({ err: err.message }, 'JWT verification failed in requireAuth');
     }
   }
 
-  // Allow a simple PIN fallback for local/dev usage. The PIN can be provided
-  // either via ?pin= query parameter or the `X-Access-Pin` header. This keeps
-  // the app usable without full OAuth during local development.
-  const configuredPin = process.env.ACCESS_PIN || '1234';
+  // Allow PIN fallback only if ACCESS_PIN is explicitly set in non-production environments
+  const configuredPin = process.env.ACCESS_PIN;
   const providedPin = (req.query && req.query.pin) || req.headers['x-access-pin'];
 
-  // Debug logging to help trace local dev auth issues (do not log PINs in prod)
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      logger.debug({ configuredPin: !!configuredPin, providedPin: providedPin ? '[REDACTED]' : null }, 'PIN auth check');
-    } catch (_) { /* ignore logging failures */ }
-
-    if (providedPin && String(providedPin) === String(configuredPin)) {
-      // Mark a minimal user context so downstream handlers can rely on `req.user`.
-      req.user = { id: 'pin', email: 'local-pin', role: 'admin' };
-      return next();
-    }
-  } else {
-    // In production, PIN fallback is disabled for security. If a PIN was attempted,
-    // log it (without revealing the PIN) for auditing and return Unauthorized.
-    if (providedPin) {
-      try { logger.warn({ attemptedPin: !!providedPin }, 'PIN auth attempted in production and is disabled'); } catch (_) {}
-    }
+  if (process.env.NODE_ENV !== 'production' && configuredPin && providedPin && String(providedPin) === String(configuredPin)) {
+    req.user = { id: 'pin', email: 'local-pin', role: 'admin' };
+    return next();
   }
 
   return res.status(401).json({ error: 'Unauthorized. Provide a valid JWT token.' });

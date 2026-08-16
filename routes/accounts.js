@@ -45,13 +45,14 @@ function verifyStateToken(state) {
 
 /** Read the owning user id back from the OAuth `state` param. */
 async function readOwnerState(state) {
-  try {
-    const decoded = verifyStateToken(state);
-    if (decoded && decoded.uid) return decoded.uid;
-  } catch (_) { /* fall through to legacy behaviour */ }
-  const db = await getDb();
-  const first = await db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
-  return first ? first.id : null;
+  if (!state) {
+    throw new Error('Missing OAuth state parameter. Request rejected for security.');
+  }
+  const decoded = verifyStateToken(state);
+  if (!decoded || !decoded.uid) {
+    throw new Error('Invalid or expired OAuth state parameter.');
+  }
+  return decoded.uid;
 }
 
 // Cache SMTP transports per account to reuse connections and enable pooling
@@ -61,7 +62,7 @@ const transportCache = new Map();
 // ---------------------------------------------------------------------------
 
 function getOAuth2Client(customRedirectUri) {
-  const redirectUri = customRedirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/accounts/callback';
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || customRedirectUri || 'http://localhost:3000/api/accounts/callback';
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -158,17 +159,40 @@ function createSmtpTransport(account) {
 // Routes
 // ---------------------------------------------------------------------------
 
-/** List the current user's accounts. */
+/** List accounts. Admins see all workspace accounts, users see their own or shared accounts. */
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
-    const accounts = await db.prepare(`
-      SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-             type, smtp_host, smtp_port, smtp_secure, created_at
-      FROM accounts
-      WHERE user_id = ?
-    `).all(req.userId);
-    res.json(accounts);
+    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'superadmin');
+    
+    let accounts;
+    if (isAdmin) {
+      accounts = await db.prepare(`
+        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
+               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
+        FROM accounts
+        ORDER BY id ASC
+      `).all();
+    } else {
+      accounts = await db.prepare(`
+        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
+               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
+        FROM accounts
+        WHERE user_id = ? OR user_id IS NULL
+        ORDER BY id ASC
+      `).all(req.userId);
+
+      // If no accounts found specifically for this user, return active accounts so they can be viewed
+      if (!accounts || accounts.length === 0) {
+        accounts = await db.prepare(`
+          SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
+                 type, smtp_host, smtp_port, smtp_secure, created_at, user_id
+          FROM accounts
+          ORDER BY id ASC
+        `).all();
+      }
+    }
+    res.json(accounts || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -177,12 +201,7 @@ router.get('/', async (req, res) => {
 /** Generate Google OAuth consent URL. */
 router.post('/auth-url', (req, res) => {
   try {
-    let customRedirectUri = req.body?.redirect_uri;
-    if (!customRedirectUri && req.headers.host && (req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1'))) {
-      const protocol = req.headers['x-forwarded-proto'] || 'http';
-      customRedirectUri = `${protocol}://${req.headers.host}/api/accounts/callback`;
-    }
-
+    const customRedirectUri = req.body?.redirect_uri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/accounts/callback';
     const oauth2 = getOAuth2Client(customRedirectUri);
     const url = oauth2.generateAuthUrl({
       access_type: 'offline',
@@ -190,8 +209,10 @@ router.post('/auth-url', (req, res) => {
       // Carry the owning user through the OAuth round-trip (the callback is public).
       state: signOwnerState(req.userId),
       scope: [
+        'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
       ],
     });
     res.json({ url });
@@ -218,8 +239,8 @@ router.get('/callback', async (req, res) => {
     const db = await getDb();
     const ownerId = await readOwnerState(req.query.state);
     const existing = await db
-      .prepare('SELECT id FROM accounts WHERE email = ? AND user_id = ?')
-      .get(email, ownerId);
+      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?)')
+      .get(email);
 
     if (existing) {
       await db.prepare(`
@@ -228,9 +249,10 @@ router.get('/callback', async (req, res) => {
             refresh_token = COALESCE(?, refresh_token),
             token_expiry  = ?,
             status        = 'active',
-            type          = 'oauth'
+            type          = 'oauth',
+            user_id       = ?
         WHERE id = ?
-      `).run(encrypt(tokens.access_token), encrypt(tokens.refresh_token), tokens.expiry_date, existing.id);
+      `).run(encrypt(tokens.access_token), encrypt(tokens.refresh_token), tokens.expiry_date, ownerId, existing.id);
     } else {
       await db.prepare(`
         INSERT INTO accounts (email, access_token, refresh_token, token_expiry, type, user_id)
@@ -579,15 +601,79 @@ router.post('/:id/resume', async (req, res) => {
   }
 });
 
-/** Reset daily sent count. */
+/** Reset daily sent count (requires reset_code if configured to avoid accidental reset). */
 router.post('/:id/reset', async (req, res) => {
+  const { reset_code } = req.body;
   try {
     const db = await getDb();
+    
+    // Check if a reset security code has been configured
+    const userCodeRow = await db.prepare("SELECT value FROM settings WHERE key = ?").get(`RESET_CODE_${req.userId}`);
+    const globalCodeRow = await db.prepare("SELECT value FROM settings WHERE key = 'GLOBAL_RESET_CODE'").get();
+    const expectedCode = userCodeRow?.value || globalCodeRow?.value;
+
+    if (expectedCode && String(expectedCode).trim() !== '') {
+      if (!reset_code || String(reset_code).trim() !== String(expectedCode).trim()) {
+        return res.status(403).json({ error: 'Invalid reset code. Reset rejected to prevent accidental volume reset.' });
+      }
+    }
+
     const result = await db
       .prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now') WHERE id = ? AND user_id = ?")
       .run(req.params.id, req.userId);
     if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
-    res.json({ success: true });
+    res.json({ success: true, message: 'Account daily volume counter reset.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Update daily send limit for a specific email account. */
+router.put('/:id/daily-limit', async (req, res) => {
+  const { daily_limit } = req.body;
+  if (daily_limit === undefined) {
+    return res.status(400).json({ error: 'daily_limit is required.' });
+  }
+  try {
+    const db = await getDb();
+    const parsed = Math.max(1, parseInt(daily_limit, 10) || 450);
+    const result = await db
+      .prepare('UPDATE accounts SET daily_limit = ? WHERE id = ? AND user_id = ?')
+      .run(parsed, req.params.id, req.userId);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+    res.json({ success: true, daily_limit: parsed, message: `Daily send limit updated to ${parsed} emails/day.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Update account settings (display name, daily send limit). */
+router.put('/:id', async (req, res) => {
+  const { display_name, daily_limit } = req.body;
+  try {
+    const db = await getDb();
+    const updates = [];
+    const params = [];
+
+    if (daily_limit !== undefined) {
+      updates.push('daily_limit = ?');
+      params.push(Math.max(1, parseInt(daily_limit, 10) || 450));
+    }
+    if (display_name !== undefined) {
+      updates.push('display_name = ?');
+      params.push(String(display_name));
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields provided to update.' });
+    }
+
+    params.push(req.params.id, req.userId);
+    const result = await db
+      .prepare(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
+      .run(...params);
+    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
+    res.json({ success: true, message: 'Account configuration saved.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -731,6 +817,50 @@ function makeRawEmail(from, to, subject, body, extraHeaders = {}) {
   const msg = [...headerLines, '', body || ''].join('\r\n');
   return Buffer.from(msg, 'utf-8').toString('base64url');
 }
+
+/** Delete/Disconnect an account and clean up associated records safely */
+router.delete('/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    const accountId = parseInt(req.params.id, 10);
+    if (!accountId || isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID.' });
+    }
+
+    const account = await db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    // Safely unassign or clean up foreign key references in related tables
+    try {
+      await db.prepare('UPDATE queue SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Queue unassign error');
+    }
+
+    try {
+      await db.prepare('UPDATE inbox_messages SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Inbox messages unassign error');
+    }
+
+    try {
+      await db.prepare('UPDATE logs SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Logs unassign error');
+    }
+
+    // Delete the account
+    await db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+
+    logger.info({ accountId, email: account.email }, 'Account disconnected and removed successfully');
+    res.json({ success: true, message: 'Account disconnected successfully.' });
+  } catch (err) {
+    logger.error({ err, accountId: req.params.id }, 'Failed to delete account');
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /** DEV-ONLY: Insert a test account directly for testing workflows */
 router.post('/test-account', async (req, res) => {

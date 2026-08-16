@@ -21,13 +21,15 @@ async function resolveUserId(user) {
   }
 
   const email = (user && user.email) || 'admin@local';
-  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  let existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return existing.id;
 
-  const result = await db
-    .prepare('INSERT INTO users (email, name, picture, role) VALUES (?, ?, ?, ?)')
+  await db
+    .prepare('INSERT INTO users (email, name, picture, role, email_verified) VALUES (?, ?, ?, ?, true)')
     .run(email, (user && user.name) || email.split('@')[0], '', (user && user.role) || 'admin');
-  const id = result.lastInsertRowid;
+
+  existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const id = existing ? existing.id : 1;
 
   // First user ever: adopt any pre-multi-tenancy rows so nothing disappears.
   const count = await db.prepare('SELECT COUNT(*) as c FROM users').get();

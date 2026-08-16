@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { navigateToRoute } from "../lib/router";
 import { BASE_URL as API_BASE } from "../api";
-import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { Shield, Sparkles, Key, Lock, ArrowRight, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PasswordStrength from "@/components/PasswordStrength";
@@ -18,6 +18,7 @@ export default function Login() {
   const [isSignup, setIsSignup] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showGoogleHint, setShowGoogleHint] = useState(false);
 
   // Password strength validation helper
   const isPasswordStrong = (): boolean => {
@@ -33,8 +34,8 @@ export default function Login() {
 
   // Check if already logged in
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    if (token) {
+    const localToken = localStorage.getItem("auth_token");
+    if (localToken) {
       navigate("/dashboard");
     }
 
@@ -49,13 +50,15 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
+    setShowGoogleHint(false);
     try {
       const res = await fetch(`${API_BASE}/api/auth/google-url`);
-      if (!res.ok) throw new Error("Failed to get login URL");
+      if (!res.ok) throw new Error("Failed to get Google login URL");
       const data = await res.json();
+      if (!data.url) throw new Error("Invalid login response from server");
       window.location.href = data.url;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Google sign in failed");
       setLoading(false);
     }
   };
@@ -77,32 +80,43 @@ export default function Login() {
 
     setAuthLoading(true);
     setError(null);
+    setShowGoogleHint(false);
 
     try {
-      const endpoint = isSignup ? "signup" : "signin";
-      const payload = isSignup ? { email: trimmedEmail, password, name: trimmedName } : { email: trimmedEmail, password };
-      const res = await fetch(`${API_BASE}/api/auth/${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || `Unable to ${isSignup ? "create" : "sign in to"} your account.`);
-      }
-
-      if (!isSignup) {
+      if (isSignup) {
+        // Use custom backend signup ONLY (single source of truth)
+        const res = await fetch(`${API_BASE}/api/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail, password, name: trimmedName }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || "Account creation failed.");
+        }
+        navigate(`/verify-email?email=${encodeURIComponent(trimmedEmail)}`);
+        return;
+      } else {
+        // Use custom backend signin ONLY (single source of truth)
+        const res = await fetch(`${API_BASE}/api/auth/signin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          // Show Google hint if backend says to use Google
+          if (data?.useGoogle) {
+            setShowGoogleHint(true);
+          }
+          throw new Error(data?.error || "Sign in failed.");
+        }
         if (data.token) {
           localStorage.setItem("auth_token", data.token);
         }
         navigate("/dashboard");
         return;
       }
-
-      // SIGNUP SUCCESS - REDIRECT TO EMAIL VERIFICATION
-      navigate(`/verify-email?email=${encodeURIComponent(trimmedEmail)}`);
-      return;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
@@ -116,7 +130,7 @@ export default function Login() {
         <div className="flex flex-col items-center text-center space-y-2">
           <Logo size="xl" subtitle="Campaign Console" />
           <p className="text-xs text-muted-foreground pt-1">
-            Sign in to access your cold email campaign console.
+            {isSignup ? "Create an account to access your cold email campaign console." : "Sign in to access your cold email campaign console."}
           </p>
         </div>
 
@@ -125,6 +139,16 @@ export default function Login() {
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-500 text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {showGoogleHint && (
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-600 text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              </svg>
+              <span>Click the <strong>"Sign in with Google"</strong> button above to access your account.</span>
             </div>
           )}
 
@@ -155,7 +179,7 @@ export default function Login() {
                 />
               </svg>
             )}
-            {loading ? "Authenticating..." : "Sign in with Google"}
+            {loading ? "Authenticating..." : isSignup ? "Sign up with Google" : "Sign in with Google"}
           </Button>
 
           <div className="relative flex items-center justify-center my-4">
@@ -165,7 +189,7 @@ export default function Login() {
             </span>
           </div>
 
-          <form onSubmit={handleEmailAuth} className="space-y-4">
+          <form onSubmit={handleEmailAuth} className="space-y-4" autoComplete="off">
             {isSignup && (
               <div className="space-y-1.5">
                 <label htmlFor="full-name" className="text-xs font-bold text-foreground flex items-center gap-1.5">
@@ -178,6 +202,7 @@ export default function Login() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={authLoading || loading}
+                  autoComplete="name"
                   className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
                 />
               </div>
@@ -194,6 +219,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={authLoading || loading}
+                autoComplete="off"
                 className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff]"
               />
             </div>
@@ -206,10 +232,11 @@ export default function Login() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
+                  placeholder={isSignup ? "Create a strong password" : "Enter your password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={authLoading || loading}
+                  autoComplete="off"
                   className="h-10 text-xs bg-background focus-visible:ring-[#635bff]/30 focus-visible:border-[#635bff] pr-9"
                 />
                 <button
@@ -257,7 +284,12 @@ export default function Login() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsSignup((current) => !current)}
+                onClick={() => {
+                  setIsSignup((current) => !current);
+                  setError(null);
+                  setPassword("");
+                  setShowGoogleHint(false);
+                }}
                 className="w-full h-10 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] transition-all"
               >
                 {isSignup ? "Already have an account? Sign in" : "Need an account? Sign up"}

@@ -67,7 +67,18 @@ const strictLimiter = rateLimit({
 });
 
 // ---------------------------------------------------------------------------
-// Middleware
+// Rate limiter specifically for email dispatching endpoints (prevents spam abuse)
+const emailTriggerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // max 5 requests per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: isLocalhost,
+  message: { error: 'Too many email requests. Please wait a few minutes before requesting another email.' }
+});
+
+// ---------------------------------------------------------------------------
+// Security Middleware & Headers
 // ---------------------------------------------------------------------------
 const allowedOrigin = process.env.FRONTEND_ORIGIN || 'https://send.peakconix.site';
 const corsOptions = {
@@ -78,15 +89,24 @@ const corsOptions = {
     const isLocalNetwork = /^http:\/\/(?:192\.168|10|172\.(?:1[6-9]|2\d|3[0-1])|169\.254)\.\d+\.\d+(:\d+)?$/.test(origin);
     const isAllowedWeb = origin === 'https://send.peakconix.site' || origin === 'https://peak-x-sender-v3-test.netlify.app' || origin === allowedOrigin;
     
-    if (isLocalhost || isLocalNetwork || isAllowedWeb) {
+    if (isLocalhost || isLocalNetwork || isAllowedWeb || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
-      callback(null, true); // Allow requests flexibly in serverless
+      callback(new Error('Blocked by CORS policy'));
     }
   },
   credentials: true
 };
 app.use(cors(corsOptions));
+
+// HTTP Security Headers
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.use((req, res, next) => {
   logger.info({ method: req.method, url: req.url }, 'Incoming request');
@@ -168,12 +188,10 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     
     const campaigns = await db.prepare(`
       SELECT c.*,
-             COALESCE(SUM(q.opens_count), 0) as total_opens,
-             COALESCE(SUM(q.clicks_count), 0) as total_clicks
+             COALESCE((SELECT SUM(opens_count) FROM queue WHERE campaign_id = c.id), 0) as total_opens,
+             COALESCE((SELECT SUM(clicks_count) FROM queue WHERE campaign_id = c.id), 0) as total_clicks
       FROM campaigns c
-      LEFT JOIN queue q ON c.id = q.campaign_id
       WHERE c.user_id = ?
-      GROUP BY c.id
       ORDER BY c.id DESC
       LIMIT 5
     `).all(uid);
@@ -193,7 +211,7 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     d.setDate(d.getDate() - days);
     const startDate = d.toISOString();
     const logs = await db.prepare(
-      "SELECT status, created_at FROM logs l JOIN campaigns c ON l.campaign_id = c.id WHERE c.user_id = ? AND l.created_at >= ?"
+      "SELECT l.status, l.created_at FROM logs l JOIN campaigns c ON l.campaign_id = c.id WHERE c.user_id = ? AND l.created_at >= ?"
     ).all(uid, startDate);
 
     // Group logs by day

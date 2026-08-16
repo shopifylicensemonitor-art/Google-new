@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, type Campaign, type Account } from '../api';
+import { api, type Campaign, type Account, type InboxMessage } from '../api';
 import { SEO } from '@/components/SEO';
 import { AppShell } from '@/components/AppShell';
 import { PullToRefresh } from '@/components/PullToRefresh';
@@ -12,7 +12,7 @@ import {
   Send, Users, Mail, MessageSquare, AlertTriangle, CheckCircle2, Clock, 
   RotateCw, Play, Pause, Plus, TrendingUp, TrendingDown,
   Lock, AlertCircle, Calendar, ArrowRight, ShieldCheck, Sparkles, Inbox,
-  Download
+  Download, Info
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useUI } from '@/context/UIContext';
@@ -46,22 +46,33 @@ export default function Dashboard() {
       sent: number;
       failed: number;
     }[];
+    recent_logs?: {
+      id?: number;
+      status: string;
+      message?: string;
+      recipient_email?: string;
+      campaign_name?: string;
+      created_at: string;
+    }[];
   } | null>(null);
   
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [recentReplies, setRecentReplies] = useState<InboxMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [userName, setUserName] = useState<string>('Gabriel');
+  const [userName, setUserName] = useState<string>('');
   const [days, setDays] = useState<number>(7);
 
   const fetchDashboardData = useCallback(async () => {
     try {
-      const [dashData, accountsData] = await Promise.all([
+      const [dashData, accountsData, inboxData] = await Promise.all([
         api.getDashboardData(days),
-        api.getAccounts()
+        api.getAccounts(),
+        api.getInboxMessages(5).catch(() => [] as InboxMessage[])
       ]);
       setServerData(dashData);
       setAccounts(accountsData);
+      setRecentReplies(Array.isArray(inboxData) ? inboxData : []);
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -90,17 +101,23 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchDashboardData, batterySaver]);
 
-  // Load user profile name if stored
+  // Load actual user profile from API
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        if (parsed.name) setUserName(parsed.name.split(' ')[0]);
+    api.getCurrentUser().then(user => {
+      if (user && user.name) {
+        setUserName(user.name.split(' ')[0]);
+      } else if (user && user.email) {
+        setUserName(user.email.split('@')[0]);
       }
-    } catch (e) {
-      // default fallback
-    }
+    }).catch(() => {
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          if (parsed.name) setUserName(parsed.name.split(' ')[0]);
+        }
+      } catch (_) {}
+    });
   }, []);
 
   const handleToggleCampaign = async (id: number, currentStatus: string) => {
@@ -140,8 +157,36 @@ export default function Dashboard() {
     ? ((totalOpens / Math.max(serverData.stats.today_sent, 1)) * 100)
     : 0;
 
-  // Count accounts that require re-auth
-  const needsAttentionAccounts = accounts.filter(a => a.status === 'paused' || a.status === 'error');
+  const replyRate = serverData?.stats.today_sent && serverData?.stats.replies
+    ? (((serverData.stats.replies) / Math.max(serverData.stats.today_sent, 1)) * 100).toFixed(1)
+    : '0.0';
+
+  // Dynamic attention items
+  const attentionItems: { title: string; desc: string; link: string; icon: any }[] = [];
+  accounts.forEach(a => {
+    if (a.status === 'disconnected' || a.status === 'error' || a.status === 'paused') {
+      attentionItems.push({
+        title: 'Mailbox Re-auth Needed',
+        desc: `${a.email} is ${a.status}. Re-authenticate to resume sending.`,
+        link: '/accounts',
+        icon: Lock,
+      });
+    }
+  });
+
+  (serverData?.campaigns || []).forEach(c => {
+    if (c.failed_count && c.failed_count > 0 && c.failed_count > c.sent_count * 0.1) {
+      attentionItems.push({
+        title: 'High Bounce Rate',
+        desc: `${c.name}: ${c.failed_count} failed deliveries detected.`,
+        link: '/campaigns',
+        icon: AlertCircle,
+      });
+    }
+  });
+
+  const totalContactsCount = serverData?.stats.total_contacts ?? 0;
+  const repliesCount = serverData?.stats.replies ?? recentReplies.length;
 
   return (
     <AppShell>
@@ -227,60 +272,73 @@ export default function Dashboard() {
         {/* Critical Attention Area & Metrics Grid (Bento Top Row) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Needs Attention Bento Card */}
-          <div className="lg:col-span-1 bg-card border border-destructive/30 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-destructive/5 rounded-bl-full -mr-10 -mt-10 pointer-events-none" />
+          <div className="lg:col-span-1 bg-card border border-border rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -mr-10 -mt-10 pointer-events-none" />
             
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
-                  Needs Attention
+                  {attentionItems.length > 0 ? (
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                  )}
+                  System Health
                 </h2>
-                <span className="bg-destructive/10 text-destructive font-semibold text-xs px-2.5 py-0.5 rounded-full">
-                  {needsAttentionAccounts.length > 0 ? `${needsAttentionAccounts.length} items` : '2 items'}
+                <span className={`font-semibold text-xs px-2.5 py-0.5 rounded-full ${
+                  attentionItems.length > 0
+                    ? 'bg-destructive/10 text-destructive'
+                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {attentionItems.length > 0 ? `${attentionItems.length} ${attentionItems.length === 1 ? 'item' : 'items'}` : 'All Operational'}
                 </span>
               </div>
 
               <div className="flex flex-col gap-3">
-                <Link
-                  to="/accounts"
-                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50 hover:border-destructive/40 transition-colors group"
-                >
-                  <div className="mt-0.5 bg-destructive/10 p-1.5 rounded-md text-destructive shrink-0">
-                    <Lock className="h-4 w-4" />
+                {attentionItems.length === 0 ? (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                    <div className="mt-0.5 bg-emerald-500/10 p-1.5 rounded-md text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-foreground">
+                        All Mailboxes & Campaigns Healthy
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        No deliverability warnings or authentication issues detected.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-semibold text-foreground group-hover:text-destructive transition-colors">
-                      Disconnected Mailbox
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {accounts.length > 0 ? `${accounts[0]?.email || 'hello@acme.co'} needs re-authentication.` : 'hello@acme.co needs re-authentication.'}
-                    </p>
-                  </div>
-                </Link>
-
-                <Link
-                  to="/campaigns"
-                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50 hover:border-destructive/40 transition-colors group"
-                >
-                  <div className="mt-0.5 bg-destructive/10 p-1.5 rounded-md text-destructive shrink-0">
-                    <AlertCircle className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold text-foreground group-hover:text-destructive transition-colors">
-                      Campaign Delivery Limit
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Q3 Enterprise Outreach: Delivery rate near daily provider quota.
-                    </p>
-                  </div>
-                </Link>
+                ) : (
+                  attentionItems.map((item, idx) => {
+                    const ItemIcon = item.icon;
+                    return (
+                      <Link
+                        key={idx}
+                        to={item.link}
+                        className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50 hover:border-destructive/40 transition-colors group"
+                      >
+                        <div className="mt-0.5 bg-destructive/10 p-1.5 rounded-md text-destructive shrink-0">
+                          <ItemIcon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-semibold text-foreground group-hover:text-destructive transition-colors">
+                            {item.title}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {item.desc}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })
+                )}
               </div>
             </div>
 
             <div className="mt-4 pt-3 border-t border-border/40 flex justify-end">
               <Link to="/accounts" className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
-                Review Mailboxes <ArrowRight className="h-3 w-3" />
+                Manage Mailboxes <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
           </div>
@@ -293,13 +351,15 @@ export default function Dashboard() {
                 <span className="p-2.5 rounded-lg bg-primary/10 text-primary">
                   <Users className="h-5 w-5" />
                 </span>
-                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  <TrendingUp className="h-3.5 w-3.5" /> +12%
+                <div className="flex items-center gap-1 text-primary bg-primary/10 px-2 py-0.5 rounded-full text-xs font-semibold">
+                  Contacts
                 </div>
               </div>
               <div className="mt-4">
                 <p className="text-xs font-medium text-muted-foreground mb-1">Total Contacts</p>
-                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">1,284</h3>
+                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">
+                  {totalContactsCount.toLocaleString()}
+                </h3>
               </div>
             </div>
 
@@ -310,12 +370,14 @@ export default function Dashboard() {
                   <Send className="h-5 w-5" />
                 </span>
                 <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  <TrendingUp className="h-3.5 w-3.5" /> +5%
+                  <TrendingUp className="h-3.5 w-3.5" /> Active
                 </div>
               </div>
               <div className="mt-4">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Emails Sent (7d)</p>
-                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">{todaySent}</h3>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Emails Sent ({days}d)</p>
+                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">
+                  {chartTotalSent.toLocaleString()}
+                </h3>
               </div>
             </div>
 
@@ -325,19 +387,21 @@ export default function Dashboard() {
                 <span className="p-2.5 rounded-lg bg-warning/10 text-warning">
                   <MessageSquare className="h-5 w-5" />
                 </span>
-                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  <TrendingUp className="h-3.5 w-3.5" /> 3.4% rate
+                <div className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full text-xs font-semibold">
+                  {replyRate}% rate
                 </div>
               </div>
               <div className="mt-4">
                 <p className="text-xs font-medium text-muted-foreground mb-1">Replies Received</p>
-                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">432</h3>
+                <h3 className="text-2xl font-extrabold text-foreground tracking-tight">
+                  {repliesCount.toLocaleString()}
+                </h3>
               </div>
             </div>
           </div>
         </div>
 
-                {/* Usage Summary Chart and Stats */}
+        {/* Usage Summary Chart and Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-3 bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -375,7 +439,7 @@ export default function Dashboard() {
                 <Mail className="h-4 w-4 text-emerald-500" />
                 <span className="text-xs font-semibold uppercase tracking-wider">Open Rate</span>
               </div>
-              <div className="text-3xl font-extrabold text-foreground">{openRate}%</div>
+              <div className="text-3xl font-extrabold text-foreground">{openRate.toFixed(1)}%</div>
             </div>
             
             <div className="bg-card border border-border rounded-xl p-5 shadow-sm flex-1 flex flex-col justify-center">
@@ -383,12 +447,10 @@ export default function Dashboard() {
                 <MessageSquare className="h-4 w-4 text-indigo-500" />
                 <span className="text-xs font-semibold uppercase tracking-wider">Reply Rate</span>
               </div>
-              <div className="text-3xl font-extrabold text-foreground">3.4%</div>
+              <div className="text-3xl font-extrabold text-foreground">{replyRate}%</div>
             </div>
           </div>
         </div>
-
-
 
         {/* Campaign Queue & Sync Status */}
         <CampaignQueueStatus />
@@ -410,7 +472,7 @@ export default function Dashboard() {
               ) : (
                 serverData.recent_logs.map((log, idx) => (
                   <div key={log.id || idx} className="flex gap-4 relative">
-                    {idx !== serverData.recent_logs.length - 1 && (
+                    {idx !== (serverData.recent_logs?.length || 0) - 1 && (
                       <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-border/60" />
                     )}
                     <div className={`z-10 h-8 w-8 rounded-full flex items-center justify-center shrink-0 border ${
@@ -442,66 +504,45 @@ export default function Dashboard() {
             <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-card/80 backdrop-blur-sm sticky top-0 z-10">
               <h2 className="text-base font-semibold text-foreground">Recent Replies</h2>
               <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1">
-                <Inbox className="h-3.5 w-3.5" /> 4 New
+                <Inbox className="h-3.5 w-3.5" /> {recentReplies.length} {recentReplies.length === 1 ? 'Message' : 'Messages'}
               </span>
             </div>
 
             <div className="overflow-y-auto flex-1 p-3 flex flex-col gap-2 divide-y divide-border/30">
-              {/* Reply Item 1 */}
-              <div className="pt-2 first:pt-0">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-foreground truncate">Michael Chen</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">10m ago</span>
+              {recentReplies.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 py-14 text-center text-muted-foreground">
+                  <Inbox className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                  <p className="text-xs font-semibold text-foreground">No replies yet</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Incoming prospect emails will sync here</p>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
-                  Thanks for reaching out. The platform looks interesting. Can we schedule a brief demo next Tuesday?
-                </p>
-                <span className="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Positive
-                </span>
-              </div>
-
-              {/* Reply Item 2 */}
-              <div className="pt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-foreground truncate">Elena Rodriguez</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">1h ago</span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
-                  Could you send over the pricing tiers for teams larger than 50? I need to review it with our VP.
-                </p>
-                <span className="inline-block bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-bold text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Info Request
-                </span>
-              </div>
-
-              {/* Reply Item 3 */}
-              <div className="pt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-foreground truncate">David Smith</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">3h ago</span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
-                  Not interested at this time. Please remove me from your list.
-                </p>
-                <span className="inline-block bg-muted border border-border text-muted-foreground font-bold text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Unsubscribe
-                </span>
-              </div>
-
-              {/* Reply Item 4 */}
-              <div className="pt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-foreground truncate">Amanda Lee</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">Yesterday</span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
-                  I'm out of the office until the 15th. I will review this upon my return.
-                </p>
-                <span className="inline-block bg-muted border border-border text-muted-foreground font-bold text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Auto-Reply
-                </span>
-              </div>
+              ) : (
+                recentReplies.map((msg) => (
+                  <div key={msg.id} className="pt-3 first:pt-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-foreground truncate max-w-[150px]">
+                        {msg.sender_name || msg.sender_email}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recent'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
+                      {msg.body_text || msg.subject || 'No preview available'}
+                    </p>
+                    <span className={`inline-block font-bold text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                      msg.sentiment === 'hot_lead'
+                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                        : msg.sentiment === 'question'
+                          ? 'bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400'
+                          : msg.sentiment === 'unsubscribe'
+                            ? 'bg-destructive/10 border border-destructive/20 text-destructive'
+                            : 'bg-muted border border-border text-muted-foreground'
+                    }`}>
+                      {msg.sentiment === 'hot_lead' ? 'Positive' : msg.sentiment === 'question' ? 'Question' : msg.sentiment === 'unsubscribe' ? 'Unsubscribe' : 'Neutral'}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="p-3 border-t border-border bg-muted/20 text-center">

@@ -16,7 +16,8 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
 const logger = require('../logger');
-const { processNextItem, personalise, completeCampaignIfNoActiveQueue } = require('../scheduler');
+const { processNextItem, triggerImmediateDispatch, personalise, completeCampaignIfNoActiveQueue } = require('../scheduler');
+const { calculateHumanizedSchedule } = require('../execution/timing');
 
 function createDefaultCampaignContent(subject, bodyHtml, bodyPlain) {
   const normalizedSubject = typeof subject === 'string' && subject.trim() ? subject.trim() : 'Untitled campaign';
@@ -182,14 +183,81 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+/** Preview timing & delivery timeframe simulation */
+router.post('/preview-timing', async (req, res) => {
+  try {
+    const {
+      recipients_count = 100,
+      account_ids,
+      start_time = '09:00',
+      end_time = '18:00',
+      timezone = 'Africa/Lagos',
+      ignore_window = false,
+      timing_mode = 'smart',
+      delay_seconds = 45,
+      min_delay = 30,
+      max_delay = 90,
+      cooldown_enabled = true,
+      cooldown_batch_size = 15,
+      cooldown_duration_minutes = 5,
+    } = req.body;
+
+    const db = await getDb();
+    let accounts = [];
+    if (account_ids && Array.isArray(account_ids) && account_ids.length > 0) {
+      const placeholders = account_ids.map(() => '?').join(',');
+      accounts = await db.prepare(`SELECT id, email, daily_limit FROM accounts WHERE id IN (${placeholders}) AND status = 'active'`).all(...account_ids);
+    } else {
+      accounts = await db.prepare("SELECT id, email, daily_limit FROM accounts WHERE status = 'active' AND user_id = ?").all(req.userId);
+    }
+
+    if (!accounts || accounts.length === 0) {
+      accounts = [{ id: null, email: 'Primary Account', daily_limit: 450 }];
+    }
+
+    const dummyRecipients = Array.from({ length: Math.min(10000, parseInt(recipients_count, 10) || 100) }, (_, i) => ({
+      email: `recipient_${i}@prospect.io`,
+    }));
+
+    const result = calculateHumanizedSchedule({
+      recipients: dummyRecipients,
+      accounts,
+      startTime: start_time,
+      endTime: end_time,
+      timezone,
+      ignoreWindow: !!ignore_window,
+      timingMode: timing_mode,
+      baseDelaySeconds: delay_seconds,
+      minDelaySeconds: min_delay,
+      maxDelaySeconds: max_delay,
+      cooldownEnabled: !!cooldown_enabled,
+      cooldownBatchSize: cooldown_batch_size,
+      cooldownDurationMinutes: cooldown_duration_minutes,
+      startTimestamp: new Date(),
+    });
+
+    res.json({
+      success: true,
+      summary: result.summary,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Create a new campaign. */
 router.post('/', async (req, res) => {
   const {
     name, subject, body_html, body_plain,
-    contact_list, delay_seconds = 30,
-    start_time = '08:00', end_time = '22:00',
+    contact_list, delay_seconds = 45,
+    start_time = '09:00', end_time = '18:00',
     content_variations, content_mode = 'single',
-    ignore_window = 0, steps
+    ignore_window = 0, timezone = 'Africa/Lagos',
+    account_ids, target_limit = 0, target_range_start = 0, target_range_end = 0, exclude_previously_contacted = 0, custom_filters,
+    format_type = 'html',
+    timing_mode = 'smart', min_delay = 30, max_delay = 90,
+    cooldown_enabled = 1, cooldown_batch_size = 15, cooldown_duration_minutes = 5,
+    steps
   } = req.body;
 
   if (!name) {
@@ -213,14 +281,32 @@ router.post('/', async (req, res) => {
         INSERT INTO campaigns
           (name, subject, body_html, body_plain, contact_list,
            delay_seconds, start_time, end_time, total_contacts,
-           content_variations, content_mode, ignore_window, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           content_variations, content_mode, ignore_window,
+           timezone, account_ids, target_limit, target_range_start, target_range_end, exclude_previously_contacted, custom_filters, format_type,
+           timing_mode, min_delay, max_delay, cooldown_enabled, cooldown_batch_size, cooldown_duration_minutes,
+           user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         name, content.subject, content.body_html, content.body_plain,
         resolvedContactList, delay_seconds, start_time, end_time,
         countRow ? countRow.total : 0,
-        content_variations ? JSON.stringify(content_variations) : null,
-        content_mode, ignore_window ? 1 : 0, req.userId
+        content_variations ? (typeof content_variations === 'string' ? content_variations : JSON.stringify(content_variations)) : null,
+        content_mode, ignore_window ? 1 : 0,
+        timezone || 'Africa/Lagos',
+        account_ids ? (typeof account_ids === 'string' ? account_ids : JSON.stringify(account_ids)) : null,
+        target_limit ? parseInt(target_limit, 10) : 0,
+        target_range_start ? parseInt(target_range_start, 10) : 0,
+        target_range_end ? parseInt(target_range_end, 10) : 0,
+        exclude_previously_contacted ? 1 : 0,
+        custom_filters ? (typeof custom_filters === 'string' ? custom_filters : JSON.stringify(custom_filters)) : null,
+        format_type || 'html',
+        timing_mode || 'smart',
+        parseInt(min_delay, 10) || 30,
+        parseInt(max_delay, 10) || 90,
+        cooldown_enabled ? 1 : 0,
+        parseInt(cooldown_batch_size, 10) || 15,
+        parseInt(cooldown_duration_minutes, 10) || 5,
+        req.userId
       );
 
       const campaignId = result.lastInsertRowid;
@@ -256,6 +342,8 @@ router.put('/:id', async (req, res) => {
     const allowed = [
       'name', 'subject', 'body_html', 'body_plain', 'contact_list',
       'delay_seconds', 'start_time', 'end_time', 'content_variations', 'content_mode', 'ignore_window',
+      'timezone', 'account_ids', 'target_limit', 'target_range_start', 'target_range_end', 'exclude_previously_contacted', 'custom_filters', 'format_type',
+      'timing_mode', 'min_delay', 'max_delay', 'cooldown_enabled', 'cooldown_batch_size', 'cooldown_duration_minutes'
     ];
 
     const updates = [];
@@ -265,7 +353,7 @@ router.put('/:id', async (req, res) => {
       if (fields[key] !== undefined) {
         updates.push(`${key} = ?`);
         let val = fields[key];
-        if (key === 'content_variations') {
+        if (key === 'content_variations' || key === 'account_ids' || key === 'custom_filters') {
           val = typeof fields[key] === 'string' ? fields[key] : JSON.stringify(fields[key]);
         }
         values.push(val);
@@ -467,18 +555,123 @@ router.post('/:id/launch', async (req, res) => {
       return res.status(400).json({ error: 'Campaign is already sending.' });
     }
 
-    // Get active accounts for rotation
-    const accounts = await db.prepare(
-      "SELECT id FROM accounts WHERE status = 'active' AND user_id = ?"
+    // Get active accounts for rotation (filtered by selected account_ids if configured)
+    let selectedAccountIds = [];
+    try {
+      const rawAcc = req.body.account_ids || campaign.account_ids;
+      if (Array.isArray(rawAcc)) selectedAccountIds = rawAcc.map(Number);
+      else if (typeof rawAcc === 'string' && rawAcc.trim()) {
+        selectedAccountIds = rawAcc.startsWith('[') ? JSON.parse(rawAcc).map(Number) : rawAcc.split(',').map(Number);
+      }
+    } catch (_) {}
+
+    let accounts = await db.prepare(
+      "SELECT id, email, display_name FROM accounts WHERE status = 'active' AND user_id = ?"
     ).all(req.userId);
+
+    if (selectedAccountIds.length > 0) {
+      const filtered = accounts.filter(a => selectedAccountIds.includes(a.id));
+      if (filtered.length > 0) {
+        accounts = filtered;
+      }
+    }
+
     if (accounts.length === 0) {
-      return res.status(400).json({ error: 'No active sender accounts. Add at least one Gmail account first.' });
+      return res.status(400).json({ error: 'No active sender accounts available for this campaign. Connect or select at least one active sender account.' });
     }
 
     // Get contacts for this campaign's list
-    const contacts = await db.prepare(
+    let contacts = await db.prepare(
       'SELECT email, fields FROM contacts WHERE list_name = ? AND user_id = ?'
     ).all(campaign.contact_list, req.userId);
+
+    // Apply Sent Memory deduplication if enabled
+    const excludeContacted = req.body.exclude_previously_contacted !== undefined
+      ? !!req.body.exclude_previously_contacted
+      : !!campaign.exclude_previously_contacted;
+
+    if (excludeContacted) {
+      const previouslySentRows = await db.prepare(
+        "SELECT DISTINCT LOWER(recipient_email) as email FROM logs WHERE (user_id = ? OR user_id IS NULL) AND status = 'sent'"
+      ).all(req.userId);
+      const sentEmailSet = new Set(previouslySentRows.map(r => (r.email || '').toLowerCase().trim()));
+      contacts = contacts.filter(c => !sentEmailSet.has((c.email || '').toLowerCase().trim()));
+    }
+
+    let customFilters = [];
+    try {
+      const rawFilters = req.body.custom_filters || campaign.custom_filters;
+      if (Array.isArray(rawFilters)) customFilters = rawFilters;
+      else if (typeof rawFilters === 'string' && rawFilters.trim()) customFilters = JSON.parse(rawFilters);
+    } catch (_) {}
+
+    if (Array.isArray(customFilters) && customFilters.length > 0) {
+      contacts = contacts.filter(c => {
+        let fieldsObj = {};
+        try {
+          fieldsObj = typeof c.fields === 'string' ? JSON.parse(c.fields) : (c.fields || {});
+        } catch (_) {}
+
+        return customFilters.every(rule => {
+          if (!rule || !rule.field) return true;
+          const op = String(rule.operator || 'contains').toLowerCase().trim();
+          const fVal = String(fieldsObj[rule.field] ?? c[rule.field] ?? '').toLowerCase().trim();
+          const targetVal = String(rule.value !== undefined ? rule.value : '').toLowerCase().trim();
+          const numFVal = parseFloat(fVal);
+          const numTargetVal = parseFloat(targetVal);
+
+          if (op === 'is_empty') return fVal === '';
+          if (op === 'is_not_empty') return fVal !== '';
+
+          if (rule.value === undefined || rule.value === '') return true;
+
+          switch (op) {
+            case 'equals':
+            case '=':
+              return fVal === targetVal;
+            case 'not_equals':
+            case '!=':
+            case '<>':
+              return fVal !== targetVal;
+            case 'contains':
+              return fVal.includes(targetVal);
+            case 'not_contains':
+              return !fVal.includes(targetVal);
+            case 'starts_with':
+              return fVal.startsWith(targetVal);
+            case 'ends_with':
+              return fVal.endsWith(targetVal);
+            case 'gt':
+            case '>':
+              return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal > numTargetVal : fVal > targetVal;
+            case 'lt':
+            case '<':
+              return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal < numTargetVal : fVal < targetVal;
+            case 'gte':
+            case '>=':
+              return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal >= numTargetVal : fVal >= targetVal;
+            case 'lte':
+            case '<=':
+              return !isNaN(numFVal) && !isNaN(numTargetVal) ? numFVal <= numTargetVal : fVal <= targetVal;
+            default:
+              return true;
+          }
+        });
+      });
+    }
+
+    // Apply targeted lead range (e.g. Row 500 to 600) or target limit
+    const rangeStart = parseInt(req.body.target_range_start ?? campaign.target_range_start ?? 0, 10);
+    const rangeEnd = parseInt(req.body.target_range_end ?? campaign.target_range_end ?? 0, 10);
+    const targetLimit = parseInt(req.body.target_limit ?? campaign.target_limit ?? 0, 10);
+
+    if (rangeStart > 0 && rangeEnd >= rangeStart) {
+      const startIdx = Math.max(0, rangeStart - 1);
+      const endIdx = Math.min(contacts.length, rangeEnd);
+      contacts = contacts.slice(startIdx, endIdx);
+    } else if (targetLimit > 0 && contacts.length > targetLimit) {
+      contacts = contacts.slice(0, targetLimit);
+    }
 
     const existingQueueRows = await db.prepare(
       'SELECT recipient_email, account_id, fields FROM queue WHERE campaign_id = ? AND status IN (\'pending\', \'sending\')'
@@ -490,7 +683,7 @@ router.post('/:id/launch', async (req, res) => {
     });
 
     if (!plan.recipients || plan.recipients.length === 0) {
-      return res.status(400).json({ error: 'No recipients available for launch. Add contacts or provide recipients in the request.' });
+      return res.status(400).json({ error: 'No recipients available for launch. Add contacts or adjust audience filters.' });
     }
 
     const content = createDefaultCampaignContent(campaign.subject, campaign.body_html, campaign.body_plain);
@@ -514,6 +707,7 @@ router.post('/:id/launch', async (req, res) => {
 
       const now = new Date();
       let currentScheduledTime = now.getTime();
+      const spacingSeconds = Math.max(1, parseInt(campaign.delay_seconds, 10) || 30);
 
       for (let index = 0; index < plan.recipients.length; index++) {
         const recipient = plan.recipients[index];
@@ -521,8 +715,6 @@ router.post('/:id/launch', async (req, res) => {
         const accountId = recipient.account_id ?? accounts[index % accounts.length]?.id ?? null;
         if (!recipientEmail) continue;
 
-        // Random spacing between 30 and 90 seconds (in milliseconds)
-        const spacingSeconds = Math.floor(Math.random() * (90 - 30 + 1)) + 30;
         if (index > 0) {
           currentScheduledTime += spacingSeconds * 1000;
         }
@@ -552,11 +744,11 @@ router.post('/:id/launch', async (req, res) => {
 
     await launchTx();
 
-    // Attempt to kick off immediate processing; capture any error to return to the client
+    // Kick off immediate real-time dispatch worker
     let processingStarted = true;
     let processingError = null;
     try {
-      await processNextItem();
+      triggerImmediateDispatch().catch(err => logger.error({ err }, 'Error in immediate launch dispatch'));
     } catch (processErr) {
       processingStarted = false;
       processingError = processErr && processErr.message ? processErr.message : String(processErr);
@@ -701,12 +893,12 @@ router.get('/:id/preview', async (req, res) => {
     const subject = step ? step.subject : campaign.subject;
     const body_html = step ? step.body_html : campaign.body_html;
 
-    const mockContacts = contacts.length > 0 ? contacts : [
+    const sampleContacts = contacts.length > 0 ? contacts : [
       { email: 'john@example.com', fields: JSON.stringify({ first_name: 'John', store_name: 'John\'s Shop' }) },
       { email: 'jane@example.com', fields: JSON.stringify({ first_name: 'Jane', store_name: 'Jane\'s Boutique' }) }
     ];
     
-    const previews = mockContacts.map((c, index) => {
+    const previews = sampleContacts.map((c, index) => {
       const acc = accounts[index % accounts.length] || defaultAccount;
       return {
         recipient_email: c.email,

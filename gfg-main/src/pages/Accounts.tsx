@@ -11,7 +11,7 @@ import {
   Mail, Plus, Trash2, RefreshCw, Play, Pause, User, Sparkles, CheckCircle2, 
   AlertTriangle, Info, Server, Search, Filter, ShieldCheck, Activity, 
   Settings, ArrowLeft, ExternalLink, X, TrendingUp, Check, ShieldAlert,
-  Flame, MonitorHeart, SlidersHorizontal, MoreVertical, Layers
+  Flame, MonitorHeart, SlidersHorizontal, MoreVertical, Layers, Lock, Key
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,18 @@ export default function Accounts({ requirePin }: AccountsProps) {
   const [editingName, setEditingName] = useState<Record<number, string>>({});
   const [editingLimit, setEditingLimit] = useState<Record<number, number>>({});
   const [savingNameId, setSavingNameId] = useState<number | null>(null);
+  const [savingLimitId, setSavingLimitId] = useState<number | null>(null);
+
+  // Security Reset Code Protection
+  const [resetCodeConfigured, setResetCodeConfigured] = useState<boolean>(false);
+  const [showSetResetCodeModal, setShowSetResetCodeModal] = useState<boolean>(false);
+  const [resetCodeInput, setResetCodeInput] = useState<string>('');
+  const [savingResetCode, setSavingResetCode] = useState<boolean>(false);
+
+  const [showAuthorizeResetModal, setShowAuthorizeResetModal] = useState<boolean>(false);
+  const [resetCodeConfirmInput, setResetCodeConfirmInput] = useState<string>('');
+  const [resettingAccountId, setResettingAccountId] = useState<number | null>(null);
+  const [performingReset, setPerformingReset] = useState<boolean>(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -56,10 +68,16 @@ export default function Accounts({ requirePin }: AccountsProps) {
       const limits: Record<number, number> = {};
       data.forEach(a => {
         names[a.id] = a.display_name || '';
-        limits[a.id] = 250; // default cap
+        limits[a.id] = a.daily_limit || 450;
       });
       setEditingName(names);
       setEditingLimit(limits);
+
+      // Check reset code status
+      try {
+        const codeStatus = await api.getResetCodeStatus();
+        setResetCodeConfigured(codeStatus.configured);
+      } catch (_) {}
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -218,28 +236,80 @@ export default function Accounts({ requirePin }: AccountsProps) {
     }
   };
 
-  const handleReset = (id: number) => {
-    const action = async () => {
-      try {
-        await api.resetAccount(id);
-        toast({
-          title: 'Sending Volume Reset',
-          description: 'Daily sending counter set back to 0.'
-        });
-        loadAccounts();
-      } catch (e: any) {
-        toast({
-          variant: 'destructive',
-          title: 'Error resetting counter',
-          description: e.message
-        });
-      }
-    };
+  const handleSaveLimit = async (id: number) => {
+    try {
+      setSavingLimitId(id);
+      const limitVal = editingLimit[id] || 450;
+      await api.updateAccountLimit(id, limitVal);
+      toast({
+        title: 'Daily Limit Configured',
+        description: `Sending threshold configured to ${limitVal} emails/day.`
+      });
+      loadAccounts();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error saving limit',
+        description: e.message
+      });
+    } finally {
+      setSavingLimitId(null);
+    }
+  };
 
-    if (requirePin) {
-      requirePin('reset account volume', action);
-    } else {
-      action();
+  const handleSetResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetCodeInput || resetCodeInput.trim().length < 3) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid Reset Code',
+        description: 'Code must be at least 3 characters long.'
+      });
+      return;
+    }
+    try {
+      setSavingResetCode(true);
+      await api.setResetCode(resetCodeInput.trim());
+      setResetCodeConfigured(true);
+      setShowSetResetCodeModal(false);
+      setResetCodeInput('');
+      toast({
+        title: 'Security Reset Code Saved',
+        description: 'Volume counter resets now require this security authorization code.'
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error configuring reset code',
+        description: e.message
+      });
+    } finally {
+      setSavingResetCode(false);
+    }
+  };
+
+  const handleAuthorizedReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resettingAccountId) return;
+    try {
+      setPerformingReset(true);
+      await api.resetAccount(resettingAccountId, resetCodeConfirmInput);
+      toast({
+        title: 'Volume Counter Reset',
+        description: 'Daily sending counter has been reset to 0.'
+      });
+      setShowAuthorizeResetModal(false);
+      setResetCodeConfirmInput('');
+      setResettingAccountId(null);
+      loadAccounts();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Reset Rejected',
+        description: e.message || 'Invalid reset code. Reset aborted.'
+      });
+    } finally {
+      setPerformingReset(false);
     }
   };
 
@@ -312,7 +382,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
   const activeCount = accounts.filter(a => a.status === 'active').length;
   const pausedCount = accounts.filter(a => a.status === 'paused').length;
   const totalSentToday = accounts.reduce((sum, a) => sum + (a.daily_sent || 0), 0);
-  const totalDailyCap = accounts.length * 250;
+  const totalDailyCap = accounts.reduce((sum, a) => sum + (a.daily_limit || 450), 0);
 
   return (
     <AppShell>
@@ -329,11 +399,23 @@ export default function Accounts({ requirePin }: AccountsProps) {
               Mailboxes
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage your connected sending accounts and monitor deliverability health.
+              Manage your connected sending accounts, configure daily send limits, and monitor deliverability health.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResetCodeInput('');
+                setShowSetResetCodeModal(true);
+              }}
+              className="h-10 px-3.5 text-xs font-semibold gap-2 border-border/60 hover:bg-muted"
+              title="Set or update your security reset authorization code"
+            >
+              <Key className="h-4 w-4 text-[#635bff]" />
+              {resetCodeConfigured ? 'Update Reset Code' : 'Set Reset Code'}
+            </Button>
             <Button
               onClick={() => setShowConnectModal(true)}
               className="h-10 px-5 text-xs font-semibold gap-2 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-sm"
@@ -462,7 +544,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
             ) : (
               filteredAccounts.map((acct) => {
                 const sent = acct.daily_sent || 0;
-                const limit = 250;
+                const limit = acct.daily_limit || 450;
                 const pct = Math.min(Math.round((sent / limit) * 100), 100);
 
                 return (
@@ -505,7 +587,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
                     <div className="col-span-1 md:col-span-3 flex flex-col gap-1.5">
                       <div className="flex justify-between text-xs">
                         <span className="font-mono text-foreground font-semibold">{sent} Sent</span>
-                        <span className="text-muted-foreground font-mono">{limit} Limit</span>
+                        <span className="text-muted-foreground font-mono">{limit} Limit / Day</span>
                       </div>
                       <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
@@ -547,6 +629,109 @@ export default function Accounts({ requirePin }: AccountsProps) {
           </div>
         </div>
       </div>
+
+      {/* Set Security Reset Code Modal */}
+      <Dialog open={showSetResetCodeModal} onOpenChange={setShowSetResetCodeModal}>
+        <DialogContent className="sm:max-w-md rounded-2xl border border-border/80 bg-card p-6 shadow-2xl">
+          <DialogHeader className="space-y-1 text-left">
+            <DialogTitle className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
+              <Lock className="h-5 w-5 text-[#635bff]" /> Security Reset Code
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Configure a personal security PIN / passcode to guard your daily sending volume counters against accidental resets.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSetResetCode} className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Set Security Reset Code (PIN / Password)</label>
+              <Input
+                type="password"
+                placeholder="e.g. 7842 or MySecretPin"
+                value={resetCodeInput}
+                onChange={e => setResetCodeInput(e.target.value)}
+                className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest"
+                required
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Minimum 3 characters. Once set, resetting an account's daily volume requires this code.
+              </p>
+            </div>
+
+            <DialogFooter className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowSetResetCodeModal(false)}
+                className="rounded-lg h-9 text-xs font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingResetCode}
+                className="rounded-lg bg-[#635bff] hover:bg-[#493ee5] text-white h-9 px-5 text-xs font-bold"
+              >
+                {savingResetCode ? 'Saving Code...' : 'Save Reset Code'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Authorize Volume Counter Reset Modal */}
+      <Dialog open={showAuthorizeResetModal} onOpenChange={setShowAuthorizeResetModal}>
+        <DialogContent className="sm:max-w-md rounded-2xl border border-border/80 bg-card p-6 shadow-2xl">
+          <DialogHeader className="space-y-1 text-left">
+            <DialogTitle className="font-heading text-lg font-bold text-foreground flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <ShieldAlert className="h-5 w-5 text-amber-600" /> Authorize Volume Reset
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              To prevent accidental counter resets, enter your Security Reset Code to authorize resetting the daily volume counter for this mailbox.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAuthorizedReset} className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Security Reset Code</label>
+              <Input
+                type="password"
+                placeholder="Enter reset code..."
+                value={resetCodeConfirmInput}
+                onChange={e => setResetCodeConfirmInput(e.target.value)}
+                className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest"
+                required
+                autoFocus
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Enter the code configured in your security settings to proceed with the reset.
+              </p>
+            </div>
+
+            <DialogFooter className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAuthorizeResetModal(false);
+                  setResetCodeConfirmInput('');
+                  setResettingAccountId(null);
+                }}
+                className="rounded-lg h-9 text-xs font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={performingReset}
+                className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white h-9 px-5 text-xs font-bold"
+              >
+                {performingReset ? 'Verifying...' : 'Authorize Reset'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Connection Selection Modal */}
       <Dialog open={showConnectModal} onOpenChange={setShowConnectModal}>
@@ -783,18 +968,23 @@ export default function Accounts({ requirePin }: AccountsProps) {
               {/* Connection & Settings Section */}
               <div className="space-y-3">
                 <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
-                  Mailbox Configuration
+                  Mailbox Configuration & Limits
                 </h3>
 
-                <div className="p-4 bg-card border border-border/60 rounded-xl space-y-3 text-xs">
-                  <div className="flex justify-between items-center pb-2 border-b border-border/40">
-                    <span className="text-muted-foreground">Display Name</span>
+                <div className="p-4 bg-card border border-border/60 rounded-xl space-y-4 text-xs">
+                  {/* Display Name */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border/40">
+                    <div>
+                      <span className="font-bold text-foreground block">Sender Display Name</span>
+                      <span className="text-[11px] text-muted-foreground">Name shown to recipients in email client</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
+                        placeholder="e.g. Sales Team"
                         value={editingName[selectedMailboxDetail.id] ?? ''}
                         onChange={(e) => setEditingName({ ...editingName, [selectedMailboxDetail.id]: e.target.value })}
-                        className="h-8 px-2.5 rounded-md border border-border/80 bg-background text-xs"
+                        className="h-8 px-2.5 rounded-md border border-border/80 bg-background text-xs w-44"
                       />
                       <Button
                         size="sm"
@@ -807,16 +997,83 @@ export default function Accounts({ requirePin }: AccountsProps) {
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center py-2 border-b border-border/40">
-                    <span className="text-muted-foreground">Daily Volume Cap</span>
-                    <span className="font-bold text-foreground font-mono">250 emails / day</span>
+                  {/* Daily Send Limit Configuration */}
+                  <div className="space-y-2.5 pb-3 border-b border-border/40">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-foreground block">Daily Send Limit (Emails / Day)</span>
+                        <span className="text-[11px] text-muted-foreground">Maximum emails this mailbox can send per day across all campaigns</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          value={editingLimit[selectedMailboxDetail.id] ?? selectedMailboxDetail.daily_limit ?? 450}
+                          onChange={(e) => setEditingLimit({ ...editingLimit, [selectedMailboxDetail.id]: Math.max(1, Number(e.target.value)) })}
+                          className="h-8 px-2.5 rounded-md border border-border/80 bg-background text-xs font-bold font-mono w-24 text-right"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveLimit(selectedMailboxDetail.id)}
+                          disabled={savingLimitId === selectedMailboxDetail.id}
+                          className="h-8 text-xs font-bold bg-[#635bff] text-white"
+                        >
+                          {savingLimitId === selectedMailboxDetail.id ? 'Saving...' : 'Save Limit'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-muted-foreground font-semibold">Quick Presets:</span>
+                      {[
+                        { label: '50 (Warmup)', val: 50 },
+                        { label: '150 (Safe)', val: 150 },
+                        { label: '450 (Standard)', val: 450 },
+                        { label: '1,000 (Bulk)', val: 1000 },
+                        { label: '2,500 (Max)', val: 2500 }
+                      ].map(preset => (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => {
+                            setEditingLimit({ ...editingLimit, [selectedMailboxDetail.id]: preset.val });
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border cursor-pointer transition-all ${
+                            (editingLimit[selectedMailboxDetail.id] ?? selectedMailboxDetail.daily_limit ?? 450) === preset.val
+                              ? 'border-[#635bff] bg-[#635bff]/10 text-[#635bff] font-bold'
+                              : 'border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="flex justify-between items-center pt-1">
-                    <span className="text-muted-foreground">Last Volume Reset</span>
-                    <span className="font-mono text-foreground">
-                      {selectedMailboxDetail.last_reset ? new Date(selectedMailboxDetail.last_reset).toLocaleDateString() : 'Active'}
-                    </span>
+                  {/* Security Reset Protection */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                    <div>
+                      <span className="font-bold text-foreground block flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-[#635bff]" /> Security Protected Volume Reset
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        Counter: <strong>{selectedMailboxDetail.daily_sent || 0}</strong> sent today · Resets automatically at midnight
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setResettingAccountId(selectedMailboxDetail.id);
+                        setResetCodeConfirmInput('');
+                        setShowAuthorizeResetModal(true);
+                      }}
+                      className="h-8 text-xs font-semibold gap-1.5 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                    >
+                      <Key className="h-3.5 w-3.5" /> Authorize Volume Reset
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -851,14 +1108,6 @@ export default function Accounts({ requirePin }: AccountsProps) {
               </Button>
 
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleReset(selectedMailboxDetail.id)}
-                  className="h-9 text-xs font-bold gap-1.5"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" /> Reset Volume Counter
-                </Button>
                 <Button
                   size="sm"
                   onClick={() => handleToggleStatus(selectedMailboxDetail.id, selectedMailboxDetail.status)}

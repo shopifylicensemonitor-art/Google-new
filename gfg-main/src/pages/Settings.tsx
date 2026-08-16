@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
 import { Button } from '@/components/ui/button';
@@ -8,11 +9,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { useUI } from '@/context/UIContext';
+import { useKPITargets, DEFAULT_KPI_TARGETS } from '@/hooks/useKPITargets';
 import { 
   CreditCard, Download, Edit, Lock, Bell, Shield, User, Sparkles, 
   AlertTriangle, Plus, Save, Building, Mail, FileText, Globe, Clock, 
   Key, Check, CheckCircle2, RefreshCw, ChevronRight, Laptop, Smartphone,
-  Zap, ArrowUpRight, Sun, Moon, Keyboard, BatteryCharging, ZapOff
+  Zap, ArrowUpRight, Sun, Moon, Keyboard, BatteryCharging, ZapOff,
+  Target, TrendingUp, MailOpen, MousePointerClick, MessageSquare, ShieldAlert, RotateCcw
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
@@ -23,43 +26,54 @@ interface Invoice {
   status: 'Paid' | 'Pending';
 }
 
-const INITIAL_INVOICES: Invoice[] = [
-  { id: 'INV-2023-009', date: 'Sep 15, 2023', amount: '$49.00', status: 'Paid' },
-  { id: 'INV-2023-008', date: 'Aug 15, 2023', amount: '$49.00', status: 'Paid' },
-  { id: 'INV-2023-007', date: 'Jul 15, 2023', amount: '$49.00', status: 'Paid' },
-  { id: 'INV-2023-006', date: 'Jun 15, 2023', amount: '$49.00', status: 'Paid' },
-];
-
 export default function Settings() {
   const { theme, setTheme, toggleTheme } = useTheme();
   const { batterySaver, toggleBatterySaver } = useUI();
-  const [activeTab, setActiveTab] = useState<'billing' | 'general' | 'security' | 'notifications'>('general');
+  const [activeTab, setActiveTab] = useState<'profile' | 'billing' | 'general' | 'security' | 'notifications'>('profile');
+
+  // User Profile state
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profilePicture, setProfilePicture] = useState('');
+  const [profileRole, setProfileRole] = useState('user');
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // General state
-  const [workspaceName, setWorkspaceName] = useState('OutreachFlow Pro');
-  const [defaultSenderName, setDefaultSenderName] = useState('Alex Miller');
-  const [defaultSenderEmail, setDefaultSenderEmail] = useState('alex@acmecorp.com');
+  const [workspaceName, setWorkspaceName] = useState('Peak Console');
+  const [defaultSenderName, setDefaultSenderName] = useState('');
+  const [defaultSenderEmail, setDefaultSenderEmail] = useState('');
   const [timezone, setTimezone] = useState('America/New_York (UTC-5)');
   const [language, setLanguage] = useState('English (US)');
 
   // Billing & Payment Details state
-  const [companyName, setCompanyName] = useState('Acme Corp Ltd.');
-  const [billingEmail, setBillingEmail] = useState('billing@acmecorp.com');
-  const [taxId, setTaxId] = useState('GB123456789');
+  // KPI Targets & Benchmarks state
+  const { targets: savedKpiTargets, updateTargets: updateKpiTargets, resetTargets: resetKpiTargets } = useKPITargets();
+  const [kpiForm, setKpiForm] = useState(savedKpiTargets);
+
+  useEffect(() => {
+    setKpiForm(savedKpiTargets);
+  }, [savedKpiTargets]);
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [companyName, setCompanyName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [taxId, setTaxId] = useState('');
   const [editBillingOpen, setEditBillingOpen] = useState(false);
   const [addPaymentOpen, setAddPaymentOpen] = useState(false);
 
   // Card details form
-  const [cardNumber, setCardNumber] = useState('•••• •••• •••• 4421');
-  const [cardExpiry, setCardExpiry] = useState('12/25');
-  const [cardCvc, setCardCvc] = useState('•••');
-  const [cardHolder, setCardHolder] = useState('Alex Miller');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvc, setCardCvc] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
 
   // Security state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   // Notification state
   const [notifyLowQuota, setNotifyLowQuota] = useState(true);
@@ -67,7 +81,61 @@ export default function Settings() {
   const [notifyCampaignComplete, setNotifyCampaignComplete] = useState(true);
   const [notifyBounceWarning, setNotifyBounceWarning] = useState(true);
 
+  // Load user profile on mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      setLoadingProfile(true);
+      try {
+        const user = await api.getCurrentUser();
+        if (user) {
+          setProfileName(user.name || '');
+          setProfileEmail(user.email || '');
+          setProfilePicture(user.picture || '');
+          setProfileRole(user.role || 'user');
+          if (user.name) setDefaultSenderName(user.name);
+          if (user.email) {
+            setDefaultSenderEmail(user.email);
+            setBillingEmail(user.email);
+          }
+        }
+      } catch (err: any) {
+        console.warn('Could not load user profile', err);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    loadProfile();
+  }, []);
+
   // Handlers
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileName.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation Error',
+        description: 'Profile name cannot be empty.'
+      });
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await api.updateProfile(profileName.trim(), profilePicture.trim());
+      toast({
+        title: 'Profile Updated',
+        description: 'Your user profile details have been saved successfully.'
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Profile Update Failed',
+        description: err.message || 'Could not save profile details.'
+      });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const handleSaveGeneral = (e: React.FormEvent) => {
     e.preventDefault();
     toast({
@@ -99,8 +167,16 @@ export default function Settings() {
     });
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newPassword.length < 6) {
+      toast({
+        variant: 'destructive',
+        title: 'Password Too Short',
+        description: 'New password must be at least 6 characters long.'
+      });
+      return;
+    }
     if (newPassword !== confirmPassword) {
       toast({
         variant: 'destructive',
@@ -109,13 +185,28 @@ export default function Settings() {
       });
       return;
     }
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    toast({
-      title: 'Password Updated',
-      description: 'Your account password has been changed.'
-    });
+    setUpdatingPassword(true);
+    try {
+      await api.changePassword({
+        currentPassword: currentPassword || undefined,
+        newPassword
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      toast({
+        title: 'Password Changed Successfully',
+        description: 'Your account password has been updated.'
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Password Change Failed',
+        description: err.message || 'Could not change password.'
+      });
+    } finally {
+      setUpdatingPassword(false);
+    }
   };
 
   const handleSaveNotifications = () => {
@@ -154,6 +245,16 @@ export default function Settings() {
 
         {/* Tab Navigation Bar */}
         <div className="border-b border-border/60 flex overflow-x-auto no-scrollbar gap-1">
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 ${
+              activeTab === 'profile'
+                ? 'border-[#635bff] text-[#635bff]'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Profile &amp; Account
+          </button>
           <button
             onClick={() => setActiveTab('general')}
             className={`px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 ${
@@ -195,6 +296,102 @@ export default function Settings() {
             Notifications
           </button>
         </div>
+
+        {/* TAB 0: PROFILE & ACCOUNT */}
+        {activeTab === 'profile' && (
+          <div className="space-y-6 max-w-3xl">
+            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                    <User className="h-4 w-4 text-[#635bff]" /> User Profile &amp; Identity
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Update your personal account credentials and display avatar.
+                  </p>
+                </div>
+                <Badge className="bg-[#635bff]/10 text-[#635bff] border-[#635bff]/20 font-mono text-[10px] uppercase font-bold">
+                  {profileRole.toUpperCase()}
+                </Badge>
+              </div>
+
+              {loadingProfile ? (
+                <div className="py-8 flex justify-center items-center gap-2 text-xs text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin text-[#635bff]" /> Loading profile...
+                </div>
+              ) : (
+                <form onSubmit={handleSaveProfile} className="space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl bg-muted/20 border border-border/50">
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-[#635bff]/10 border-2 border-[#635bff]/30 flex items-center justify-center text-lg font-bold text-[#635bff] shrink-0">
+                      {profilePicture ? (
+                        <img src={profilePicture} alt={profileName} className="w-full h-full object-cover" />
+                      ) : (
+                        (profileName || 'U').charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="space-y-1 text-center sm:text-left flex-1">
+                      <div className="font-bold text-sm text-foreground">
+                        {profileName || 'Account User'}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {profileEmail || 'user@peakxender.com'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground">Full Name / Display Name</label>
+                    <Input
+                      placeholder="e.g. Alex Miller"
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
+                      className="h-10 text-xs bg-background"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground">Account Email</label>
+                    <Input
+                      type="email"
+                      value={profileEmail}
+                      disabled
+                      className="h-10 text-xs bg-muted/40 cursor-not-allowed opacity-80"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Primary sign-in email. Managed via authentication provider.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground">Avatar / Profile Picture URL</label>
+                    <Input
+                      placeholder="https://example.com/avatar.jpg"
+                      value={profilePicture}
+                      onChange={(e) => setProfilePicture(e.target.value)}
+                      className="h-10 text-xs bg-background"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <Button
+                      type="submit"
+                      disabled={savingProfile}
+                      className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                    >
+                      {savingProfile ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      <span>{savingProfile ? 'Saving...' : 'Save Profile Details'}</span>
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: GENERAL */}
         {activeTab === 'general' && (
@@ -276,6 +473,187 @@ export default function Settings() {
                     className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
                   >
                     <Save className="h-4 w-4" /> Save Workspace Settings
+                  </Button>
+                </div>
+              </form>
+            </div>
+
+            {/* KPI Targets & Deliverability Benchmarks Card */}
+            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                    <Target className="h-4 w-4 text-[#635bff]" /> KPI Targets &amp; Performance Benchmarks
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Define your organization outreach targets, expected conversion benchmarks, and safety limits.
+                  </p>
+                </div>
+                <Badge className="bg-[#635bff]/10 text-[#635bff] border-[#635bff]/20 font-mono text-[10px] uppercase font-bold">
+                  {kpiForm.dailyGoal.toLocaleString()} EMAILS/DAY GOAL
+                </Badge>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  updateKpiTargets(kpiForm);
+                  toast({
+                    title: '🎯 KPI Targets Saved',
+                    description: 'Global outreach benchmarks and safety thresholds have been updated.',
+                  });
+                }}
+                className="space-y-4"
+              >
+                {/* Daily Target */}
+                <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <TrendingUp className="h-4 w-4 text-[#635bff]" /> Daily Sending Target (Emails / Day)
+                    </label>
+                    <span className="text-xs font-mono font-bold text-[#635bff]">
+                      {kpiForm.dailyGoal.toLocaleString()} emails
+                    </span>
+                  </div>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="50000"
+                    value={kpiForm.dailyGoal || ''}
+                    onChange={(e) => setKpiForm(prev => ({ ...prev, dailyGoal: parseInt(e.target.value, 10) || 0 }))}
+                    className="h-10 text-xs bg-background font-mono"
+                    required
+                  />
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[11px] text-muted-foreground mr-1">Quick Presets:</span>
+                    {[100, 250, 500, 1000, 2500].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setKpiForm(prev => ({ ...prev, dailyGoal: val }))}
+                        className={`text-[11px] px-2.5 py-0.5 rounded-md font-mono border transition-all ${
+                          kpiForm.dailyGoal === val
+                            ? 'bg-[#635bff] text-white border-[#635bff]'
+                            : 'bg-background hover:bg-muted text-muted-foreground border-border/60'
+                        }`}
+                      >
+                        {val.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conversion Benchmarks */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-1.5">
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <MailOpen className="h-3.5 w-3.5 text-blue-500" /> Target Open %
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="1"
+                        max="100"
+                        value={kpiForm.targetOpenRate || ''}
+                        onChange={(e) => setKpiForm(prev => ({ ...prev, targetOpenRate: parseFloat(e.target.value) || 0 }))}
+                        className="h-9 text-xs bg-background font-mono pr-6"
+                        required
+                      />
+                      <span className="absolute right-2 top-2 text-xs text-muted-foreground font-mono">%</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Standard: 40–50%</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-1.5">
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <MousePointerClick className="h-3.5 w-3.5 text-amber-500" /> Target Click %
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        max="100"
+                        value={kpiForm.targetClickRate || ''}
+                        onChange={(e) => setKpiForm(prev => ({ ...prev, targetClickRate: parseFloat(e.target.value) || 0 }))}
+                        className="h-9 text-xs bg-background font-mono pr-6"
+                        required
+                      />
+                      <span className="absolute right-2 top-2 text-xs text-muted-foreground font-mono">%</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Standard: 5–10%</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-1.5">
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <MessageSquare className="h-3.5 w-3.5 text-purple-500" /> Target Reply %
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        max="100"
+                        value={kpiForm.targetReplyRate || ''}
+                        onChange={(e) => setKpiForm(prev => ({ ...prev, targetReplyRate: parseFloat(e.target.value) || 0 }))}
+                        className="h-9 text-xs bg-background font-mono pr-6"
+                        required
+                      />
+                      <span className="absolute right-2 top-2 text-xs text-muted-foreground font-mono">%</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Standard: 3–8%</p>
+                  </div>
+                </div>
+
+                {/* Safety Bounce Limit */}
+                <div className="p-4 rounded-xl border border-rose-500/20 bg-rose-500/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <ShieldAlert className="h-4 w-4 text-rose-500" /> Max Allowed Bounce Rate (%)
+                    </label>
+                    <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400">
+                      {kpiForm.maxBounceRate}% max limit
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0.5"
+                      max="20"
+                      value={kpiForm.maxBounceRate || ''}
+                      onChange={(e) => setKpiForm(prev => ({ ...prev, maxBounceRate: parseFloat(e.target.value) || 0 }))}
+                      className="h-9 text-xs bg-background font-mono pr-6 border-rose-500/30"
+                      required
+                    />
+                    <span className="absolute right-3 top-2 text-xs text-muted-foreground font-mono">%</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    If any active campaign or direct send batch exceeds this bounce rate, delivery alerts are triggered immediately.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      resetKpiTargets();
+                      setKpiForm(DEFAULT_KPI_TARGETS);
+                      toast({ title: 'Defaults Restored', description: 'Standard benchmark goals applied.' });
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Restore Default Benchmarks
+                  </Button>
+
+                  <Button
+                    type="submit"
+                    className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                  >
+                    <Save className="h-4 w-4" /> Save KPI Targets
                   </Button>
                 </div>
               </form>
@@ -514,37 +892,45 @@ export default function Settings() {
                 </div>
 
                 <div className="divide-y divide-border/40">
-                  {INITIAL_INVOICES.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors group text-xs"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-muted/60 flex items-center justify-center text-muted-foreground shrink-0 border border-border/50">
-                          <FileText className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="font-bold font-mono text-foreground">{inv.id}</p>
-                          <p className="text-[11px] text-muted-foreground">{inv.date}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-4">
-                        <span className="font-mono font-bold text-foreground">{inv.amount}</span>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          {inv.status}
-                        </span>
-                        <button
-                          onClick={() => handleDownloadInvoice(inv)}
-                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                          title="Download PDF"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
-                      </div>
+                  {invoices.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center">
+                      <FileText className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                      <p className="text-xs font-semibold text-foreground">No invoices yet</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Billing receipts and payment history will appear here.</p>
                     </div>
-                  ))}
+                  ) : (
+                    invoices.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors group text-xs"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-muted/60 flex items-center justify-center text-muted-foreground shrink-0 border border-border/50">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className="font-bold font-mono text-foreground">{inv.id}</p>
+                            <p className="text-[11px] text-muted-foreground">{inv.date}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <span className="font-mono font-bold text-foreground">{inv.amount}</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            {inv.status}
+                          </span>
+                          <button
+                            onClick={() => handleDownloadInvoice(inv)}
+                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                            title="Download PDF"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
