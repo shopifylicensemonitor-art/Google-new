@@ -128,7 +128,6 @@ CREATE TABLE IF NOT EXISTS campaign_steps (
   body_html TEXT,
   body_plain TEXT,
   delay_seconds INTEGER DEFAULT 86400,
-  trigger_event TEXT DEFAULT 'wait',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -60,9 +60,6 @@ const Inbox = lazyWithRetry(() => import("./pages/Inbox"));
 
 const Blog = lazyWithRetry(() => import("./pages/Blog"));
 const BlogPost = lazyWithRetry(() => import("./pages/BlogPost"));
-const EmailVerification = lazyWithRetry(() => import("./pages/EmailVerification"));
-const ForgotPassword = lazyWithRetry(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazyWithRetry(() => import("./pages/ResetPassword"));
 
 // Use HashRouter in native apps (no server to handle URL paths),
 // BrowserRouter on web where Netlify handles routing.
@@ -77,11 +74,6 @@ const CLARITY_PROJECT_ID = "q6srfz9g0o";
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
-
-const RootRoute = () => {
-  const token = localStorage.getItem("auth_token");
-  return token ? <Navigate to="/dashboard" replace /> : <Landing />;
-};
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [isVerifying, setIsVerifying] = useState(true);
@@ -150,7 +142,7 @@ const App = () => {
       localStorage.setItem("auth_token", token);
       const cleanUrl = window.location.pathname;
       window.history.replaceState({}, "", cleanUrl);
-      navigateToRoute("/dashboard", { replace: true });
+      navigateToRoute(window.location.pathname + window.location.hash, { replace: true });
     }
   }, []);
 
@@ -163,11 +155,8 @@ const App = () => {
           <ErrorBoundary>
             <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted-foreground bg-background">Loading...</div>}>
               <Routes>
-              <Route path="/" element={<RootRoute />} />
+              <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
-              <Route path="/verify-email" element={<EmailVerification />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/help" element={<Help />} />

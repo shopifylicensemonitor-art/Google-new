@@ -59,23 +59,7 @@ This project is built with:
 
 ## How can I deploy this project?
 
-This project can be deployed using several methods:
-
-1. **Netlify** (Recommended)
-   - Connect your repository to Netlify
-   - Set environment variables (DATABASE_URL, API keys)
-   - Deploy via Git push
-
-2. **Self-hosted (Node.js)**
-   - Run `npm install && npm run build`
-   - Set environment variables on your server
-   - Start with `node server.js`
-
-3. **Docker**
-   - Build image: `docker build -t peak-xender .`
-   - Run: `docker run -e DATABASE_URL=... -p 3000:3000 peak-xender`
-
-For detailed deployment instructions, see [DEPLOYMENT_GUIDE.md](../DEPLOYMENT_GUIDE.md)
+Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
 ## Can I connect a custom domain to my Lovable project?
 
