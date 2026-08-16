@@ -713,11 +713,9 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
 
 // ---------------------------------------------------------------------------
 // Cron: every 15 seconds (Continuous Server-Side Background Worker)
-// DISABLED in Netlify environment (uses scheduled functions instead)
 // ---------------------------------------------------------------------------
 
-const isNetlifyServerless = process.env.NETLIFY === 'true';
-const schedulerEnabled = !isNetlifyServerless && process.env.DISABLE_SCHEDULER !== 'true';
+const schedulerEnabled = process.env.DISABLE_SCHEDULER !== 'true';
 let sendTask;
 let resetTask;
 let lastTickAt = null;

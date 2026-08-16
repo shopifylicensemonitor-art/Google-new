@@ -11,7 +11,7 @@ const path = require('path');
 const { getDb } = require('./db');
 const logger = require('./logger');
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 const fs = require('fs');
 

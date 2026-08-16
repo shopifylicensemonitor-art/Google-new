@@ -17,36 +17,17 @@ const { getDb } = require('../db');
 const { encrypt, decrypt } = require('../crypto');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
-const JWT_SECRETS = Array.from(new Set([
-  process.env.SUPABASE_JWT_SECRET,
-  process.env.JWT_SECRET,
-  JWT_SECRET,
-].filter(Boolean)));
+const JWT_SECRET = process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
 
 /** Sign the owning user id into the OAuth `state` param (10 min validity). */
 function signOwnerState(userId) {
   return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: '10m' });
 }
 
-function verifyStateToken(state) {
-  let lastError = null;
-
-  for (const secret of JWT_SECRETS) {
-    try {
-      return jwt.verify(String(state || ''), secret);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error('Invalid OAuth state token');
-}
-
 /** Read the owning user id back from the OAuth `state` param. */
 async function readOwnerState(state) {
   try {
-    const decoded = verifyStateToken(state);
+    const decoded = jwt.verify(String(state || ''), JWT_SECRET);
     if (decoded && decoded.uid) return decoded.uid;
   } catch (_) { /* fall through to legacy behaviour */ }
   const db = await getDb();
@@ -731,40 +712,6 @@ function makeRawEmail(from, to, subject, body, extraHeaders = {}) {
   const msg = [...headerLines, '', body || ''].join('\r\n');
   return Buffer.from(msg, 'utf-8').toString('base64url');
 }
-
-/** DEV-ONLY: Insert a test account directly for testing workflows */
-router.post('/test-account', async (req, res) => {
-  const { email, display_name, status } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required.' });
-  }
-
-  try {
-    const db = await getDb();
-    // Generate a test JWT token using the JWT secret
-    const crypto = require('crypto');
-    const jwt = require('jsonwebtoken');
-    const testToken = jwt.sign(
-      { email, type: 'test', iat: Math.floor(Date.now() / 1000) },
-      process.env.JWT_SECRET || 'peak-xender-jwt-secret-key-32chars',
-      { expiresIn: '7d' }
-    );
-    
-    const result = await db.prepare(
-      'INSERT INTO accounts (user_id, email, display_name, status, access_token, type) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(req.userId, email, display_name || 'Test Account', status || 'active', testToken, 'oauth');
-
-    res.json({
-      success: true,
-      account_id: result.lastInsertRowid,
-      email,
-      status: status || 'active'
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Export the helper for the scheduler
 router.ensureFreshToken = ensureFreshToken;

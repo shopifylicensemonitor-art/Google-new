@@ -119,18 +119,8 @@ router.get('/', async (req, res) => {
       WHERE c.user_id = ?
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `).all(req.userId);    
-    // Parse JSON fields for each campaign
-    campaigns.forEach(campaign => {
-      if (campaign.content_variations && typeof campaign.content_variations === 'string') {
-        try {
-          campaign.content_variations = JSON.parse(campaign.content_variations);
-        } catch (e) {
-          campaign.content_variations = [];
-        }
-      }
-    });
-        res.json(campaigns);
+    `).all(req.userId);
+    res.json(campaigns);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -142,15 +132,6 @@ router.get('/:id', async (req, res) => {
     const db = await getDb();
     const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
     if (!campaign) return res.status(404).json({ error: 'Not found.' });
-
-    // Parse JSON fields
-    if (campaign.content_variations && typeof campaign.content_variations === 'string') {
-      try {
-        campaign.content_variations = JSON.parse(campaign.content_variations);
-      } catch (e) {
-        campaign.content_variations = [];
-      }
-    }
 
     // Attach steps
     const steps = await db.prepare('SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_number ASC').all(req.params.id);

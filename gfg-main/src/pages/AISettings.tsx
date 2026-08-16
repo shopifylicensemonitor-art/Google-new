@@ -143,24 +143,8 @@ export default function AISettings() {
 
   const handleSaveConnection = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate: only allow saving if user entered a NEW key (not sending masked key)
-    if (!apiKey) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'API Key Required', 
-        description: 'Please enter a NEW API key. Cannot save without providing the actual key value.' 
-      });
-      return;
-    }
-
-    // Additional check: reject masked keys or incomplete keys
-    if (apiKey.includes('*') || apiKey.length < 10) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Invalid API Key Format', 
-        description: 'API key appears to be invalid. Please enter a complete, valid API key.' 
-      });
+    if (!apiKey && !maskedKey) {
+      toast({ variant: 'destructive', title: 'API Key Required', description: 'Please enter a valid API key for your chosen provider.' });
       return;
     }
 
@@ -168,13 +152,13 @@ export default function AISettings() {
     try {
       const res = await api.saveAIConfig({
         provider: selectedProvider,
-        apiKey: apiKey.trim(),  // Only send actual key, never masked version
-        baseUrl: baseUrl.trim(),
-        model: model.trim()
+        apiKey: apiKey || maskedKey,
+        baseUrl,
+        model
       });
       toast({ title: 'AI Configuration Saved', description: res.message });
-      setApiKey('');  // Clear input after successful save
-      loadData();  // Reload to get fresh masked key
+      setApiKey('');
+      loadData();
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Save Failed', description: err.message });
     } finally {
@@ -186,20 +170,15 @@ export default function AISettings() {
     setTesting(true);
     setTestResult(null);
     try {
-      // Only save config if user provided a NEW key
-      if (apiKey && apiKey.trim() && !apiKey.includes('*') && apiKey.length > 10) {
+      if (apiKey) {
         await api.saveAIConfig({
           provider: selectedProvider,
           apiKey: apiKey.trim(),
-          baseUrl: baseUrl.trim(),
-          model: model.trim()
+          baseUrl,
+          model
         });
-        setApiKey('');  // Clear after saving
-      } else if (apiKey && (apiKey.includes('*') || apiKey.length < 10)) {
-        // Reject invalid/masked keys
-        throw new Error('Invalid API key format. Please enter a complete, valid key.');
+        setApiKey('');
       }
-      
       const res = await api.testAIConnection();
       if (res.success) {
         setTestResult({ success: true, message: res.response || 'Connection verified successfully!' });
@@ -207,10 +186,9 @@ export default function AISettings() {
       } else {
         setTestResult({ success: false, message: res.error || 'Connection failed.' });
       }
-      loadData();  // Reload to refresh config display
+      loadData();
     } catch (err: any) {
       setTestResult({ success: false, message: err.message });
-      toast({ variant: 'destructive', title: 'Test Failed', description: err.message });
     } finally {
       setTesting(false);
     }

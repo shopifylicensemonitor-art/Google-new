@@ -82,14 +82,9 @@ SendCampaignToBackend() {
     FileAppend(jsonStr, tempJsonFile)
     
     ; Make HTTP POST via curl (use temp file)
-    ; Get token from OAuth flow or environment - see GetAuthToken() function
-    token := IsSet(JwtToken) ? JwtToken : GetAuthToken()
-    if (!token || token = "") {
-        ShowToast("⚠ Authentication failed - no token available")
-        return false
-    }
+    dummyToken := "bearer-token-placeholder"  ; TODO: get from OAuth if available
     cmd := 'curl.exe -s -X POST "' . BackendServerUrl . '/api/campaigns/create-from-csv" \'
-         . ' -H "Authorization: Bearer ' . token . '" \'
+         . ' -H "Authorization: Bearer ' . dummyToken . '" \'
          . ' -H "Content-Type: application/json" \'
          . ' -d @"' . tempJsonFile . '"'
     
@@ -334,60 +329,20 @@ TestBackendConnection(*) {
 - Check curl response: Add `ShowToast(output)` after exec to see raw response
 
 **"Authorization: Bearer" error**
-- Ensure you have a valid JWT token from the OAuth flow
-- Call GetAuthToken() to retrieve token from stored global or OAuth endpoint
-- Tokens must be obtained from `/api/auth/login` or `/api/auth/google-url`
+- This is expected if no OAuth token configured
+- Backend normally requires JWT, but test endpoint might bypass
+- Replace `dummyToken` with actual token from `/api/auth/google-url` flow
 
 ---
 
-## Advanced: Token Management Function
+## Advanced: Load Token from OAuth Flow
 
-Add this function to handle token retrieval:
-
-```autohotkey
-GetAuthToken() {
-    global JwtToken, BackendServerUrl
-    
-    ; Check if token is already stored globally
-    if (IsSet(JwtToken) && JwtToken != "") {
-        return JwtToken
-    }
-    
-    ; Try to load from local file cache
-    tokenFile := A_AppData . "\peak-xender\token.txt"
-    if (FileExist(tokenFile)) {
-        try {
-            token := FileRead(tokenFile)
-            if (token != "") {
-                return Trim(token)
-            }
-        }
-    }
-    
-    ; If no token found, user must login first via browser
-    MsgBox 48, "Authentication Required", "Please log in via the web interface first.`n`nClick OK to open login page..."
-    Run("http://localhost:3000/login")
-    return ""
-}
-
-StoreAuthToken(token) {
-    tokenFile := A_AppData . "\peak-xender\token.txt"
-    DirCreate(A_AppData . "\peak-xender")
-    FileDelete(tokenFile)
-    FileAppend(token, tokenFile)
-}
-```
-
----
-
-## Legacy: Direct Token Override
-
-If you need to override the token for testing:
+If your script already does OAuth login, pass the token:
 
 ```autohotkey
 ; Inside SendCampaignToBackend():
-; Uncomment to use a specific test token:
-; token := "your-test-jwt-token-here"
+; global JwtToken  ; Add if you store token globally
+; dummyToken := IsSet(JwtToken) ? JwtToken : "test-token"
 ```
 
 ---

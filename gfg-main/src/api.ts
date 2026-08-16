@@ -209,6 +209,12 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  // Inject PIN fallback header from sessionStorage if present (used in local/dev)
+  const pin = sessionStorage.getItem('access_pin');
+  if (pin && !headers.has('X-Access-Pin')) {
+    headers.set('X-Access-Pin', pin);
+  }
+
   const res = await fetch(url, { ...options, headers });
 
   // Global 401 handler: token expired or invalid → clear & redirect
@@ -252,14 +258,22 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 // ---------------------------------------------------------------------------
 
 export const api = {
-  signInWithEmail: async (email: string, password: string) => apiFetch<{ success: boolean; token?: string; message?: string; user?: { id: number; email: string; name: string; role: string } }>('/api/auth/signin', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  }),
-  signUpWithEmail: async (email: string, password: string, name: string) => apiFetch<{ success: boolean; message?: string }>('/api/auth/signup', {
-    method: 'POST',
-    body: JSON.stringify({ email, password, name }),
-  }),
+  // Auth
+  verifyPin: async (pin: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/auth/pin-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (data?.token) localStorage.setItem('auth_token', data.token);
+      return true;
+    } catch {
+      return false;
+    }
+  },
 
   // Accounts
   getDashboardData: (days: number = 7) => apiFetch<{
@@ -269,9 +283,6 @@ export const api = {
       pending: number;
       active_campaigns: number;
       failed: number;
-      opens?: number;
-      clicks?: number;
-      replies?: number;
     };
     campaigns: Campaign[];
     queue: {
@@ -486,6 +497,7 @@ export const api = {
   }),
   logout: () => {
     localStorage.removeItem('auth_token');
+    sessionStorage.removeItem('access_pin');
     return Promise.resolve({ success: true });
   },
 
