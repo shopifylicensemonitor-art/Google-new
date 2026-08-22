@@ -153,9 +153,24 @@ function personalise(text, recipient, fieldsStr, accountDisplayName) {
   // Get local part and domain part of email
   const [localPart, domainPart] = recipient ? recipient.split('@') : ['', ''];
   const pSname = domainPart ? domainPart.split('.')[0] : '';
-  const displayName = fields.first_name || fields.name || fields.firstName || localPart || '';
-  const storeName = fields.store_name || fields.store || fields.storeName || domainPart || '';
-  const brandName = accountDisplayName || fields.brand || '';
+  
+  const getFieldCaseInsensitive = (obj, ...keys) => {
+    if (!obj || typeof obj !== 'object') return '';
+    for (const key of keys) {
+      if (obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') return String(obj[key]);
+    }
+    const lowerKeys = keys.map(k => k.toLowerCase());
+    for (const k of Object.keys(obj)) {
+      if (lowerKeys.includes(k.toLowerCase()) && obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') {
+        return String(obj[k]);
+      }
+    }
+    return '';
+  };
+
+  const displayName = getFieldCaseInsensitive(fields, 'first_name', 'name', 'firstname') || localPart || '';
+  const storeName = getFieldCaseInsensitive(fields, 'store_name', 'store', 'storename', 'company') || domainPart || '';
+  const brandName = accountDisplayName || getFieldCaseInsensitive(fields, 'brand') || '';
 
   const now = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -170,7 +185,7 @@ function personalise(text, recipient, fieldsStr, accountDisplayName) {
     if (normKey === 'name' || normKey === 'first_name' || normKey === 'firstname') return displayName;
     if (normKey === 'store' || normKey === 'store_name' || normKey === 'storename') return storeName;
     if (normKey === 'sname') return pSname;
-    if (normKey === 'brand') return brandName;
+    if (normKey === 'brand' || normKey === 'sender' || normKey === 'sender_name' || normKey === 'sendername' || normKey === 'from_name') return brandName;
 
     // Direct lookups in custom fields
     if (fields && fields[normKey] !== undefined && fields[normKey] !== null) return String(fields[normKey]);
@@ -795,18 +810,22 @@ async function triggerImmediateDispatch() {
   }
 }
 
+let isTickRunning = false;
 if (schedulerEnabled) {
-  // Real-time 1-second continuous pulse to pick up newly ready items immediately
+  const loopIntervalMs = parseInt(process.env.SCHEDULER_INTERVAL_MS, 10) || 4000;
+  // Real-time non-overlapping continuous pulse to process ready queue items
   dispatchInterval = setInterval(async () => {
+    if (isTickRunning || isDispatching) return;
+    isTickRunning = true;
     try {
-      if (!isDispatching) {
-        lastTickAt = new Date().toISOString();
-        await processNextItem();
-      }
+      lastTickAt = new Date().toISOString();
+      await processNextItem();
     } catch (err) {
       logger.error({ err }, 'Unexpected error in real-time dispatch loop');
+    } finally {
+      isTickRunning = false;
     }
-  }, 1000);
+  }, loopIntervalMs);
 
   // Daily reset of account send counters at midnight
   resetTask = cron.schedule('0 0 * * *', async () => {
@@ -882,6 +901,7 @@ module.exports = {
   triggerImmediateDispatch,
   personalise,
   getContent,
+  injectTracking,
   isWithinSendingWindow,
   completeCampaignIfNoActiveQueue,
   stopScheduler,
