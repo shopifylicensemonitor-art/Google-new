@@ -146,6 +146,7 @@ export interface LogItem {
   campaign_name?: string;
   final_subject?: string;
   final_body?: string;
+  error_message?: string;
 }
 
 export interface Template {

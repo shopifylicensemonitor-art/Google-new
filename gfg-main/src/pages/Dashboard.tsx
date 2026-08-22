@@ -137,12 +137,21 @@ export default function Dashboard() {
   };
 
   // Metrics calculation
-  const todaySent = serverData?.stats.today_sent ?? 342;
-  const activeCampaignsCount = serverData?.stats.active_campaigns ?? 8;
-  const totalOpens = serverData?.stats.opens ?? 142;
-  const totalClicks = serverData?.stats.clicks ?? 38;
+  const todaySent = serverData?.stats.today_sent ?? 0;
+  const activeCampaignsCount = serverData?.stats.active_campaigns ?? 0;
+  const totalOpens = serverData?.stats.opens ?? 0;
+  const totalClicks = serverData?.stats.clicks ?? 0;
 
-  const replyRate = serverData?.stats.today_sent && serverData?.stats.replies
+  // Chart totals and rates calculation
+  const chartTotalSent = (serverData?.chartData && serverData.chartData.length > 0)
+    ? serverData.chartData.reduce((acc: number, d: any) => acc + (Number(d.sent) || 0), 0)
+    : (serverData?.stats?.today_sent ?? todaySent);
+
+  const openRate = chartTotalSent > 0
+    ? ((totalOpens / chartTotalSent) * 100)
+    : 0;
+
+  const replyRate = serverData?.stats?.today_sent && serverData?.stats?.replies
     ? (((serverData.stats.replies) / Math.max(serverData.stats.today_sent, 1)) * 100).toFixed(1)
     : '0.0';
 
