@@ -9,7 +9,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { 
   Plus, Trash2, Edit, Copy, Eye, Sparkles, FileText, Search, 
-  MoreVertical, Check, RefreshCw, X, Save, Clock, ArrowUpRight, Code
+  MoreVertical, Check, RefreshCw, X, Save, Clock, ArrowUpRight, Code,
+  Wand2, Layers, Tag
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -17,16 +18,6 @@ import { Input } from '@/components/ui/input';
 interface TemplatesProps {
   requirePin?: (label: string, action: () => void) => void;
 }
-
-const defaultHtml = `<h2 style="color:#151c27;font-family:sans-serif;margin-top:0;">Hi {{first_name}},</h2>
-<p style="color:#464555;font-family:sans-serif;line-height:1.6;">I noticed that your team at <strong>{{company_name}}</strong> is scaling rapidly. Often, fast-growing teams struggle with maintaining clean outreach data.</p>
-<p style="color:#464555;font-family:sans-serif;line-height:1.6;">We built a platform specifically to solve deliverability and automated follow-ups without manual overhead.</p>
-<div style="margin:24px 0;">
-  <a href="https://example.com" style="display:inline-block;padding:12px 24px;background-color:#635bff;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-family:sans-serif;">Book 15-Min Demo</a>
-</div>
-<p style="color:#777587;font-size:12px;font-family:sans-serif;">Best regards,<br/>Alex Miller</p>`;
-
-const defaultPlain = `Hi {{first_name}},\n\nI noticed that your team at {{company_name}} is scaling rapidly. Often, fast-growing teams struggle with maintaining clean outreach data.\n\nWe built a platform specifically to solve deliverability and automated follow-ups without manual overhead.\n\nBest regards,\nAlex Miller`;
 
 // Mock initial category tags and stats for enhanced visual representation
 const TEMPLATE_CATEGORIES = ['All Templates', 'Cold Outreach', 'Follow-up', 'Networking', 'Welcome Series'];
@@ -49,6 +40,11 @@ export default function Templates({ requirePin }: TemplatesProps) {
   const [bodyPlain, setBodyPlain] = useState<string>('');
   const [showFallback, setShowFallback] = useState<boolean>(false);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
+
+  // AI Prompt Generation State
+  const [showAiGenBox, setShowAiGenBox] = useState<boolean>(false);
+  const [aiPrompt, setAiPrompt] = useState<string>('');
+  const [aiStage, setAiStage] = useState<string>('initial');
 
   const previewRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -94,21 +90,95 @@ export default function Templates({ requirePin }: TemplatesProps) {
   const handleOpenNew = () => {
     setName('');
     setCategory('Cold Outreach');
-    setSubject('Quick question regarding {{company_name}}\'s tech stack');
-    setBodyHtml(defaultHtml);
-    setBodyPlain(defaultPlain);
+    setSubject('');
+    setBodyHtml('<p>Hi {{first_name}},</p>\n<p></p>');
+    setBodyPlain('Hi {{first_name}},\n\n');
     setEditingTemplate(null);
+    setShowAiGenBox(false);
     setShowModal(true);
   };
 
   const handleOpenEdit = (t: Template) => {
     setName(t.name);
     setCategory('Cold Outreach');
-    setSubject(t.subject);
+    setSubject(t.subject || '');
     setBodyHtml(t.body_html || '');
     setBodyPlain(t.body_plain || '');
     setEditingTemplate(t);
+    setShowAiGenBox(false);
     setShowModal(true);
+  };
+
+  const insertVariable = (tag: string) => {
+    setBodyHtml(prev => `${prev || ''} {{${tag}}}`);
+    setBodyPlain(prev => `${prev || ''} {{${tag}}}`);
+    toast({ title: 'Variable Added', description: `Inserted {{${tag}}} into template.` });
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    try {
+      const res = await api.aiGenerate({
+        prompt: aiPrompt.trim(),
+        stage: aiStage
+      });
+      if (res.success) {
+        if (res.subject) setSubject(res.subject);
+        if (res.body_html) setBodyHtml(res.body_html);
+        if (!name) setName(aiPrompt.trim().slice(0, 30));
+        toast({ title: 'AI Template Generated', description: 'Subject and body updated with AI copy.' });
+        setShowAiGenBox(false);
+        setAiPrompt('');
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Generation Failed', description: err.message });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiImprove = async () => {
+    if (!bodyHtml.trim()) {
+      toast({ variant: 'destructive', title: 'No Content', description: 'Enter some template content first to polish.' });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await api.aiRewrite({
+        subject,
+        body: bodyHtml,
+        instruction: 'Maximize response rate and polish cold email copy'
+      });
+      if (res.success) {
+        if (res.subject) setSubject(res.subject);
+        if (res.body_html) setBodyHtml(res.body_html);
+        toast({ title: 'AI Copy Polished', description: 'Template rewritten for high conversion.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Polish Failed', description: err.message });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiSpintax = async () => {
+    if (!bodyHtml.trim()) {
+      toast({ variant: 'destructive', title: 'No Content', description: 'Enter email body first to generate spintax.' });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await api.aiSpintax(bodyHtml);
+      if (res.success && res.spintax) {
+        setBodyHtml(res.spintax);
+        toast({ title: 'Spintax Generated', description: 'Added {option1|option2} variations.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Spintax Failed', description: err.message });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleSave = () => {
@@ -220,37 +290,7 @@ export default function Templates({ requirePin }: TemplatesProps) {
     }
   };
 
-  const handleAiImprove = async () => {
-    if (!bodyHtml && !subject) return;
-    try {
-      setAiLoading(true);
-      toast({
-        title: 'Generating AI Optimizations...',
-        description: 'Polishing subject line and persuasive call to action.'
-      });
-      const res = await api.aiRewrite({
-        subject,
-        body: bodyHtml || bodyPlain,
-        instruction: 'Make this cold outreach email concise, punchy, and highly converting with a clear call to action.'
-      });
-      if (res.success) {
-        if (res.subject) setSubject(res.subject);
-        if (res.body_html) setBodyHtml(res.body_html);
-        toast({
-          title: 'AI Polish Complete!',
-          description: 'Subject line and body updated.'
-        });
-      }
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'AI Generator Error',
-        description: e.message || 'Could not connect to AI service.'
-      });
-    } finally {
-      setAiLoading(false);
-    }
-  };
+
 
   // Filter templates
   const filteredTemplates = templates.filter(t => {
@@ -440,36 +480,101 @@ export default function Templates({ requirePin }: TemplatesProps) {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] rounded-2xl border border-border/80 bg-card p-6 shadow-2xl flex flex-col overflow-hidden">
           <DialogHeader className="space-y-1 text-left pb-2 border-b border-border/60 shrink-0">
-            <DialogTitle className="font-heading text-lg font-bold text-foreground flex items-center justify-between">
+            <DialogTitle className="font-heading text-lg font-bold text-foreground flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span>{editingTemplate ? 'Edit Template' : 'Create New Template'}</span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAiGenBox(!showAiGenBox)}
+                  className="h-8 px-2.5 text-xs font-bold gap-1.5 text-[#635bff] border-[#635bff]/40 hover:bg-[#635bff]/10"
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  <span>{showAiGenBox ? 'Close AI Prompt' : '✨ AI Generate'}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAiImprove}
+                  disabled={aiLoading}
+                  className="h-8 px-2 text-xs font-bold gap-1 text-[#635bff] hover:bg-[#635bff]/10"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>{aiLoading ? '...' : 'Polish'}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAiSpintax}
+                  disabled={aiLoading}
+                  className="h-8 px-2 text-xs font-bold gap-1 text-muted-foreground hover:text-foreground"
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>Spintax</span>
+                </Button>
+
                 <VoiceToTextButton
                   size="sm"
                   variant="outline"
-                  label="Voice Dictation"
+                  label="Voice"
                   onTranscript={(text) => {
                     setBodyHtml((prev) => (prev ? `${prev}\n<p>${text}</p>` : `<p>${text}</p>`));
                     setBodyPlain((prev) => (prev ? `${prev}\n${text}` : text));
                   }}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAiImprove}
-                  disabled={aiLoading}
-                  className="h-8 px-2.5 text-xs font-bold gap-1.5 text-[#635bff] hover:bg-[#635bff]/10"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>{aiLoading ? 'Polishing...' : 'AI Polish'}</span>
-                </Button>
               </div>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Design email layouts with dynamic tag variables like {"{{first_name}}"} and {"{{company_name}}"}.
+              Design email layouts with dynamic personalization tags like {"{{first_name}}"} and {"{{company_name}}"}.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4 overflow-y-auto pr-1 text-xs">
+            {/* AI Generator Panel (Collapsible) */}
+            {showAiGenBox && (
+              <div className="p-3.5 rounded-xl border border-[#635bff]/40 bg-[#635bff]/5 space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-[#635bff]" /> AI Email Template Generator
+                  </span>
+                  <select
+                    value={aiStage}
+                    onChange={(e) => setAiStage(e.target.value)}
+                    className="text-[11px] bg-background border border-border/80 rounded-md px-2 py-0.5"
+                  >
+                    <option value="initial">Initial Cold Outreach</option>
+                    <option value="followup_1">Follow-up #1 (Value Add)</option>
+                    <option value="followup_2">Follow-up #2 (Breakup)</option>
+                    <option value="networking">Networking / Partnership</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Describe your offer or goal (e.g. Pitch AI cold email infrastructure to Shopify store owners)..."
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAiGenerate(); } }}
+                    className="h-9 text-xs bg-background"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAiGenerate}
+                    disabled={aiLoading || !aiPrompt.trim()}
+                    className="h-9 px-4 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white shrink-0 gap-1.5"
+                  >
+                    {aiLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    Generate
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Title & Subject */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -490,6 +595,23 @@ export default function Templates({ requirePin }: TemplatesProps) {
                   className="rounded-lg h-9 border-border/80"
                 />
               </div>
+            </div>
+
+            {/* Variable Tags Quick-Insert Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] font-bold text-muted-foreground mr-1 flex items-center gap-1">
+                <Tag className="h-3 w-3" /> Insert Tag:
+              </span>
+              {['first_name', 'company_name', 'email', 'job_title', 'website', 'custom_1'].map(tag => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => insertVariable(tag)}
+                  className="px-2 py-0.5 rounded-md bg-muted/60 hover:bg-[#635bff]/15 hover:text-[#635bff] text-[10px] font-mono border border-border/60 transition-colors"
+                >
+                  +{`{{${tag}}}`}
+                </button>
+              ))}
             </div>
 
             {/* HTML Editor & Live Preview */}

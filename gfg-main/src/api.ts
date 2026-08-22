@@ -163,6 +163,27 @@ export interface AIConfig {
   baseUrl?: string;
   model?: string;
   maskedApiKey?: string;
+  apiKey?: string;
+  isActive?: boolean;
+}
+
+export interface AIProviderConfig {
+  id?: number;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  isActive: boolean;
+  hasKey: boolean;
+  maskedApiKey: string;
+  apiKey: string;
+  updatedAt?: string;
+}
+
+export interface AIConfigsResponse {
+  success: boolean;
+  configs: AIProviderConfig[];
+  activeProvider: string | null;
+  activeConfig: AIProviderConfig | null;
 }
 
 export interface AIRules {
@@ -563,11 +584,25 @@ export const api = {
 
   // AI Integration
   getAIConfig: () => apiFetch<AIConfig>('/api/ai/config'),
-  saveAIConfig: (data: { provider: string; apiKey: string; baseUrl: string; model: string }) => apiFetch<{ success: boolean; message: string }>('/api/ai/config', {
+  getAIConfigs: () => apiFetch<AIConfigsResponse>('/api/ai/configs'),
+  saveAIConfig: (data: { provider: string; apiKey?: string; baseUrl?: string; model?: string; setActive?: boolean }) => apiFetch<{ success: boolean; message: string; provider: string; model: string; isActive?: boolean }>('/api/ai/config', {
     method: 'POST',
     body: JSON.stringify(data)
   }),
-  testAIConnection: () => apiFetch<{ success: boolean; response?: string; error?: string }>('/api/ai/test', { method: 'POST' }),
+  setActiveAIProvider: (provider: string) => apiFetch<{ success: boolean; message: string; provider: string }>('/api/ai/active', {
+    method: 'POST',
+    body: JSON.stringify({ provider })
+  }),
+  deleteAIConfig: (provider: string) => apiFetch<{ success: boolean; message: string }>(`/api/ai/config/${encodeURIComponent(provider)}`, {
+    method: 'DELETE'
+  }),
+  testAIConnection: (data?: { provider?: string; apiKey?: string; baseUrl?: string; model?: string }) => apiFetch<{ success: boolean; response?: string; error?: string }>('/api/ai/test', {
+    method: 'POST',
+    body: JSON.stringify(data || {})
+  }),
+  validateAllAIKeys: () => apiFetch<{ success: boolean; results: Record<string, { valid: boolean; status: string; latencyMs?: number; model?: string; message?: string; error?: string }> }>('/api/ai/validate-all', {
+    method: 'POST'
+  }),
   getAIRules: () => apiFetch<AIRules>('/api/ai/rules'),
   saveAIRules: (rules: AIRules) => apiFetch<{ success: boolean; message: string }>('/api/ai/rules', {
     method: 'POST',

@@ -28,9 +28,9 @@ function createPgAdapter() {
   const pool = new Pool({
     connectionString: dbUrl,
     ssl: isSupabase || dbUrl.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 5000,
-    max: 5,
+    connectionTimeoutMillis: 20000,
+    idleTimeoutMillis: 30000,
+    max: 10,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
   });
@@ -98,13 +98,31 @@ function createPgAdapter() {
       return {
         async all(...params) {
           const flat = flattenParams(params);
-          const result = await pool.query(pgSql, flat);
-          return result.rows;
+          try {
+            const result = await pool.query(pgSql, flat);
+            return result.rows;
+          } catch (err) {
+            if (err.message && (err.message.includes('timeout') || err.message.includes('Connection terminated') || err.message.includes('closed'))) {
+              console.warn('PostgreSQL transient query retry:', err.message);
+              const retryResult = await pool.query(pgSql, flat);
+              return retryResult.rows;
+            }
+            throw err;
+          }
         },
         async get(...params) {
           const flat = flattenParams(params);
-          const result = await pool.query(pgSql, flat);
-          return result.rows[0] || undefined;
+          try {
+            const result = await pool.query(pgSql, flat);
+            return result.rows[0] || undefined;
+          } catch (err) {
+            if (err.message && (err.message.includes('timeout') || err.message.includes('Connection terminated') || err.message.includes('closed'))) {
+              console.warn('PostgreSQL transient query retry:', err.message);
+              const retryResult = await pool.query(pgSql, flat);
+              return retryResult.rows[0] || undefined;
+            }
+            throw err;
+          }
         },
         async run(...params) {
           const flat = flattenParams(params);
@@ -115,6 +133,9 @@ function createPgAdapter() {
             if (err.message && err.message.includes('column "id" does not exist')) {
               const fallbackSql = pgSql.replace(/\s+RETURNING\s+id/gi, '');
               result = await pool.query(fallbackSql, flat);
+            } else if (err.message && (err.message.includes('timeout') || err.message.includes('Connection terminated') || err.message.includes('closed'))) {
+              console.warn('PostgreSQL transient query retry:', err.message);
+              result = await pool.query(pgSql, flat);
             } else {
               throw err;
             }
@@ -550,6 +571,7 @@ const SQLITE_DDL = `
     api_key_encrypted TEXT NOT NULL,
     base_url TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
     model TEXT NOT NULL DEFAULT 'openai/gpt-4o-mini',
+    is_active INTEGER DEFAULT 0,
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -757,6 +779,16 @@ const PG_DDL = `
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS ai_config (
+    id SERIAL PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'openrouter',
+    api_key_encrypted TEXT NOT NULL,
+    base_url TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
+    model TEXT NOT NULL DEFAULT 'openai/gpt-4o-mini',
+    is_active INTEGER DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS suppression_list (
     id SERIAL PRIMARY KEY,
     type TEXT NOT NULL DEFAULT 'email',
@@ -852,6 +884,9 @@ ready = (async () => {
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE ai_config ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 0;");
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;");
@@ -1079,6 +1114,9 @@ ready = (async () => {
     } catch (_) {}
     try {
       await wrapped.exec("ALTER TABLE inbox_messages ADD COLUMN status TEXT DEFAULT 'new';");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE ai_config ADD COLUMN is_active INTEGER DEFAULT 0;");
     } catch (_) {}
     // Email/password authentication columns
     try {

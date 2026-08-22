@@ -559,16 +559,46 @@ router.post('/smtp', async (req, res) => {
   }
 });
 
-/** Delete an account. */
+/** Delete/Disconnect an account and clean up associated records safely */
 router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const result = await db
-      .prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?')
-      .run(req.params.id, req.userId);
-    if (!result.changes) return res.status(404).json({ error: 'Account not found.' });
-    res.json({ success: true });
+    const accountId = parseInt(req.params.id, 10);
+    if (!accountId || isNaN(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID.' });
+    }
+
+    const account = await db.prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?').get(accountId, req.userId);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    // Safely unassign or clean up foreign key references in related tables
+    try {
+      await db.prepare('UPDATE queue SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Queue unassign error');
+    }
+
+    try {
+      await db.prepare('UPDATE inbox_messages SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Inbox messages unassign error');
+    }
+
+    try {
+      await db.prepare('UPDATE logs SET account_id = NULL WHERE account_id = ?').run(accountId);
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'Logs unassign error');
+    }
+
+    // Delete the account
+    await db.prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?').run(accountId, req.userId);
+
+    logger.info({ accountId, email: account.email }, 'Account disconnected and removed successfully');
+    res.json({ success: true, message: 'Account disconnected successfully.' });
   } catch (err) {
+    logger.error({ err, accountId: req.params.id }, 'Failed to delete account');
     res.status(500).json({ error: err.message });
   }
 });
@@ -817,50 +847,6 @@ function makeRawEmail(from, to, subject, body, extraHeaders = {}) {
   const msg = [...headerLines, '', body || ''].join('\r\n');
   return Buffer.from(msg, 'utf-8').toString('base64url');
 }
-
-/** Delete/Disconnect an account and clean up associated records safely */
-router.delete('/:id', async (req, res) => {
-  try {
-    const db = await getDb();
-    const accountId = parseInt(req.params.id, 10);
-    if (!accountId || isNaN(accountId)) {
-      return res.status(400).json({ error: 'Invalid account ID.' });
-    }
-
-    const account = await db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found.' });
-    }
-
-    // Safely unassign or clean up foreign key references in related tables
-    try {
-      await db.prepare('UPDATE queue SET account_id = NULL WHERE account_id = ?').run(accountId);
-    } catch (e) {
-      logger.warn({ err: e, accountId }, 'Queue unassign error');
-    }
-
-    try {
-      await db.prepare('UPDATE inbox_messages SET account_id = NULL WHERE account_id = ?').run(accountId);
-    } catch (e) {
-      logger.warn({ err: e, accountId }, 'Inbox messages unassign error');
-    }
-
-    try {
-      await db.prepare('UPDATE logs SET account_id = NULL WHERE account_id = ?').run(accountId);
-    } catch (e) {
-      logger.warn({ err: e, accountId }, 'Logs unassign error');
-    }
-
-    // Delete the account
-    await db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
-
-    logger.info({ accountId, email: account.email }, 'Account disconnected and removed successfully');
-    res.json({ success: true, message: 'Account disconnected successfully.' });
-  } catch (err) {
-    logger.error({ err, accountId: req.params.id }, 'Failed to delete account');
-    res.status(500).json({ error: err.message });
-  }
-});
 
 /** DEV-ONLY: Insert a test account directly for testing workflows */
 router.post('/test-account', async (req, res) => {

@@ -49,6 +49,7 @@ export default function Inbox() {
   // Layout & UI
   const [showMobileDetail, setShowMobileDetail] = useState<boolean>(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState<boolean>(false);
+  const [showDossier, setShowDossier] = useState<boolean>(false);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState<boolean>(false);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1044,6 +1045,20 @@ export default function Inbox() {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
+                      onClick={() => setShowDossier(!showDossier)}
+                      aria-label="Toggle prospect lead profile"
+                      className={`min-h-[32px] px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        showDossier
+                          ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                          : 'bg-background hover:bg-muted text-foreground/80 border-border/70'
+                      }`}
+                      title="View Prospect Intelligence & Contact Details"
+                    >
+                      <User className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span className="hidden sm:inline">Lead Info</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleToggleStar(selectedMsg)}
                       aria-label={selectedMsg.is_starred ? "Unstar active conversation" : "Star active conversation"}
                       className="min-h-[32px] min-w-[32px] flex items-center justify-center text-foreground/70 hover:text-amber-500 rounded-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
@@ -1309,118 +1324,141 @@ export default function Inbox() {
           </section>
 
           {/* ========================================================================= */}
-          {/* COLUMN 4: Prospect Lead Dossier Panel (280px, Collapsible) */}
+          {/* ON-DEMAND PROSPECT LEAD DOSSIER (Slide-Over Drawer) */}
           {/* ========================================================================= */}
-          {selectedMsg && (
-            <aside 
-              aria-label="Prospect intelligence dossier"
-              className="w-[280px] shrink-0 border-l border-border/70 bg-card p-4 flex flex-col h-full overflow-y-auto hidden xl:flex space-y-4"
-            >
-              
-              {/* Profile Card */}
-              <div className="flex flex-col items-center text-center pb-4 border-b border-border/50 space-y-2">
-                <div className="w-14 h-14 rounded-full bg-primary/15 text-primary font-extrabold text-lg flex items-center justify-center border border-primary/30 shadow-xs" aria-hidden="true">
-                  {getInitials(selectedMsg.sender_email)}
-                </div>
-                <div>
-                  <h3 className="font-heading text-sm font-bold text-foreground truncate max-w-[230px]">
-                    {selectedMsg.sender_email.split('@')[0]}
-                  </h3>
-                  <p className="text-[11px] text-foreground/70 font-mono font-medium">
-                    @{selectedMsg.sender_email.split('@')[1]}
-                  </p>
-                </div>
+          {selectedMsg && showDossier && (
+            <>
+              {/* Backdrop on small viewports */}
+              <div 
+                className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-xs" 
+                onClick={() => setShowDossier(false)}
+              />
 
-                <div className="flex gap-2 w-full pt-1">
-                  <Button
+              <aside 
+                aria-label="Prospect intelligence dossier"
+                className="absolute right-0 top-0 bottom-0 z-40 w-[320px] max-w-[88vw] border-l border-border/80 bg-card p-4 flex flex-col h-full overflow-y-auto shadow-2xl space-y-4 animate-in slide-in-from-right duration-200"
+              >
+                {/* Header with Close Button */}
+                <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <User className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <span>Prospect Intelligence</span>
+                  </div>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedMsg.sender_email);
-                      toast({ title: 'Email Copied', description: selectedMsg.sender_email });
-                    }}
-                    aria-label={`Copy email ${selectedMsg.sender_email}`}
-                    className="flex-1 h-7 text-[11px] font-semibold gap-1 border-border/80 focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={() => setShowDossier(false)}
+                    aria-label="Close dossier panel"
+                    className="min-h-[28px] min-w-[28px] flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted rounded-lg focus-visible:ring-2 focus-visible:ring-primary"
                   >
-                    <Copy className="h-3 w-3" aria-hidden="true" /> Copy Email
-                  </Button>
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </div>
-              </div>
-
-              {/* Sentiment Status Card */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider">
-                  Lead Classification
-                </span>
-                <div className="p-2.5 rounded-lg bg-muted/60 border border-border/60 flex items-center justify-between">
-                  {getSentimentBadge(selectedMsg.sentiment)}
-                  <span className="text-[10px] font-mono text-foreground/70 font-semibold">AI Classified</span>
-                </div>
-              </div>
-
-              {/* Contact Information */}
-              <div className="space-y-2 pt-2 border-t border-border/50 text-xs">
-                <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
-                  Prospect Details
-                </span>
-                <div className="space-y-1.5 text-[11px] text-foreground/80">
-                  <div className="flex items-center gap-2 truncate">
-                    <Mail className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
-                    <span className="truncate">{selectedMsg.sender_email}</span>
+                
+                {/* Profile Card */}
+                <div className="flex flex-col items-center text-center pb-4 border-b border-border/50 space-y-2">
+                  <div className="w-14 h-14 rounded-full bg-primary/15 text-primary font-extrabold text-lg flex items-center justify-center border border-primary/30 shadow-xs" aria-hidden="true">
+                    {getInitials(selectedMsg.sender_email)}
                   </div>
-                  {selectedMsg.store_url && (
-                    <div className="flex items-center gap-2 truncate">
-                      <Globe className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
-                      <a 
-                        href={selectedMsg.store_url.startsWith('http') ? selectedMsg.store_url : `https://${selectedMsg.store_url}`} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="text-primary hover:underline truncate font-mono font-semibold"
-                      >
-                        {selectedMsg.store_url}
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </div>
+                  <div>
+                    <h3 className="font-heading text-sm font-bold text-foreground truncate max-w-[230px]">
+                      {selectedMsg.sender_email.split('@')[0]}
+                    </h3>
+                    <p className="text-[11px] text-foreground/70 font-mono font-medium">
+                      @{selectedMsg.sender_email.split('@')[1]}
+                    </p>
+                  </div>
 
-              {/* Extracted Fields from Contact List */}
-              {selectedMsg.contact_fields && Object.keys(selectedMsg.contact_fields).length > 0 && (
-                <div className="space-y-1.5 pt-2 border-t border-border/50 text-xs">
-                  <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
-                    Custom Lead Fields
+                  <div className="flex gap-2 w-full pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedMsg.sender_email);
+                        toast({ title: 'Email Copied', description: selectedMsg.sender_email });
+                      }}
+                      aria-label={`Copy email ${selectedMsg.sender_email}`}
+                      className="flex-1 h-7 text-[11px] font-semibold gap-1 border-border/80 focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <Copy className="h-3 w-3" aria-hidden="true" /> Copy Email
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Sentiment Status Card */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider">
+                    Lead Classification
                   </span>
-                  <div className="space-y-1 bg-muted/40 p-2.5 rounded-lg border border-border/50">
-                    {Object.entries(selectedMsg.contact_fields).map(([k, v]) => (
-                      <div key={k} className="flex justify-between text-[11px]">
-                        <span className="text-foreground/75 capitalize font-medium">{k}:</span>
-                        <span className="font-semibold text-foreground truncate max-w-[130px]">{String(v)}</span>
+                  <div className="p-2.5 rounded-lg bg-muted/60 border border-border/60 flex items-center justify-between">
+                    {getSentimentBadge(selectedMsg.sentiment)}
+                    <span className="text-[10px] font-mono text-foreground/70 font-semibold">AI Classified</span>
+                  </div>
+                </div>
+
+                {/* Contact Information */}
+                <div className="space-y-2 pt-2 border-t border-border/50 text-xs">
+                  <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
+                    Prospect Details
+                  </span>
+                  <div className="space-y-1.5 text-[11px] text-foreground/80">
+                    <div className="flex items-center gap-2 truncate">
+                      <Mail className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+                      <span className="truncate">{selectedMsg.sender_email}</span>
+                    </div>
+                    {selectedMsg.store_url && (
+                      <div className="flex items-center gap-2 truncate">
+                        <Globe className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+                        <a 
+                          href={selectedMsg.store_url.startsWith('http') ? selectedMsg.store_url : `https://${selectedMsg.store_url}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="text-primary hover:underline truncate font-mono font-semibold"
+                        >
+                          {selectedMsg.store_url}
+                        </a>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Outreach Campaign Origin */}
-              <div className="space-y-2 pt-2 border-t border-border/50 text-xs">
-                <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
-                  Campaign Context
-                </span>
-                <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 space-y-1">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="font-bold text-foreground truncate max-w-[160px]">
-                      {selectedMsg.contact_list || 'Outbound Sequence'}
+                {/* Extracted Fields from Contact List */}
+                {selectedMsg.contact_fields && Object.keys(selectedMsg.contact_fields).length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-border/50 text-xs">
+                    <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
+                      Custom Lead Fields
                     </span>
-                    <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase">Active</span>
+                    <div className="space-y-1 bg-muted/40 p-2.5 rounded-lg border border-border/50">
+                      {Object.entries(selectedMsg.contact_fields).map(([k, v]) => (
+                        <div key={k} className="flex justify-between text-[11px]">
+                          <span className="text-foreground/75 capitalize font-medium">{k}:</span>
+                          <span className="font-semibold text-foreground truncate max-w-[130px]">{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-[10px] text-foreground/70 font-medium">
-                    Sender Account: <span className="font-mono text-foreground font-semibold">{selectedMsg.account_email || 'Assigned Mailbox'}</span>
-                  </p>
-                </div>
-              </div>
+                )}
 
-            </aside>
+                {/* Outreach Campaign Origin */}
+                <div className="space-y-2 pt-2 border-t border-border/50 text-xs">
+                  <span className="text-[10px] font-bold uppercase text-foreground/75 tracking-wider block">
+                    Campaign Context
+                  </span>
+                  <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 space-y-1">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-foreground truncate max-w-[160px]">
+                        {selectedMsg.contact_list || 'Outbound Sequence'}
+                      </span>
+                      <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase">Active</span>
+                    </div>
+                    <p className="text-[10px] text-foreground/70 font-medium">
+                      Sender Account: <span className="font-mono text-foreground font-semibold">{selectedMsg.account_email || 'Assigned Mailbox'}</span>
+                    </p>
+                  </div>
+                </div>
+
+              </aside>
+            </>
           )}
 
         </div>

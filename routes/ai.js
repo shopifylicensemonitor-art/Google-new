@@ -74,16 +74,21 @@ function maskKey(key) {
 /** Helper: Fetch active AI configuration from DB */
 async function getActiveAIConfig() {
   const db = await getDb();
-  const row = await db.prepare('SELECT * FROM ai_config ORDER BY id DESC LIMIT 1').get();
+  let row = await db.prepare('SELECT * FROM ai_config WHERE is_active = 1 ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  if (!row) {
+    row = await db.prepare('SELECT * FROM ai_config ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  }
   if (!row) {
     return null;
   }
+  const decrypted = decryptKey(row.api_key_encrypted);
   return {
     id: row.id,
     provider: row.provider,
-    apiKey: decryptKey(row.api_key_encrypted),
-    baseUrl: row.base_url.replace(/\/+$/, ''), // strip trailing slash
+    apiKey: decrypted,
+    baseUrl: (row.base_url || '').replace(/\/+$/, ''), // strip trailing slash
     model: row.model,
+    isActive: row.is_active === 1,
   };
 }
 
@@ -153,6 +158,16 @@ async function callAI(messages, systemOverride = null) {
     if (response.text) return response.text.trim();
   }
 
+  const hasMissingGemini = !process.env.GEMINI_API_KEY;
+  const hasCustomConfig = config && config.apiKey;
+  
+  if (hasMissingGemini && !hasCustomConfig) {
+    throw new Error('❌ AI Provider is not configured. Please:' +
+      '\n1. Get an API Key (OpenAI, Gemini, OpenRouter, Groq, DeepSeek, or Nvidia NIM)' +
+      '\n2. Configure and save your API Key under AI Settings' +
+      '\n\nWithout an AI provider, content generation features will not work.');
+  }
+
   throw new Error('AI Provider is not configured yet. Please configure your API key in AI Settings or system environment.');
 }
 
@@ -160,7 +175,40 @@ async function callAI(messages, systemOverride = null) {
 // Configuration Routes
 // ---------------------------------------------------------------------------
 
-/** GET /api/ai/config â€” Retrieve current AI config (masked key) */
+/** GET /api/ai/configs — Retrieve all configured AI providers with status and decrypted key for display */
+router.get('/configs', async (_req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.prepare('SELECT * FROM ai_config ORDER BY is_active DESC, updated_at DESC, id DESC').all();
+    const configs = (rows || []).map(row => {
+      const decrypted = decryptKey(row.api_key_encrypted);
+      return {
+        id: row.id,
+        provider: row.provider,
+        baseUrl: row.base_url,
+        model: row.model,
+        isActive: row.is_active === 1,
+        hasKey: Boolean(decrypted),
+        maskedApiKey: maskKey(decrypted),
+        apiKey: decrypted, // plaintext key so user can view/copy under the model
+        updatedAt: row.updated_at
+      };
+    });
+
+    const activeConfig = configs.find(c => c.isActive) || configs[0] || null;
+
+    res.json({
+      success: true,
+      configs,
+      activeProvider: activeConfig ? activeConfig.provider : null,
+      activeConfig
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ai/config — Retrieve current active AI config */
 router.get('/config', async (_req, res) => {
   try {
     const config = await getActiveAIConfig();
@@ -173,49 +221,274 @@ router.get('/config', async (_req, res) => {
       baseUrl: config.baseUrl,
       model: config.model,
       maskedApiKey: maskKey(config.apiKey),
+      apiKey: config.apiKey,
+      isActive: config.isActive
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** POST /api/ai/config â€” Save/update AI provider config */
+/** POST /api/ai/config — Save/update AI provider config (persisted per provider) */
 router.post('/config', async (req, res) => {
-  const { provider, apiKey, baseUrl, model } = req.body;
-  if (!apiKey) {
-    return res.status(400).json({ error: 'API Key is required.' });
-  }
+  const { provider, apiKey, baseUrl, model, setActive = true } = req.body;
+  const provKey = (provider || 'custom').trim().toLowerCase();
 
   try {
     const db = await getDb();
-    const cleanBaseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-    const cleanModel = model || 'openai/gpt-4o-mini';
-    const encKey = encryptKey(apiKey.trim());
+    const cleanBaseUrl = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://openrouter.ai/api/v1';
+    const cleanModel = (model || '').trim() || 'openai/gpt-4o-mini';
 
-    const existing = await db.prepare('SELECT id FROM ai_config ORDER BY id DESC LIMIT 1').get();
-    if (existing) {
-      await db.prepare('UPDATE ai_config SET provider = ?, api_key_encrypted = ?, base_url = ?, model = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run(provider || 'custom', encKey, cleanBaseUrl, cleanModel, existing.id);
+    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provKey);
+
+    let encKey = '';
+    if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
+      encKey = encryptKey(apiKey.trim());
+    } else if (existing && existing.api_key_encrypted) {
+      encKey = existing.api_key_encrypted;
     } else {
-      await db.prepare('INSERT INTO ai_config (provider, api_key_encrypted, base_url, model) VALUES (?, ?, ?, ?)')
-        .run(provider || 'custom', encKey, cleanBaseUrl, cleanModel);
+      return res.status(400).json({ error: `API Key is required for provider ${provKey}.` });
     }
 
-    res.json({ success: true, message: 'AI Provider settings saved successfully.' });
+    if (setActive) {
+      // Set all other providers to inactive
+      await db.prepare('UPDATE ai_config SET is_active = 0').run();
+    }
+
+    const isActiveVal = setActive ? 1 : (existing ? (existing.is_active || 0) : 0);
+
+    if (existing) {
+      await db.prepare('UPDATE ai_config SET api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id);
+    } else {
+      await db.prepare('INSERT INTO ai_config (provider, api_key_encrypted, base_url, model, is_active) VALUES (?, ?, ?, ?, ?)')
+        .run(provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal);
+    }
+
+    logger.info({ provider: provKey, model: cleanModel, setActive }, 'AI configuration saved successfully');
+    res.json({ 
+      success: true, 
+      message: `${provKey.toUpperCase()} configuration saved successfully.`,
+      provider: provKey,
+      model: cleanModel,
+      isActive: Boolean(isActiveVal)
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to save AI config');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** POST /api/ai/active — Switch active AI provider */
+router.post('/active', async (req, res) => {
+  const { provider } = req.body;
+  if (!provider) return res.status(400).json({ error: 'Provider is required.' });
+  const provKey = String(provider).trim().toLowerCase();
+
+  try {
+    const db = await getDb();
+    const target = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provKey);
+    if (!target) {
+      return res.status(404).json({ error: `No configuration found for provider "${provKey}". Please save an API key first.` });
+    }
+
+    await db.prepare('UPDATE ai_config SET is_active = 0').run();
+    await db.prepare('UPDATE ai_config SET is_active = 1, updated_at = datetime(\'now\') WHERE id = ?').run(target.id);
+
+    res.json({ success: true, message: `Activated ${provKey.toUpperCase()} as active AI provider.`, provider: provKey });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** POST /api/ai/test â€” Test the AI connection */
-router.post('/test', async (_req, res) => {
+/** DELETE /api/ai/config/:provider — Delete/clear configuration for a provider */
+router.delete('/config/:provider', async (req, res) => {
+  const provKey = String(req.params.provider).trim().toLowerCase();
   try {
+    const db = await getDb();
+    await db.prepare('DELETE FROM ai_config WHERE provider = ?').run(provKey);
+    res.json({ success: true, message: `Configuration for ${provKey} removed.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** POST /api/ai/test — Test a specific AI connection or the active connection */
+router.post('/test', async (req, res) => {
+  const { provider, apiKey, baseUrl, model } = req.body || {};
+  try {
+    // If specific parameters provided, test with them directly
+    if (apiKey && apiKey.trim().length > 0) {
+      const cleanBaseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+      let endpointUrl = cleanBaseUrl;
+      if (!endpointUrl.endsWith('/v1') && !endpointUrl.includes('/v1/') && !endpointUrl.endsWith('/chat/completions')) {
+        endpointUrl = `${endpointUrl}/v1`;
+      }
+      if (!endpointUrl.endsWith('/chat/completions')) {
+        endpointUrl = `${endpointUrl}/chat/completions`;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+      };
+
+      const resp = await fetch(endpointUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: model || 'openai/gpt-4o-mini',
+          messages: [{ role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }],
+          temperature: 0.7,
+          max_tokens: 50
+        })
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Provider returned error ${resp.status}: ${errText.slice(0, 300)}`);
+      }
+
+      const data = await resp.json();
+      const content = data.choices?.[0]?.message?.content || 'Connection verified!';
+      return res.json({ success: true, response: content.trim() });
+    }
+
+    // Otherwise test using provider from DB or default active AI
+    if (provider) {
+      const db = await getDb();
+      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provider.toLowerCase());
+      if (row && row.api_key_encrypted) {
+        const decryptedKey = decryptKey(row.api_key_encrypted);
+        const cleanBaseUrl = (row.base_url || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+        let endpointUrl = cleanBaseUrl;
+        if (!endpointUrl.endsWith('/v1') && !endpointUrl.includes('/v1/') && !endpointUrl.endsWith('/chat/completions')) {
+          endpointUrl = `${endpointUrl}/v1`;
+        }
+        if (!endpointUrl.endsWith('/chat/completions')) {
+          endpointUrl = `${endpointUrl}/chat/completions`;
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${decryptedKey}`,
+          ...(row.provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+        };
+
+        const resp = await fetch(endpointUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: row.model || 'openai/gpt-4o-mini',
+            messages: [{ role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }],
+            temperature: 0.7,
+            max_tokens: 50
+          })
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`Provider returned HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+        }
+
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content || 'Connection verified!';
+        return res.json({ success: true, response: content.trim() });
+      }
+    }
+
     const response = await callAI([
       { role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }
     ]);
     res.json({ success: true, response });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/** POST /api/ai/validate-all — Health check and validate all saved AI API keys against their endpoints */
+router.post('/validate-all', async (_req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.prepare('SELECT * FROM ai_config').all();
+    const results = {};
+
+    for (const row of rows || []) {
+      const prov = row.provider;
+      const decryptedKey = decryptKey(row.api_key_encrypted);
+      if (!decryptedKey) {
+        results[prov] = { valid: false, status: 'no_key', error: 'No API key stored' };
+        continue;
+      }
+
+      const cleanBaseUrl = (row.base_url || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+      let endpointUrl = cleanBaseUrl;
+      if (!endpointUrl.endsWith('/v1') && !endpointUrl.includes('/v1/') && !endpointUrl.endsWith('/chat/completions')) {
+        endpointUrl = `${endpointUrl}/v1`;
+      }
+      if (!endpointUrl.endsWith('/chat/completions')) {
+        endpointUrl = `${endpointUrl}/chat/completions`;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${decryptedKey}`,
+        ...(prov === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+      };
+
+      const startTime = Date.now();
+      try {
+        const resp = await fetch(endpointUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: row.model || 'openai/gpt-4o-mini',
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 5,
+          }),
+          signal: AbortSignal.timeout(8000), // 8s timeout
+        });
+
+        const latencyMs = Date.now() - startTime;
+        if (resp.ok) {
+          results[prov] = {
+            valid: true,
+            status: 'valid',
+            latencyMs,
+            model: row.model,
+            message: 'API Key verified & operational'
+          };
+        } else {
+          const errText = await resp.text();
+          let parsedError = `HTTP ${resp.status}`;
+          try {
+            const errJson = JSON.parse(errText);
+            parsedError = errJson.error?.message || errJson.message || parsedError;
+          } catch (_) {
+            if (errText) parsedError = `${parsedError}: ${errText.slice(0, 150)}`;
+          }
+          results[prov] = {
+            valid: false,
+            status: 'invalid',
+            latencyMs,
+            model: row.model,
+            error: parsedError
+          };
+        }
+      } catch (fErr) {
+        results[prov] = {
+          valid: false,
+          status: 'error',
+          model: row.model,
+          error: fErr.message || 'Connection timeout/failure'
+        };
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -502,32 +775,39 @@ router.post('/chat', async (req, res) => {
         const args = call.args || {};
 
         if (call.name === 'get_app_overview') {
-          const totalCampaigns = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM campaigns', (e, r) => res(r?.cnt || 0)));
-          const activeCampaigns = await new Promise(res => db.get("SELECT COUNT(*) as cnt FROM campaigns WHERE status='sending'", (e, r) => res(r?.cnt || 0)));
-          const unreadInbox = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM inbox_messages WHERE is_read=0', (e, r) => res(r?.cnt || 0)));
-          const hotLeads = await new Promise(res => db.get("SELECT COUNT(*) as cnt FROM inbox_messages WHERE sentiment='hot_lead'", (e, r) => res(r?.cnt || 0)));
-          const accountsCount = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM sending_accounts', (e, r) => res(r?.cnt || 0)));
-          const lists = await new Promise(res => db.all('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name', (e, r) => res(r || [])));
-          return { totalCampaigns, activeCampaigns, unreadInbox, hotLeads, accountsCount, lists };
+          const totalCampaignsRow = await db.prepare('SELECT COUNT(*) as cnt FROM campaigns').get();
+          const activeCampaignsRow = await db.prepare("SELECT COUNT(*) as cnt FROM campaigns WHERE status='sending'").get();
+          const unreadInboxRow = await db.prepare('SELECT COUNT(*) as cnt FROM inbox_messages WHERE is_read=0').get();
+          const hotLeadsRow = await db.prepare("SELECT COUNT(*) as cnt FROM inbox_messages WHERE sentiment='hot_lead'").get();
+          const accountsCountRow = await db.prepare('SELECT COUNT(*) as cnt FROM accounts').get();
+          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name').all();
+          return {
+            totalCampaigns: totalCampaignsRow?.cnt || 0,
+            activeCampaigns: activeCampaignsRow?.cnt || 0,
+            unreadInbox: unreadInboxRow?.cnt || 0,
+            hotLeads: hotLeadsRow?.cnt || 0,
+            accountsCount: accountsCountRow?.cnt || 0,
+            lists: lists || []
+          };
         }
 
         if (call.name === 'list_campaigns') {
           const query = args.status && args.status !== 'all' ? 'SELECT * FROM campaigns WHERE status = ?' : 'SELECT * FROM campaigns';
           const params = args.status && args.status !== 'all' ? [args.status] : [];
-          const campaigns = await new Promise(res => db.all(query, params, (e, r) => res(r || [])));
-          return { campaigns };
+          const campaigns = await db.prepare(query).all(...params);
+          return { campaigns: campaigns || [] };
         }
 
         if (call.name === 'create_campaign') {
           let totalContacts = 0;
           if (args.contact_list) {
-            const cntRow = await new Promise(res => db.get('SELECT COUNT(*) as cnt FROM contacts WHERE list_name = ?', [args.contact_list], (e, r) => res(r)));
+            const cntRow = await db.prepare('SELECT COUNT(*) as cnt FROM contacts WHERE list_name = ?').get(args.contact_list);
             totalContacts = cntRow?.cnt || 0;
           }
-          const stmt = db.prepare('INSERT INTO campaigns (name, subject, body_html, body_plain, contact_list, total_contacts, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
-          const id = await new Promise((res, rej) => stmt.run([args.name, args.subject, args.body_html, args.body_html.replace(/<[^>]+>/g, ''), args.contact_list || null, totalContacts, 'draft'], function(err) {
-            if (err) rej(err); else res(this.lastID);
-          }));
+          const plainText = (args.body_html || '').replace(/<[^>]+>/g, '');
+          const result = await db.prepare('INSERT INTO campaigns (name, subject, body_html, body_plain, contact_list, total_contacts, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(args.name, args.subject, args.body_html, plainText, args.contact_list || null, totalContacts, 'draft');
+          const id = result.lastInsertRowid || result.id || 0;
           return { success: true, campaign_id: id, name: args.name, status: 'draft', total_contacts: totalContacts, navigate: '/campaigns' };
         }
 
@@ -535,13 +815,13 @@ router.post('/chat', async (req, res) => {
           let newStatus = 'draft';
           if (args.action === 'start' || args.action === 'resume') newStatus = 'sending';
           if (args.action === 'pause') newStatus = 'paused';
-          await new Promise(res => db.run('UPDATE campaigns SET status = ? WHERE id = ?', [newStatus, args.campaign_id], (e) => res()));
+          await db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run(newStatus, args.campaign_id);
           return { success: true, campaign_id: args.campaign_id, status: newStatus };
         }
 
         if (call.name === 'list_prospect_lists') {
-          const lists = await new Promise(res => db.all('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name', (e, r) => res(r || [])));
-          return { lists };
+          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name').all();
+          return { lists: lists || [] };
         }
 
         if (call.name === 'search_inbox_messages') {
@@ -551,20 +831,19 @@ router.post('/chat', async (req, res) => {
             query = 'SELECT * FROM inbox_messages WHERE sentiment = ? ORDER BY id DESC LIMIT 10';
             params = [args.sentiment];
           }
-          const messages = await new Promise(res => db.all(query, params, (e, r) => res(r || [])));
-          return { messages };
+          const messages = await db.prepare(query).all(...params);
+          return { messages: messages || [] };
         }
 
         if (call.name === 'get_sending_accounts') {
-          const accounts = await new Promise(res => db.all('SELECT id, email, status, daily_limit, daily_sent, warmup_enabled FROM sending_accounts', (e, r) => res(r || [])));
-          return { accounts };
+          const accounts = await db.prepare('SELECT id, email, status, daily_limit, daily_sent, display_name FROM accounts').all();
+          return { accounts: accounts || [] };
         }
 
         if (call.name === 'create_template') {
-          const stmt = db.prepare('INSERT INTO templates (name, subject, body_html) VALUES (?, ?, ?)');
-          const id = await new Promise((res, rej) => stmt.run([args.name, args.subject, args.body_html], function(err) {
-            if (err) rej(err); else res(this.lastID);
-          }));
+          const result = await db.prepare('INSERT INTO templates (name, subject, body_html) VALUES (?, ?, ?)')
+            .run(args.name, args.subject, args.body_html);
+          const id = result.lastInsertRowid || result.id || 0;
           return { success: true, template_id: id, name: args.name, navigate: '/templates' };
         }
 

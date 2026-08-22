@@ -311,6 +311,48 @@ router.post('/signin', async (req, res) => {
   }
 });
 
+/** PIN Login endpoint for direct access PIN authentication. */
+router.post('/pin-login', async (req, res) => {
+  const { pin } = req.body;
+  const configuredPin = process.env.ACCESS_PIN || '123456';
+
+  if (!pin || String(pin).trim() !== String(configuredPin).trim()) {
+    return res.status(401).json({ error: 'Invalid access PIN.' });
+  }
+
+  try {
+    const db = await getDb();
+    let adminUser = await db.prepare("SELECT * FROM users WHERE email = 'admin@peakxender.local'").get();
+    
+    if (!adminUser) {
+      try {
+        const result = await db.prepare(
+          "INSERT INTO users (email, name, role, email_verified, auth_provider) VALUES ('admin@peakxender.local', 'Admin', 'admin', true, 'pin')"
+        ).run();
+        adminUser = { id: result.lastInsertRowid || 1, email: 'admin@peakxender.local', name: 'Admin', role: 'admin' };
+      } catch (_) {
+        adminUser = { id: 1, email: 'admin@peakxender.local', name: 'Admin', role: 'admin' };
+      }
+    }
+
+    const token = jwt.sign(
+      { id: adminUser.id, email: adminUser.email, name: adminUser.name || 'Admin', role: 'admin' },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      message: 'PIN verified successfully.',
+      user: { id: adminUser.id, email: adminUser.email, name: adminUser.name || 'Admin', role: 'admin' }
+    });
+  } catch (err) {
+    logger.error({ err }, 'PIN login error');
+    res.status(500).json({ error: 'PIN login failed.' });
+  }
+});
+
 /** PHASE 4: Refresh token endpoint — exchange refresh token for new access token */
 router.post('/refresh', async (req, res) => {
   const { refreshToken } = req.body;
