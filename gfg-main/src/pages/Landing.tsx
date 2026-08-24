@@ -427,7 +427,7 @@ export default function Landing() {
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Bento Card 1: Anti-Spam */}
+            {/* Bento Card 1: Deliverability Shield */}
             <motion.div 
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -441,14 +441,14 @@ export default function Landing() {
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
-                <h4 className="font-heading text-base font-bold text-foreground">Smart Anti-Spam Shuffling</h4>
+                <h4 className="font-heading text-base font-bold text-foreground">DNS &amp; Deliverability Shield</h4>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Automatically randomizes space encodings, reorders URL parameters, and injects zero-width whitespace to destroy email copy similarity hashes.
+                  Real-time SPF, DKIM, DMARC, and MX record diagnostics. Score domain health before launching to keep every cold email landing directly in primary inboxes.
                 </p>
               </div>
             </motion.div>
 
-            {/* Bento Card 2: Headerless CSV Engine */}
+            {/* Bento Card 2: Hot Lead Webhooks */}
             <motion.div 
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -459,17 +459,17 @@ export default function Landing() {
               className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-emerald-500/50 transition-colors shadow-xs group"
             >
               <div className="p-3 w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <FileSpreadsheet className="h-6 w-6" />
+                <Zap className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
-                <h4 className="font-heading text-base font-bold text-foreground">Headerless CSV Import Engine</h4>
+                <h4 className="font-heading text-base font-bold text-foreground">Hot Lead Webhook Alerts</h4>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Imports lead lists of any layout. Automatically detects if headers are missing, checks first-row values for emails, generates unique keys, and maps variables with zero data loss.
+                  AI classifies inbound prospect sentiment instantly. Receive high-priority in-app alerts and forward hot leads directly to Slack or your CRM the moment they reply.
                 </p>
               </div>
             </motion.div>
 
-            {/* Bento Card 3: 100% Client-Side */}
+            {/* Bento Card 3: Global Command Palette */}
             <motion.div 
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -480,12 +480,12 @@ export default function Landing() {
               className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-indigo-500/50 transition-colors shadow-xs group"
             >
               <div className="p-3 w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Lock className="h-6 w-6" />
+                <Cpu className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
-                <h4 className="font-heading text-base font-bold text-foreground">100% Private &amp; Local</h4>
+                <h4 className="font-heading text-base font-bold text-foreground">Command Palette (Ctrl+K)</h4>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Nothing is uploaded to an external database. All parser logic, lead mappings, and email dispatch sequences execute entirely inside your own browser window.
+                  Keyboard-first spotlight navigation. Search campaigns, prospect dossiers, inboxes, templates, and audit logs with instant keyboard shortcuts.
                 </p>
               </div>
             </motion.div>
@@ -505,15 +505,15 @@ export default function Landing() {
                   <RefreshCw className="h-6 w-6" />
                 </div>
                 <div className="space-y-1.5">
-                  <h4 className="font-heading text-base font-bold text-foreground">SMTP &amp; OAuth Rotator</h4>
+                  <h4 className="font-heading text-base font-bold text-foreground">Multi-Sender Mailbox Pool Rotator</h4>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Connect multiple senders securely using standard SMTP or Google OAuth. Peak Xender automatically cycles through your active sender accounts to distribute load and preserve mailbox health scores.
+                    Pool unlimited Google OAuth and custom SMTP mailboxes. Peak Xender automatically load-balances outbound volume, enforces provider daily limits, and filters automated security crawler clicks.
                   </p>
                 </div>
               </div>
             </motion.div>
 
-            {/* Bento Card 5: Smart BCC Batches */}
+            {/* Bento Card 5: Headerless CSV Import Engine */}
             <motion.div 
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -524,12 +524,12 @@ export default function Landing() {
               className="bg-card border border-border/60 rounded-3xl p-7 space-y-4 hover:border-[#635bff]/50 transition-colors shadow-xs group"
             >
               <div className="p-3 w-12 h-12 rounded-2xl bg-[#635bff]/10 text-[#635bff] flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Layers className="h-6 w-6" />
+                <FileSpreadsheet className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
-                <h4 className="font-heading text-base font-bold text-foreground">Smart BCC Batching</h4>
+                <h4 className="font-heading text-base font-bold text-foreground">Headerless CSV Parser</h4>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Send to multiple target recipients simultaneously in private BCC queues. Configurable batch sizes and self-rerouting structures automate outbox dispatch loops.
+                  Imports prospect lead lists of any layout. Auto-detects column headers, checks first-row values for emails, and maps variables with zero data loss.
                 </p>
               </div>
             </motion.div>

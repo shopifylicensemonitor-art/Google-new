@@ -22,6 +22,27 @@ interface TemplatesProps {
 // Mock initial category tags and stats for enhanced visual representation
 const TEMPLATE_CATEGORIES = ['All Templates', 'Cold Outreach', 'Follow-up', 'Networking', 'Welcome Series'];
 
+const STARTER_TEMPLATES = [
+  {
+    name: 'Shopify / E-Commerce Growth Pitch',
+    subject: '{Quick idea for|Question regarding} {{store_name}}',
+    body_html: '<p>Hi {{first_name}},</p>\n<p>I was browsing <strong>{{store_name}}</strong> and love what you are building in the {{niche}} space.</p>\n<p>We recently helped a similar brand scale their checkout conversion rate by 24% using automated AI cart recovery.</p>\n<p>Would you be open to a 5-minute chat this Thursday to see how we could do the same for {{store_name}}?</p>\n<p>Best regards,<br>{{my_name}}</p>',
+    body_plain: 'Hi {{first_name}},\n\nI was browsing {{store_name}} and love what you are building in the {{niche}} space.\n\nWe recently helped a similar brand scale their checkout conversion rate by 24% using automated AI cart recovery.\n\nWould you be open to a 5-minute chat this Thursday to see how we could do the same for {{store_name}}?\n\nBest regards,\n{{my_name}}'
+  },
+  {
+    name: 'B2B SaaS / Solution Pitch',
+    subject: '{{first_name}}, quick question about {{company_name}}',
+    body_html: '<p>Hi {{first_name}},</p>\n<p>Saw that you are leading growth at <strong>{{company_name}}</strong>.</p>\n<p>We developed a lightweight cold outreach infrastructure that automates multi-sender rotation and eliminates spam filters completely.</p>\n<p>Are you currently looking to ramp up outbound pipeline this quarter?</p>\n<p>Cheers,<br>{{my_name}}</p>',
+    body_plain: 'Hi {{first_name}},\n\nSaw that you are leading growth at {{company_name}}.\n\nWe developed a lightweight cold outreach infrastructure that automates multi-sender rotation and eliminates spam filters completely.\n\nAre you currently looking to ramp up outbound pipeline this quarter?\n\nCheers,\n{{my_name}}'
+  },
+  {
+    name: 'Gentle Step 2 Follow-Up',
+    subject: 'Re: {Quick idea for|Question regarding} {{store_name}}',
+    body_html: '<p>Hi {{first_name}},</p>\n<p>Floating this back to the top of your inbox in case it got buried under other messages.</p>\n<p>Let me know if this is something on your roadmap for {{company_name}} this month.</p>',
+    body_plain: 'Hi {{first_name}},\n\nFloating this back to the top of your inbox in case it got buried under other messages.\n\nLet me know if this is something on your roadmap for {{company_name}} this month.'
+  }
+];
+
 export default function Templates({ requirePin }: TemplatesProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -58,6 +79,33 @@ export default function Templates({ requirePin }: TemplatesProps) {
         variant: 'destructive',
         title: 'Error loading templates',
         description: e.message || 'Could not fetch templates.'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportStarters = async () => {
+    setLoading(true);
+    try {
+      for (const st of STARTER_TEMPLATES) {
+        await api.createTemplate({
+          name: st.name,
+          subject: st.subject,
+          body_html: st.body_html,
+          body_plain: st.body_plain
+        });
+      }
+      toast({
+        title: 'Starters Imported',
+        description: 'Added E-Commerce, SaaS & Follow-up starter templates to your library.'
+      });
+      loadTemplates();
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Import failed',
+        description: err.message
       });
     } finally {
       setLoading(false);
@@ -323,13 +371,23 @@ export default function Templates({ requirePin }: TemplatesProps) {
             </p>
           </div>
 
-          <Button
-            onClick={handleOpenNew}
-            className="h-10 px-5 text-xs font-semibold gap-2 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Create Template
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleImportStarters}
+              className="h-10 px-4 text-xs font-semibold gap-2 border-border/60 hover:bg-muted"
+            >
+              <Sparkles className="h-4 w-4 text-amber-500" />
+              Load Starters
+            </Button>
+            <Button
+              onClick={handleOpenNew}
+              className="h-10 px-5 text-xs font-semibold gap-2 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Create Template
+            </Button>
+          </div>
         </header>
 
         {/* Search & Category Filter Bar */}
@@ -374,13 +432,23 @@ export default function Templates({ requirePin }: TemplatesProps) {
           <div className="p-12 text-center text-muted-foreground text-xs bg-card rounded-xl border border-border/60 space-y-3">
             <FileText className="h-8 w-8 mx-auto opacity-30 text-muted-foreground" />
             <p className="font-medium text-foreground">No message templates found.</p>
-            <p className="text-muted-foreground">Create reusable outreach content with dynamic tags like {"{{first_name}}"} and {"{{company_name}}"}.</p>
-            <Button
-              onClick={handleOpenNew}
-              className="mt-2 text-xs font-semibold bg-[#635bff] text-white hover:bg-[#493ee5]"
-            >
-              Create First Template
-            </Button>
+            <p className="text-muted-foreground">Create reusable outreach content with dynamic tags like {"{{first_name}}"}, {"{{store_name}}"}, and {"{{company_name}}"}.</p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={handleImportStarters}
+                className="text-xs font-semibold gap-1.5 border-border/60"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                Load Starter Templates (Shopify, SaaS)
+              </Button>
+              <Button
+                onClick={handleOpenNew}
+                className="text-xs font-semibold bg-[#635bff] text-white hover:bg-[#493ee5]"
+              >
+                Create Custom Template
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
