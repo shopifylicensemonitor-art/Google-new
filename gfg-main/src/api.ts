@@ -245,11 +245,53 @@ import { navigateToRoute } from './lib/router';
 /** Clear expired token and redirect to login page */
 function handleAuthError() {
   localStorage.removeItem('auth_token');
+  localStorage.removeItem('refresh_token');
   // Only redirect if not already on login or landing page
   const path = window.location.pathname;
   if (path !== '/login' && path !== '/') {
     navigateToRoute('/login', { replace: true });
   }
+}
+
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+async function attemptTokenRefresh(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return null;
+
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) {
+        throw new Error('Refresh failed');
+      }
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token);
+        return data.token;
+      }
+      return null;
+    } catch {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -275,7 +317,16 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     headers.set('X-Access-Pin', pin);
   }
 
-  const res = await fetch(url, { ...options, headers });
+  let res = await fetch(url, { ...options, headers });
+
+  // Handle 401: attempt silent refresh if we haven't already refreshed for this call
+  if (res.status === 401 && endpoint !== '/api/auth/signin' && endpoint !== '/api/auth/refresh') {
+    const newToken = await attemptTokenRefresh();
+    if (newToken) {
+      headers.set('Authorization', `Bearer ${newToken}`);
+      res = await fetch(url, { ...options, headers });
+    }
+  }
 
   // Global 401 handler: token expired or invalid → clear & redirect
   if (res.status === 401) {
@@ -434,6 +485,9 @@ export const api = {
   }),
   deleteCampaign: (id: number) => apiFetch<{ success: boolean; message?: string }>(`/api/campaigns/${id}`, {
     method: 'DELETE'
+  }),
+  duplicateCampaign: (id: number) => apiFetch<{ success: boolean; campaign_id: number; message: string }>(`/api/campaigns/${id}/duplicate`, {
+    method: 'POST'
   }),
   launchCampaign: (id: number, options?: { account_ids?: number[]; custom_filters?: any[]; target_limit?: number; target_range_start?: number; target_range_end?: number; exclude_previously_contacted?: boolean | number; recipients?: any[]; contacts?: any[] }) => apiFetch<{ success: boolean; message: string; processing_started?: boolean; processing_error?: string; recipients_count?: number; accounts_count?: number }>(`/api/campaigns/${id}/launch`, {
     method: 'POST',
@@ -699,4 +753,14 @@ export const api = {
   triggerWorker: () => apiFetch<{ success: boolean; message: string }>('/api/queue/worker/trigger', {
     method: 'POST'
   }),
+
+  // Persistent In-App Notifications
+  getNotifications: (limit = 20) => apiFetch<{
+    items: { id: number; user_id: number; type: string; title: string; message: string; is_read: number; created_at: string }[];
+    unread_count: number;
+  }>(`/api/notifications?limit=${limit}`),
+  markNotificationRead: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => apiFetch<{ success: boolean; message: string }>('/api/notifications/read-all', { method: 'POST' }),
+  deleteNotification: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/notifications/${id}`, { method: 'DELETE' }),
+  clearAllNotifications: () => apiFetch<{ success: boolean; message: string }>('/api/notifications/clear-all', { method: 'DELETE' }),
 };

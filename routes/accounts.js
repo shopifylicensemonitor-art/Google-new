@@ -792,9 +792,9 @@ router.post('/send-direct', async (req, res) => {
     // Update account daily count & write to logs table
     await db.prepare('UPDATE accounts SET daily_sent = daily_sent + 1 WHERE id = ?').run(account.id);
     await db.prepare(`
-      INSERT INTO logs (account_id, recipient_email, status, message)
-      VALUES (?, ?, 'sent', ?)
-    `).run(account.id, to, `Direct email sent to ${to}`);
+      INSERT INTO logs (account_id, recipient_email, status, message, user_id)
+      VALUES (?, ?, 'sent', ?, ?)
+    `).run(account.id, to, `Direct email sent to ${to}`, req.userId);
 
     res.json({ success: true, message: `Email sent immediately to ${to} via ${account.email}.` });
   } catch (err) {

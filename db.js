@@ -560,9 +560,30 @@ const SQLITE_DDL = `
 
   CREATE TABLE IF NOT EXISTS device_states (
     device_id TEXT PRIMARY KEY,
+    user_id INTEGER,
     ip_address TEXT,
     state_data TEXT NOT NULL,
     updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT DEFAULT 'info',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS ai_config (
@@ -796,6 +817,32 @@ const PG_DDL = `
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS device_states (
+    device_id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    ip_address TEXT,
+    state_data TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT DEFAULT 'info',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, key)
+  );
+
   CREATE TABLE IF NOT EXISTS ai_config (
     id SERIAL PRIMARY KEY,
     provider TEXT NOT NULL DEFAULT 'openrouter',
@@ -822,7 +869,11 @@ const PG_DDL = `
 // ============================================================================
 
 /** Tables whose rows belong to a single application user. */
-const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list', 'inbox_messages', 'ai_config', 'ai_rules'];
+const TENANT_TABLES = [
+  'accounts', 'contacts', 'campaigns', 'templates', 'suppression_list',
+  'inbox_messages', 'ai_config', 'ai_rules', 'notifications', 'user_settings',
+  'device_states', 'logs', 'queue'
+];
 
 const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
@@ -832,6 +883,10 @@ const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_inbox_messages_user ON inbox_messages(user_id);
   CREATE INDEX IF NOT EXISTS idx_ai_config_user ON ai_config(user_id);
   CREATE INDEX IF NOT EXISTS idx_ai_rules_user ON ai_rules(user_id);
+  CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+  CREATE INDEX IF NOT EXISTS idx_device_states_user ON device_states(user_id);
+  CREATE INDEX IF NOT EXISTS idx_logs_user ON logs(user_id);
+  CREATE INDEX IF NOT EXISTS idx_queue_user ON queue(user_id);
 `;
 
 /**
@@ -1184,6 +1239,32 @@ ready = (async () => {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
           created_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+    } catch (_) {}
+    try {
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          type TEXT DEFAULT 'info',
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          is_read INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+      `);
+    } catch (_) {}
+    try {
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS user_settings (
+          user_id INTEGER NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT,
+          updated_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (user_id, key),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
       `);
     } catch (_) {}

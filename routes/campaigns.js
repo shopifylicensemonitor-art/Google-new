@@ -410,6 +410,63 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+/** Duplicate an existing campaign and its sequence steps as a new draft */
+router.post('/:id/duplicate', async (req, res) => {
+  try {
+    const db = await getDb();
+    const original = await getOwnedCampaign(db, req.params.id, req.userId);
+    if (!original) return res.status(404).json({ error: 'Campaign not found.' });
+
+    const steps = await db.prepare(
+      'SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_number ASC'
+    ).all(req.params.id);
+
+    const dupTx = db.transaction(async (txDb) => {
+      const newName = `${original.name} (Copy)`;
+      const resCamp = await txDb.prepare(`
+        INSERT INTO campaigns (
+          name, subject, body_html, body_plain, contact_list, status,
+          delay_seconds, min_delay, max_delay, cooldown_enabled, cooldown_batch_size, cooldown_duration_minutes,
+          start_time, end_time, exclude_previously_contacted, custom_filters, user_id
+        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        newName,
+        original.subject,
+        original.body_html || '',
+        original.body_plain || '',
+        original.contact_list || '',
+        original.delay_seconds || 30,
+        original.min_delay || 30,
+        original.max_delay || 60,
+        original.cooldown_enabled ? 1 : 0,
+        original.cooldown_batch_size || 50,
+        original.cooldown_duration_minutes || 60,
+        original.start_time || '08:00',
+        original.end_time || '22:00',
+        original.exclude_previously_contacted ? 1 : 0,
+        original.custom_filters || '[]',
+        req.userId
+      );
+
+      const newId = resCamp.lastInsertRowid;
+
+      for (const step of steps || []) {
+        await txDb.prepare(`
+          INSERT INTO campaign_steps (campaign_id, step_number, subject, body_html, body_plain, delay_seconds, trigger_event)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(newId, step.step_number, step.subject, step.body_html || '', step.body_plain || '', step.delay_seconds || 86400, step.trigger_event || 'wait');
+      }
+
+      return newId;
+    });
+
+    const newCampaignId = await dupTx();
+    res.json({ success: true, campaign_id: newCampaignId, message: 'Campaign duplicated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * Create campaign from CSV data (AutoHotkey integration endpoint).
  * Accepts: campaign name, subjects, recipients (CSV rows), HTML template, optional account_id.
@@ -503,9 +560,9 @@ router.post('/create-from-csv', async (req, res) => {
         );
 
         await txDb.prepare(`
-          INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields)
-          VALUES (?, ?, ?, 'pending', ?, ?)
-        `).run(campaignId, recipEmail, accountId, scheduledAt.toISOString(), fieldsJson);
+          INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields, user_id)
+          VALUES (?, ?, ?, 'pending', ?, ?, ?)
+        `).run(campaignId, recipEmail, accountId, scheduledAt.toISOString(), fieldsJson, req.userId);
       }
 
       return campaignId;
@@ -575,9 +632,9 @@ router.post('/:id/launch', async (req, res) => {
       const previouslySentRows = await db.prepare(`
         SELECT DISTINCT LOWER(l.recipient_email) as email
         FROM logs l
-        JOIN campaigns c ON l.campaign_id = c.id
-        WHERE c.user_id = ? AND l.status = 'sent'
-      `).all(req.userId);
+        LEFT JOIN campaigns c ON l.campaign_id = c.id
+        WHERE (l.user_id = ? OR c.user_id = ?) AND l.status = 'sent'
+      `).all(req.userId, req.userId);
       const sentEmailSet = new Set(previouslySentRows.map(r => (r.email || '').toLowerCase().trim()));
       contacts = contacts.filter(c => !sentEmailSet.has((c.email || '').toLowerCase().trim()));
     }
@@ -713,9 +770,9 @@ router.post('/:id/launch', async (req, res) => {
 
         // Queue Step 1
         await txDb.prepare(`
-          INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields, step_number, campaign_step_id)
-          VALUES (?, ?, ?, 'pending', ?, ?, 1, ?)
-        `).run(req.params.id, recipientEmail, accountId, scheduledAt.toISOString(), recipient.fields || null, firstStep ? firstStep.id : null);
+          INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields, step_number, campaign_step_id, user_id)
+          VALUES (?, ?, ?, 'pending', ?, ?, 1, ?, ?)
+        `).run(req.params.id, recipientEmail, accountId, scheduledAt.toISOString(), recipient.fields || null, firstStep ? firstStep.id : null, req.userId);
       }
 
       // Update campaign status

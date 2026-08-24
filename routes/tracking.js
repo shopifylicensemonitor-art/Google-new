@@ -67,14 +67,16 @@ const handleUnsubscribe = async (req, res) => {
     const db = await getDb();
     let email = req.query.email || req.body?.email;
     let campaignId = req.query.campaign_id || req.body?.campaign_id;
+    let userId = req.query.user_id || req.body?.user_id;
     const token = req.query.token || req.body?.token;
 
     if (token) {
       try {
         const decoded = Buffer.from(token, 'base64url').toString('utf-8');
-        const [tokEmail, tokCampId] = decoded.split('|');
+        const [tokEmail, tokCampId, tokUserId] = decoded.split('|');
         if (tokEmail) email = tokEmail;
         if (tokCampId) campaignId = tokCampId;
+        if (tokUserId) userId = tokUserId;
       } catch (_) {
         // Fallback
       }
@@ -98,12 +100,20 @@ const handleUnsubscribe = async (req, res) => {
 
     email = email.trim().toLowerCase();
 
-    // 1. Add email to master suppression list
+    // Resolve user_id from campaign if not present in token
+    if (!userId && campaignId) {
+      try {
+        const camp = await db.prepare('SELECT user_id FROM campaigns WHERE id = ?').get(campaignId);
+        if (camp && camp.user_id) userId = camp.user_id;
+      } catch (_) {}
+    }
+
+    // 1. Add email to suppression list scoped by user
     try {
       await db.prepare(`
-        INSERT INTO suppression_list (type, value, reason)
-        VALUES ('email', ?, 'unsubscribed')
-      `).run(email);
+        INSERT INTO suppression_list (type, value, reason, user_id)
+        VALUES ('email', ?, 'unsubscribed', ?)
+      `).run(email, userId || null);
     } catch (_) {
       // Already suppressed
     }
@@ -115,6 +125,12 @@ const handleUnsubscribe = async (req, res) => {
         SET status = 'unsubscribed' 
         WHERE LOWER(recipient_email) = ? AND campaign_id = ?
       `).run(email, campaignId);
+    } else if (userId) {
+      await db.prepare(`
+        UPDATE campaign_recipients 
+        SET status = 'unsubscribed' 
+        WHERE LOWER(recipient_email) = ? AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)
+      `).run(email, userId);
     } else {
       await db.prepare(`
         UPDATE campaign_recipients 
@@ -124,13 +140,21 @@ const handleUnsubscribe = async (req, res) => {
     }
 
     // 3. Cancel any pending queue items for this recipient
-    await db.prepare(`
-      UPDATE queue 
-      SET status = 'cancelled', error = 'Unsubscribed by recipient' 
-      WHERE LOWER(recipient_email) = ? AND status = 'pending'
-    `).run(email);
+    if (userId) {
+      await db.prepare(`
+        UPDATE queue 
+        SET status = 'cancelled', error = 'Unsubscribed by recipient' 
+        WHERE LOWER(recipient_email) = ? AND status = 'pending' AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)
+      `).run(email, userId);
+    } else {
+      await db.prepare(`
+        UPDATE queue 
+        SET status = 'cancelled', error = 'Unsubscribed by recipient' 
+        WHERE LOWER(recipient_email) = ? AND status = 'pending'
+      `).run(email);
+    }
 
-    logger.info({ email, campaignId }, 'Recipient unsubscribed successfully');
+    logger.info({ email, campaignId, userId }, 'Recipient unsubscribed successfully');
 
     // RFC 8058 One-Click Unsubscribe via HTTP POST
     if (req.method === 'POST') {

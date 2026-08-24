@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from '@/hooks/use-toast';
 import { 
   FileText, RefreshCw, Send, CheckCircle2, XCircle, AlertCircle, Filter, 
-  Clock, Eye, Terminal, Check
+  Clock, Eye, Terminal, Check, Download
 } from 'lucide-react';
 
 export default function Logs() {
@@ -43,6 +43,33 @@ export default function Logs() {
     return log.status.toLowerCase() === statusFilter.toLowerCase();
   });
 
+  const handleExportCSV = () => {
+    if (filteredLogs.length === 0) {
+      toast({ title: 'No Logs', description: 'No logs available to export.' });
+      return;
+    }
+    const headers = ['ID', 'Date', 'Recipient', 'Status', 'Message', 'Campaign ID', 'Account ID'];
+    const rows = filteredLogs.map(l => [
+      l.id,
+      `"${new Date(l.created_at).toISOString()}"`,
+      `"${l.recipient_email || ''}"`,
+      `"${l.status}"`,
+      `"${(l.message || '').replace(/"/g, '""')}"`,
+      l.campaign_id || '',
+      l.account_id || ''
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `outreach_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({ title: 'Exported', description: `Exported ${filteredLogs.length} logs to CSV.` });
+  };
+
   return (
     <AppShell>
       <SEO
@@ -72,6 +99,16 @@ export default function Logs() {
               <option value={50}>Show 50</option>
               <option value={100}>Show 100</option>
             </select>
+
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              disabled={loading || filteredLogs.length === 0}
+              className="h-10 px-3 text-xs font-bold border-border/60 bg-card hover:bg-muted/40 gap-1.5"
+            >
+              <Download className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </Button>
 
             <Button
               variant="outline"

@@ -311,6 +311,47 @@ router.post('/signin', async (req, res) => {
   }
 });
 
+/** Refresh access token using stored refresh token */
+router.post('/refresh', async (req, res) => {
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token is required.' });
+  }
+
+  try {
+    const db = await getDb();
+    let row = null;
+    try {
+      row = await db.prepare(
+        'SELECT r.*, u.email, u.name, u.role FROM refresh_tokens r JOIN users u ON r.user_id = u.id WHERE r.token = ? AND r.expires_at > NOW()'
+      ).get(refreshToken);
+    } catch (_) {
+      row = await db.prepare(
+        "SELECT r.*, u.email, u.name, u.role FROM refresh_tokens r JOIN users u ON r.user_id = u.id WHERE r.token = ? AND datetime(r.expires_at) > datetime('now')"
+      ).get(refreshToken);
+    }
+
+    if (!row) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token.' });
+    }
+
+    const token = jwt.sign(
+      { id: row.user_id, email: row.email, name: row.name, role: row.role },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: { id: row.user_id, email: row.email, name: row.name, role: row.role }
+    });
+  } catch (err) {
+    logger.error({ err }, 'Token refresh error');
+    res.status(500).json({ error: 'Failed to refresh token.' });
+  }
+});
+
 /** PIN Login endpoint for direct access PIN authentication. */
 router.post('/pin-login', async (req, res) => {
   const { pin } = req.body;

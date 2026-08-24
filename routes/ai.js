@@ -378,7 +378,7 @@ router.post('/test', async (req, res) => {
     // Otherwise test using provider from DB or default active AI
     if (provider) {
       const db = await getDb();
-      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provider.toLowerCase());
+      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provider.toLowerCase(), req.userId) || await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id IS NULL').get(provider.toLowerCase());
       if (row && row.api_key_encrypted) {
         const decryptedKey = decryptKey(row.api_key_encrypted);
         const cleanBaseUrl = (row.base_url || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
@@ -409,7 +409,7 @@ router.post('/test', async (req, res) => {
 
         if (!resp.ok) {
           const errText = await resp.text();
-          throw new Error(`Provider returned HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+          throw new Error(`Provider returned error ${resp.status}: ${errText.slice(0, 300)}`);
         }
 
         const data = await resp.json();
@@ -428,10 +428,10 @@ router.post('/test', async (req, res) => {
 });
 
 /** POST /api/ai/validate-all — Health check and validate all saved AI API keys against their endpoints */
-router.post('/validate-all', async (_req, res) => {
+router.post('/validate-all', async (req, res) => {
   try {
     const db = await getDb();
-    const rows = await db.prepare('SELECT * FROM ai_config').all();
+    const rows = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? OR user_id IS NULL').all(req.userId);
     const results = {};
 
     for (const row of rows || []) {

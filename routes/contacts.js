@@ -47,19 +47,24 @@ router.get('/lists', async (req, res) => {
   }
 });
 
-/** Retrieve configuration state for a device/IP. */
+/** Retrieve configuration state for a device/IP scoped by user. */
 router.get('/state/retrieve', async (req, res) => {
   try {
     const db = await getDb();
     const deviceId = req.query.device_id || '';
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+    const uid = req.userId;
 
     let row;
     if (deviceId) {
-      row = await db.prepare('SELECT state_data FROM device_states WHERE device_id = ?').get(deviceId);
+      row = await db.prepare('SELECT state_data FROM device_states WHERE device_id = ? AND user_id = ?').get(deviceId, uid);
     }
     if (!row) {
-      row = await db.prepare('SELECT state_data FROM device_states WHERE ip_address = ? ORDER BY updated_at DESC').get(ip);
+      row = await db.prepare('SELECT state_data FROM device_states WHERE ip_address = ? AND user_id = ? ORDER BY updated_at DESC').get(ip, uid);
+    }
+    // Fallback for legacy state without user_id if not found
+    if (!row && deviceId) {
+      row = await db.prepare('SELECT state_data FROM device_states WHERE device_id = ? AND user_id IS NULL').get(deviceId);
     }
 
     if (row) {
@@ -72,12 +77,13 @@ router.get('/state/retrieve', async (req, res) => {
   }
 });
 
-/** Save configuration state for a device/IP. */
+/** Save configuration state for a device/IP scoped by user. */
 router.post('/state/save', async (req, res) => {
   try {
     const db = await getDb();
     const { device_id: deviceId, state_data: stateData } = req.body;
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+    const uid = req.userId;
 
     if (!deviceId) {
       return res.status(400).json({ error: 'device_id is required.' });
@@ -85,13 +91,13 @@ router.post('/state/save', async (req, res) => {
 
     const stateStr = typeof stateData === 'string' ? stateData : JSON.stringify(stateData);
 
-    const existing = await db.prepare('SELECT device_id FROM device_states WHERE device_id = ?').get(deviceId);
+    const existing = await db.prepare('SELECT device_id FROM device_states WHERE device_id = ? AND user_id = ?').get(deviceId, uid);
     if (existing) {
-      await db.prepare('UPDATE device_states SET state_data = ?, ip_address = ?, updated_at = datetime(\'now\') WHERE device_id = ?')
-        .run(stateStr, ip, deviceId);
+      await db.prepare('UPDATE device_states SET state_data = ?, ip_address = ?, updated_at = datetime(\'now\') WHERE device_id = ? AND user_id = ?')
+        .run(stateStr, ip, deviceId, uid);
     } else {
-      await db.prepare('INSERT INTO device_states (device_id, ip_address, state_data) VALUES (?, ?, ?)')
-        .run(deviceId, ip, stateStr);
+      await db.prepare('INSERT INTO device_states (device_id, user_id, ip_address, state_data) VALUES (?, ?, ?, ?)')
+        .run(deviceId, uid, ip, stateStr);
     }
 
     res.json({ success: true });

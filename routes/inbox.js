@@ -346,11 +346,12 @@ async function syncAccountInbox(account, db, uid) {
     // Log the sync result
     try {
       await db.prepare(
-        "INSERT INTO logs (account_id, recipient_email, status, message) VALUES (?, ?, 'sync', ?)"
+        "INSERT INTO logs (account_id, recipient_email, status, message, user_id) VALUES (?, ?, 'sync', ?, ?)"
       ).run(
         account.id,
         account.email,
-        `Inbox sync completed: ${accountNewCount} new message(s) received.`
+        `Inbox sync completed: ${accountNewCount} new message(s) received.`,
+        uid
       );
     } catch (_) {}
 
@@ -690,15 +691,15 @@ router.post('/:id/reply', async (req, res) => {
 
     // Log the reply action
     await db.prepare(`
-      INSERT INTO logs (account_id, recipient_email, status, message)
-      VALUES (?, ?, 'replied', ?)
-    `).run(account.id, msg.sender_email, `Sent reply to ${msg.sender_email}`);
+      INSERT INTO logs (account_id, recipient_email, status, message, user_id)
+      VALUES (?, ?, 'replied', ?, ?)
+    `).run(account.id, msg.sender_email, `Sent reply to ${msg.sender_email}`, req.userId);
 
     // Mark message as read and status as replied
     try {
-      await db.prepare("UPDATE inbox_messages SET is_read = 1, status = 'replied' WHERE id = ?").run(req.params.id);
+      await db.prepare("UPDATE inbox_messages SET is_read = 1, status = 'replied' WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))").run(req.params.id, req.userId, req.userId);
     } catch (_) {
-      await db.prepare("UPDATE inbox_messages SET is_read = 1 WHERE id = ?").run(req.params.id);
+      await db.prepare("UPDATE inbox_messages SET is_read = 1 WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))").run(req.params.id, req.userId, req.userId);
     }
 
     res.json({ success: true, message: `Reply sent successfully to ${msg.sender_email}.` });

@@ -254,7 +254,7 @@ async function sendEmail(account, to, subject, bodyHtml, campaignId = 0) {
 
   // RFC 8058 List-Unsubscribe headers (required by Gmail & Yahoo for bulk senders)
   const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:3000';
-  const unsubToken = Buffer.from(`${to}|${campaignId}`).toString('base64url');
+  const unsubToken = Buffer.from(`${to}|${campaignId}|${account.user_id || ''}`).toString('base64url');
   const unsubUrl = `${baseUrl}/api/unsubscribe?token=${unsubToken}`;
   const unsubEmail = `unsubscribe+${to.replace('@', '=')}@${account.email.split('@')[1]}`;
   const unsubHeader = `<${unsubUrl}>, <mailto:${unsubEmail}?subject=unsubscribe>`;
@@ -379,9 +379,9 @@ async function syncContactListsToActiveCampaigns(db) {
             : JSON.stringify(contact.fields || {});
 
           await db.prepare(`
-            INSERT INTO queue (campaign_id, recipient_email, account_id, fields, status, scheduled_at)
-            VALUES (?, ?, ?, ?, 'pending', datetime('now'))
-          `).run(campaign.id, contact.email, assignedAccountId, fieldsJson);
+            INSERT INTO queue (campaign_id, recipient_email, account_id, fields, status, scheduled_at, user_id)
+            VALUES (?, ?, ?, ?, 'pending', datetime('now'), ?)
+          `).run(campaign.id, contact.email, assignedAccountId, fieldsJson, campaign.user_id || null);
         }
 
         totalNewlyQueued += missingContacts.length;
@@ -503,15 +503,15 @@ async function processNextItem() {
         continue;
       }
 
-      // Check global master suppression list (by exact email or domain)
+      // Check master suppression list (scoped to user or global)
       const cleanRecipientEmail = (item.recipient_email || '').toLowerCase().trim();
       const cleanRecipientDomain = cleanRecipientEmail.includes('@') ? cleanRecipientEmail.split('@')[1] : '';
 
       const suppressedRow = await db.prepare(`
         SELECT * FROM suppression_list
-        WHERE (type = 'email' AND LOWER(value) = ?)
-           OR (type = 'domain' AND LOWER(value) = ?)
-      `).get(cleanRecipientEmail, cleanRecipientDomain);
+        WHERE ((type = 'email' AND LOWER(value) = ?) OR (type = 'domain' AND LOWER(value) = ?))
+          AND (user_id = ? OR user_id IS NULL)
+      `).get(cleanRecipientEmail, cleanRecipientDomain, item.user_id || null);
 
       if (suppressedRow) {
         await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE id = ?").run(item.id);
@@ -603,9 +603,9 @@ async function processNextItem() {
             const scheduledTime = new Date(Date.now() + delayMs);
 
             await db.prepare(`
-              INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields, step_number, campaign_step_id)
-              VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
-            `).run(item.campaign_id, item.recipient_email, account.id, scheduledTime.toISOString(), item.fields, nextStep.step_number, nextStep.id);
+              INSERT INTO queue (campaign_id, recipient_email, account_id, status, scheduled_at, fields, step_number, campaign_step_id, user_id)
+              VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            `).run(item.campaign_id, item.recipient_email, account.id, scheduledTime.toISOString(), item.fields, nextStep.step_number, nextStep.id, item.user_id || account.user_id || null);
 
             logger.info({ recipient: item.recipient_email, campaignId: item.campaign_id, nextStep: nextStep.step_number, scheduledAt: scheduledTime }, 'Scheduled follow-up email step');
           }
@@ -645,13 +645,13 @@ async function processNextItem() {
           await db.prepare("UPDATE queue SET status = 'pending', retry_count = ?, scheduled_at = ?, error = ? WHERE id = ?")
             .run(nextRetryCount, nextAttempt.toISOString(), err.message, item.id);
 
-          await logEvent(db, item.campaign_id, account.id, item.recipient_email, 'retry', `Attempt ${nextRetryCount} failed: ${err.message}. Retrying at ${nextAttempt.toISOString()}`, item.id);
+          await logEvent(db, item.campaign_id, account.id, item.recipient_email, 'retry', `Attempt ${nextRetryCount} failed: ${err.message}. Retrying at ${nextAttempt.toISOString()}`, item.id, item.user_id || account.user_id);
           logger.warn({ err, recipient: item.recipient_email, attempt: nextRetryCount, backoffMinutes }, 'Temporary sending failure');
         } else {
           // Mark as failed permanently
             await db.prepare("UPDATE queue SET status = 'failed', error = ? WHERE id = ?").run(err.message, item.id);
           await db.prepare('UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = ?').run(item.campaign_id);
-          await logEvent(db, item.campaign_id, account.id, item.recipient_email, 'failed', err.message, item.id);
+          await logEvent(db, item.campaign_id, account.id, item.recipient_email, 'failed', err.message, item.id, item.user_id || account.user_id);
             logger.error({ err, recipient: item.recipient_email }, 'Permanent sending failure');
 
           // Reservation was consumed for this permanent failure — decrement to free quota
@@ -735,14 +735,28 @@ async function completeEmptySendingCampaigns(db) {
 // Log helper
 // ---------------------------------------------------------------------------
 
-async function logEvent(db, campaignId, accountId, recipient, status, message, queueId = null) {
+async function logEvent(db, campaignId, accountId, recipient, status, message, queueId = null, userId = null) {
   try {
+    let uid = userId;
+    if (!uid && campaignId) {
+      try {
+        const c = await db.prepare('SELECT user_id FROM campaigns WHERE id = ?').get(campaignId);
+        if (c && c.user_id) uid = c.user_id;
+      } catch (_) {}
+    }
+    if (!uid && accountId) {
+      try {
+        const a = await db.prepare('SELECT user_id FROM accounts WHERE id = ?').get(accountId);
+        if (a && a.user_id) uid = a.user_id;
+      } catch (_) {}
+    }
+
     await db.prepare(`
-      INSERT INTO logs (campaign_id, account_id, recipient_email, status, message, queue_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(campaignId, accountId, recipient, status, message, queueId);
+      INSERT INTO logs (campaign_id, account_id, recipient_email, status, message, queue_id, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(campaignId, accountId, recipient, status, message, queueId, uid || null);
   } catch (err) {
-    // Fallback if queue_id column doesn't exist yet in the database
+    // Fallback if queue_id/user_id columns don't exist yet in the database
     try {
       await db.prepare(`
         INSERT INTO logs (campaign_id, account_id, recipient_email, status, message)

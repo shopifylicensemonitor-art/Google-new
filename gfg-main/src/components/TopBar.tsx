@@ -64,23 +64,39 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     fetchUser();
   }, []);
 
-  useEffect(() => {
-    // Load recent logs to display as notifications
-    const fetchLogs = async () => {
-      try {
-        const logs = await api.getRecentLogs(5);
-        if (logs) {
-          setRecentLogs(logs);
-          const failedLogs = logs.filter(l => l.status === 'failed' || l.status === 'error');
-          setUnreadCount(failedLogs.length > 0 ? failedLogs.length : (logs.length > 0 ? 2 : 0));
-        }
-      } catch {
-        // Silently ignore notification log fetch errors
+  const fetchNotificationsData = async () => {
+    try {
+      const res = await api.getNotifications(10);
+      if (res && res.items && res.items.length > 0) {
+        const notifLogs: LogItem[] = res.items.map(n => ({
+          id: n.id,
+          campaign_id: null,
+          account_id: null,
+          recipient_email: n.title,
+          status: n.type === 'error' ? 'failed' : 'sent',
+          message: n.message,
+          created_at: n.created_at,
+        }));
+        setRecentLogs(notifLogs);
+        setUnreadCount(res.unread_count || 0);
+        return;
       }
-    };
-    fetchLogs();
+      
+      const logs = await api.getRecentLogs(5);
+      if (logs) {
+        setRecentLogs(logs);
+        const failedLogs = logs.filter(l => l.status === 'failed' || l.status === 'error');
+        setUnreadCount(failedLogs.length > 0 ? failedLogs.length : (logs.length > 0 ? 1 : 0));
+      }
+    } catch {
+      // Silently ignore notification log fetch errors
+    }
+  };
+
+  useEffect(() => {
+    fetchNotificationsData();
     // Poll every 30 seconds for live notifications
-    const interval = setInterval(fetchLogs, 30000);
+    const interval = setInterval(fetchNotificationsData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -190,17 +206,24 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
 
   const handleSignOut = () => {
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('refresh_token');
     navigateToRoute('/login', { replace: true });
   };
 
-  const handleClearNotifications = () => {
+  const handleClearNotifications = async () => {
+    try {
+      await api.clearAllNotifications();
+    } catch (_) {}
     setRecentLogs([]);
     setUnreadCount(0);
     toast({ title: 'Cleared', description: 'All notifications cleared.' });
   };
 
-  const handleRemoveNotification = (id: number, e: React.MouseEvent) => {
+  const handleRemoveNotification = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    try {
+      await api.deleteNotification(id);
+    } catch (_) {}
     setRecentLogs(prev => prev.filter(l => l.id !== id));
     setUnreadCount(prev => Math.max(0, prev - 1));
   };

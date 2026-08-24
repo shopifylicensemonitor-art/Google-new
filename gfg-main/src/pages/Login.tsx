@@ -114,6 +114,9 @@ export default function Login() {
         if (data.token) {
           localStorage.setItem("auth_token", data.token);
         }
+        if (data.refreshToken) {
+          localStorage.setItem("refresh_token", data.refreshToken);
+        }
         navigate("/dashboard");
         return;
       }
