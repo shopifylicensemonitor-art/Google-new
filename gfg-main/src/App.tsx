@@ -61,6 +61,9 @@ const Inbox = lazyWithRetry(() => import("./pages/Inbox"));
 
 const Blog = lazyWithRetry(() => import("./pages/Blog"));
 const BlogPost = lazyWithRetry(() => import("./pages/BlogPost"));
+const Pricing = lazyWithRetry(() => import("./pages/Pricing"));
+const Features = lazyWithRetry(() => import("./pages/Features"));
+const ManagedService = lazyWithRetry(() => import("./pages/ManagedService"));
 
 // Use HashRouter in native apps (no server to handle URL paths),
 // BrowserRouter on web where Netlify handles routing.
@@ -166,6 +169,9 @@ const App = () => {
               <Route path="/terms" element={<Terms />} />
               <Route path="/blog" element={<Blog />} />
               <Route path="/blog/:slug" element={<BlogPost />} />
+              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/features" element={<Features />} />
+              <Route path="/managed-service" element={<ManagedService />} />
               
               {/* Protected Peak Xender routes */}
               <Route 
