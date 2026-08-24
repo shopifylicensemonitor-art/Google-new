@@ -32,6 +32,8 @@ export interface Account {
   smtp_host: string | null;
   smtp_port: number | null;
   smtp_secure: number | null;
+  warmup_enabled?: boolean | number;
+  warmup_daily_target?: number;
   created_at: string;
 }
 
@@ -447,6 +449,26 @@ export const api = {
     status: 'healthy' | 'warning' | 'critical';
     checked_at: string;
   }>(`/api/accounts/${id}/dns-check`),
+  toggleWarmup: (id: number, dailyTarget?: number) => apiFetch<{
+    success: boolean;
+    warmup_enabled: boolean;
+    warmup_daily_target: number;
+    message: string;
+  }>(`/api/accounts/${id}/warmup-toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ daily_target: dailyTarget || 40 })
+  }),
+  getWarmupStatus: (id: number) => apiFetch<{
+    account_id: number;
+    email: string;
+    warmup_enabled: boolean;
+    daily_target: number;
+    warmup_sent_today: number;
+    peer_replies_received: number;
+    inbox_save_rate: number;
+    reputation_score: number;
+    status_label: string;
+  }>(`/api/accounts/${id}/warmup-status`),
   connectSmtp: (data: {
     email: string;
     smtp_host: string;

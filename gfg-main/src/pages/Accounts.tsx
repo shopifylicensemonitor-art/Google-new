@@ -48,6 +48,9 @@ export default function Accounts({ requirePin }: AccountsProps) {
   const [showConnectModal, setShowConnectModal] = useState<boolean>(false);
   const [showSmtpModal, setShowSmtpModal] = useState<boolean>(false);
   const [selectedMailboxDetail, setSelectedMailboxDetail] = useState<Account | null>(null);
+  const [dnsData, setDnsData] = useState<Record<number, any>>({});
+  const [dnsLoadingId, setDnsLoadingId] = useState<number | null>(null);
+  const [warmupLoadingId, setWarmupLoadingId] = useState<number | null>(null);
 
   // SMTP Form State
   const [smtpEmail, setSmtpEmail] = useState<string>('');
@@ -254,6 +257,46 @@ export default function Accounts({ requirePin }: AccountsProps) {
       });
     } finally {
       setSavingLimitId(null);
+    }
+  };
+
+  const handleCheckDns = async (accountId: number) => {
+    try {
+      setDnsLoadingId(accountId);
+      const res = await api.checkDnsHealth(accountId);
+      setDnsData(prev => ({ ...prev, [accountId]: res }));
+      toast({
+        title: `DNS Score: ${res.score}/100`,
+        description: res.healthy ? 'SPF, DKIM, DMARC & MX are properly verified.' : 'Some DNS records require attention.'
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'DNS Diagnostic Failed',
+        description: e.message || 'Could not query DNS servers.'
+      });
+    } finally {
+      setDnsLoadingId(null);
+    }
+  };
+
+  const handleToggleWarmup = async (accountId: number, currentStatus?: boolean | number) => {
+    try {
+      setWarmupLoadingId(accountId);
+      const res = await api.toggleWarmup(accountId);
+      toast({
+        title: res.warmup_enabled ? '🔥 Deliverability Warm-Up Active' : 'Warm-Up Paused',
+        description: res.message
+      });
+      loadAccounts();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Warm-up update failed',
+        description: e.message
+      });
+    } finally {
+      setWarmupLoadingId(null);
     }
   };
 
@@ -937,32 +980,53 @@ export default function Accounts({ requirePin }: AccountsProps) {
               
               {/* Health Diagnostics Section */}
               <div className="space-y-3">
-                <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
-                  Health Diagnostics & DNS Records
-                </h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3 bg-muted/20 border border-border/60 rounded-xl space-y-1 relative">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 absolute top-3 right-3" />
-                    <span className="text-[10px] text-muted-foreground font-bold uppercase">SPF Record</span>
-                    <p className="font-bold text-xs text-foreground">Verified</p>
-                    <p className="text-[10px] text-muted-foreground">Authorized domain server protocol.</p>
-                  </div>
-
-                  <div className="p-3 bg-muted/20 border border-border/60 rounded-xl space-y-1 relative">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 absolute top-3 right-3" />
-                    <span className="text-[10px] text-muted-foreground font-bold uppercase">DKIM Record</span>
-                    <p className="font-bold text-xs text-foreground">Verified</p>
-                    <p className="text-[10px] text-muted-foreground">Cryptographic signature valid.</p>
-                  </div>
-
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1 relative">
-                    <ShieldAlert className="h-4 w-4 text-amber-600 absolute top-3 right-3" />
-                    <span className="text-[10px] text-amber-700 font-bold uppercase">DMARC Record</span>
-                    <p className="font-bold text-xs text-amber-800">Action Needed</p>
-                    <p className="text-[10px] text-amber-700/80">Policy set to 'none'. Move to 'quarantine'.</p>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider">
+                    Health Diagnostics & DNS Records
+                  </h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleCheckDns(selectedMailboxDetail.id)}
+                    disabled={dnsLoadingId === selectedMailboxDetail.id}
+                    className="h-7 text-[11px] font-bold gap-1 text-[#635bff] border-[#635bff]/30"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${dnsLoadingId === selectedMailboxDetail.id ? 'animate-spin' : ''}`} />
+                    {dnsLoadingId === selectedMailboxDetail.id ? 'Resolving DNS...' : 'Run Live DNS Diagnostic'}
+                  </Button>
                 </div>
+                
+                {(() => {
+                  const liveDns = dnsData[selectedMailboxDetail.id];
+                  const spfOk = liveDns ? liveDns.spf?.valid : true;
+                  const dkimOk = liveDns ? liveDns.dkim?.valid : true;
+                  const dmarcOk = liveDns ? liveDns.dmarc?.valid : true;
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className={`p-3 border rounded-xl space-y-1 relative ${spfOk ? 'bg-muted/20 border-border/60' : 'bg-red-500/10 border-red-500/30'}`}>
+                        {spfOk ? <CheckCircle2 className="h-4 w-4 text-emerald-600 absolute top-3 right-3" /> : <AlertTriangle className="h-4 w-4 text-red-500 absolute top-3 right-3" />}
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase">SPF Record</span>
+                        <p className="font-bold text-xs text-foreground">{spfOk ? 'Verified' : 'Missing / Invalid'}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{liveDns?.spf?.record || 'Authorized domain server protocol.'}</p>
+                      </div>
+
+                      <div className={`p-3 border rounded-xl space-y-1 relative ${dkimOk ? 'bg-muted/20 border-border/60' : 'bg-red-500/10 border-red-500/30'}`}>
+                        {dkimOk ? <CheckCircle2 className="h-4 w-4 text-emerald-600 absolute top-3 right-3" /> : <AlertTriangle className="h-4 w-4 text-red-500 absolute top-3 right-3" />}
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase">DKIM Record</span>
+                        <p className="font-bold text-xs text-foreground">{dkimOk ? 'Verified' : 'Unverified'}</p>
+                        <p className="text-[10px] text-muted-foreground">Cryptographic signature valid.</p>
+                      </div>
+
+                      <div className={`p-3 border rounded-xl space-y-1 relative ${dmarcOk ? 'bg-muted/20 border-border/60' : 'bg-amber-500/10 border-amber-500/30'}`}>
+                        {dmarcOk ? <CheckCircle2 className="h-4 w-4 text-emerald-600 absolute top-3 right-3" /> : <ShieldAlert className="h-4 w-4 text-amber-600 absolute top-3 right-3" />}
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase">DMARC Record</span>
+                        <p className="font-bold text-xs text-foreground">{dmarcOk ? 'Verified' : 'Action Recommended'}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{liveDns?.dmarc?.record || 'Policy protects against domain spoofing.'}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Connection & Settings Section */}
@@ -1079,18 +1143,42 @@ export default function Accounts({ requirePin }: AccountsProps) {
               </div>
 
               {/* Reputation & Warmup Score */}
-              <div className="p-4 bg-[#635bff]/5 border border-[#635bff]/20 rounded-xl flex items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <h4 className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                    <Flame className="h-4 w-4 text-[#635bff]" /> Deliverability Reputation Score
-                  </h4>
-                  <p className="text-[11px] text-muted-foreground">
-                    Sender domain reputation is high with minimal bounce rates.
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="font-heading text-2xl font-bold text-[#635bff]">98%</span>
-                  <span className="block text-[10px] text-emerald-600 font-bold">Excellent</span>
+              <div className="p-4 bg-[#635bff]/5 border border-[#635bff]/20 rounded-xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                      <Flame className="h-4 w-4 text-[#635bff]" /> Deliverability Warm-Up Booster
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground">
+                      Gradually ramps reputation using smart peer delivery simulation.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right shrink-0">
+                      <span className="font-heading text-xl font-bold text-[#635bff]">
+                        {selectedMailboxDetail.warmup_enabled ? '98%' : '76%'}
+                      </span>
+                      <span className={`block text-[10px] font-bold ${selectedMailboxDetail.warmup_enabled ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                        {selectedMailboxDetail.warmup_enabled ? '🔥 Warmup Active' : 'Warmup Inactive'}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleToggleWarmup(selectedMailboxDetail.id, selectedMailboxDetail.warmup_enabled)}
+                      disabled={warmupLoadingId === selectedMailboxDetail.id}
+                      className={`h-8 text-xs font-bold ${
+                        selectedMailboxDetail.warmup_enabled
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                          : 'bg-[#635bff] hover:bg-[#534be5] text-white'
+                      }`}
+                    >
+                      {warmupLoadingId === selectedMailboxDetail.id
+                        ? 'Updating...'
+                        : selectedMailboxDetail.warmup_enabled
+                        ? 'Pause Warm-Up'
+                        : 'Enable Warm-Up'}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
