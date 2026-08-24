@@ -743,6 +743,117 @@ router.post('/:id/test', async (req, res) => {
   }
 });
 
+/** Check DNS health (SPF, DKIM, DMARC, MX) for a connected sender account */
+router.get('/:id/dns-check', async (req, res) => {
+  try {
+    const dns = require('dns').promises;
+    const db = await getDb();
+    const account = await db.prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+    if (!account) return res.status(404).json({ error: 'Account not found.' });
+
+    const email = account.email || '';
+    const domain = email.includes('@') ? email.split('@')[1].trim().toLowerCase() : '';
+    if (!domain) return res.status(400).json({ error: 'Invalid account domain.' });
+
+    const issues = [];
+    let spf = { valid: false, record: null };
+    let dmarc = { valid: false, record: null };
+    let mx = { valid: false, records: [] };
+    let dkim = { valid: false, selector: null, record: null };
+
+    // 1. Check MX Records
+    try {
+      const mxRecords = await dns.resolveMx(domain);
+      if (mxRecords && mxRecords.length > 0) {
+        mx.valid = true;
+        mx.records = mxRecords.map(r => r.exchange);
+      } else {
+        issues.push(`No MX records found for ${domain}. Mail might not be receivable.`);
+      }
+    } catch (e) {
+      issues.push(`MX resolution failed for ${domain}: ${e.code || e.message}`);
+    }
+
+    // 2. Check SPF (TXT records on root domain)
+    try {
+      const txtRecords = await dns.resolveTxt(domain);
+      const flatTxt = (txtRecords || []).map(r => r.join(''));
+      const spfRecord = flatTxt.find(t => t.toLowerCase().startsWith('v=spf1'));
+      if (spfRecord) {
+        spf.valid = true;
+        spf.record = spfRecord;
+      } else {
+        issues.push(`Missing SPF record (v=spf1). Emails from ${domain} may land in spam.`);
+      }
+    } catch (e) {
+      issues.push(`TXT/SPF lookup failed for ${domain}: ${e.code || e.message}`);
+    }
+
+    // 3. Check DMARC (TXT record on _dmarc.domain)
+    try {
+      const dmarcRecords = await dns.resolveTxt(`_dmarc.${domain}`);
+      const flatDmarc = (dmarcRecords || []).map(r => r.join(''));
+      const dmarcRecord = flatDmarc.find(t => t.toLowerCase().startsWith('v=dmarc1'));
+      if (dmarcRecord) {
+        dmarc.valid = true;
+        dmarc.record = dmarcRecord;
+      } else {
+        issues.push(`Missing DMARC record on _dmarc.${domain}. Required by Google & Yahoo since 2024.`);
+      }
+    } catch (e) {
+      issues.push(`DMARC lookup failed on _dmarc.${domain}.`);
+    }
+
+    // 4. Check DKIM across common selectors
+    const commonSelectors = ['google', 'k1', 'default', 'mail', 's1', 'smtp'];
+    for (const sel of commonSelectors) {
+      try {
+        const dkimTxt = await dns.resolveTxt(`${sel}._domainkey.${domain}`);
+        const flatDkim = (dkimTxt || []).map(r => r.join(''));
+        const found = flatDkim.find(t => t.toLowerCase().includes('v=dkim1') || t.toLowerCase().includes('k=rsa') || t.toLowerCase().includes('p='));
+        if (found) {
+          dkim.valid = true;
+          dkim.selector = sel;
+          dkim.record = found;
+          break;
+        }
+      } catch (_) {}
+    }
+
+    if (!dkim.valid) {
+      if (domain === 'gmail.com' || domain === 'googlemail.com') {
+        dkim.valid = true;
+        dkim.selector = 'google (managed)';
+      } else {
+        issues.push(`DKIM selector not automatically found (tested: ${commonSelectors.join(', ')}). Ensure your selector is active.`);
+      }
+    }
+
+    // Overall Score (out of 100)
+    let score = 0;
+    if (mx.valid) score += 25;
+    if (spf.valid) score += 30;
+    if (dmarc.valid) score += 25;
+    if (dkim.valid) score += 20;
+
+    res.json({
+      success: true,
+      domain,
+      score,
+      spf,
+      dkim,
+      dmarc,
+      mx,
+      issues,
+      status: score >= 80 ? 'healthy' : (score >= 50 ? 'warning' : 'critical'),
+      checked_at: new Date().toISOString()
+    });
+  } catch (err) {
+    logger.error({ err }, 'DNS health check error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Send a direct email immediately (bypassing campaign batch queue). */
 router.post('/send-direct', async (req, res) => {
   const { account_id, to, subject, html_body, text_body } = req.body;

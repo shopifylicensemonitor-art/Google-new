@@ -338,6 +338,40 @@ async function syncAccountInbox(account, db, uid) {
           } catch (_) {}
         }
 
+        // 3. If hot lead, trigger persistent in-app notification & optional webhook
+        if (sentiment === 'hot_lead') {
+          try {
+            await db.prepare(
+              "INSERT INTO notifications (user_id, type, title, message, is_read) VALUES (?, 'success', ?, ?, 0)"
+            ).run(
+              uid,
+              `🔥 Hot Lead: ${senderEmail}`,
+              `New response with interested sentiment on subject: "${subject || 'No Subject'}"`
+            );
+
+            // Check if user has configured a hot-lead webhook URL
+            const webhookRow = await db.prepare(
+              "SELECT value FROM user_settings WHERE user_id = ? AND key = 'WEBHOOK_HOT_LEAD_URL'"
+            ).get(uid);
+
+            if (webhookRow && webhookRow.value && webhookRow.value.startsWith('http')) {
+              fetch(webhookRow.value, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  event: 'hot_lead_detected',
+                  user_id: uid,
+                  account_email: account.email,
+                  sender_email: senderEmail,
+                  subject,
+                  body: bodyText,
+                  received_at: msgTimestamp
+                })
+              }).catch(wErr => logger.warn({ err: wErr.message }, 'Failed to dispatch hot lead webhook'));
+            }
+          } catch (_) {}
+        }
+
       } catch (msgErr) {
         logger.warn({ err: msgErr, messageId: msgSummary.id }, 'Failed to parse single Gmail message');
       }

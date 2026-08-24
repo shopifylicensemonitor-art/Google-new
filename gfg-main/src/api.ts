@@ -435,6 +435,18 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reset_code: resetCode })
   }),
+  checkDnsHealth: (id: number) => apiFetch<{
+    success: boolean;
+    domain: string;
+    score: number;
+    spf: { valid: boolean; record: string | null };
+    dkim: { valid: boolean; selector: string | null; record: string | null };
+    dmarc: { valid: boolean; record: string | null };
+    mx: { valid: boolean; records: string[] };
+    issues: string[];
+    status: 'healthy' | 'warning' | 'critical';
+    checked_at: string;
+  }>(`/api/accounts/${id}/dns-check`),
   connectSmtp: (data: {
     email: string;
     smtp_host: string;

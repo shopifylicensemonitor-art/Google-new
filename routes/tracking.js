@@ -16,6 +16,39 @@ const logger = require('../logger');
 // Transparent 1x1 GIF tracking pixel
 const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
+/**
+ * Detect security scanner crawlers, image proxies, and prefetch bots
+ * (e.g. Barracuda, Proofpoint, GoogleImageProxy, Outlook SafeLinks, Headless Chrome)
+ */
+function isSecurityScannerOrBot(req) {
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  const purpose = (req.headers['purpose'] || req.headers['x-purpose'] || '').toLowerCase();
+  const secPurpose = (req.headers['sec-purpose'] || '').toLowerCase();
+
+  if (purpose === 'prefetch' || purpose === 'preview' || secPurpose === 'prefetch') {
+    return true;
+  }
+
+  const botSignatures = [
+    'googleimageproxy',
+    'barracuda',
+    'proofpoint',
+    'mimecast',
+    'symantec',
+    'safelinks',
+    'outlookcrawler',
+    'headlesschrome',
+    'phantomjs',
+    'bot',
+    'spider',
+    'crawler',
+    'wget',
+    'curl'
+  ];
+
+  return botSignatures.some(sig => ua.includes(sig));
+}
+
 /** Track Email Open. */
 router.get('/open/:id', async (req, res) => {
   const { id } = req.params;
@@ -48,11 +81,16 @@ router.get('/click/:id', async (req, res) => {
     return res.status(400).send('Invalid redirect URL. Only http and https URLs are allowed.');
   }
 
-  try {
-    const db = await getDb();
-    await db.prepare('UPDATE queue SET clicks_count = clicks_count + 1 WHERE id = ?').run(id);
-  } catch (err) {
-    logger.error({ err, queueItemId: id, url }, 'Error registering click on queue item');
+  const isBot = isSecurityScannerOrBot(req);
+  if (!isBot) {
+    try {
+      const db = await getDb();
+      await db.prepare('UPDATE queue SET clicks_count = clicks_count + 1 WHERE id = ?').run(id);
+    } catch (err) {
+      logger.error({ err, queueItemId: id, url }, 'Error registering click on queue item');
+    }
+  } else {
+    logger.info({ queueItemId: id, ua: req.headers['user-agent'] }, 'Ignored prefetch/bot security scanner link click');
   }
 
   res.redirect(url);

@@ -10,6 +10,7 @@ import { navigateToRoute } from "./lib/router";
 import clarity from "@microsoft/clarity";
 import { UIProvider } from "./context/UIContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { CommandPalette } from "@/components/CommandPalette";
 
 // Helper function to gracefully handle dynamic module import failures (e.g., stale bundle hashes after dev rebuilds)
 function lazyWithRetry<T extends React.ComponentType<any>>(
@@ -152,6 +153,7 @@ const App = () => {
         <Toaster />
 
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <CommandPalette />
           <ErrorBoundary>
             <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted-foreground bg-background">Loading...</div>}>
               <Routes>
