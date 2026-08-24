@@ -125,11 +125,11 @@ router.post('/', async (req, res) => {
       throw insertErr;
     }
 
-    // Cancel any pending queue items for this email or domain
+    // Cancel any pending queue items for this email or domain in user's campaigns
     if (type === 'email') {
-      await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE LOWER(recipient_email) = ? AND status = 'pending'").run(value);
+      await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE LOWER(recipient_email) = ? AND status = 'pending' AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)").run(value, uid);
     } else {
-      await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by domain blocklist' WHERE LOWER(recipient_email) LIKE ? AND status = 'pending'").run(`%@${value}`);
+      await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by domain blocklist' WHERE LOWER(recipient_email) LIKE ? AND status = 'pending' AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)").run(`%@${value}`, uid);
     }
 
     res.status(201).json({ success: true, message: `Added ${value} to ${type} suppression list.`, type, value, reason });
@@ -187,9 +187,9 @@ router.post('/bulk', async (req, res) => {
         addedCount++;
 
         if (type === 'email') {
-          await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE LOWER(recipient_email) = ? AND status = 'pending'").run(cleanVal);
+          await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by master blocklist' WHERE LOWER(recipient_email) = ? AND status = 'pending' AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)").run(cleanVal, uid);
         } else {
-          await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by domain blocklist' WHERE LOWER(recipient_email) LIKE ? AND status = 'pending'").run(`%@${cleanVal}`);
+          await db.prepare("UPDATE queue SET status = 'cancelled', error = 'Suppressed by domain blocklist' WHERE LOWER(recipient_email) LIKE ? AND status = 'pending' AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)").run(`%@${cleanVal}`, uid);
         }
       } catch (_) {
         skippedCount++;
@@ -213,8 +213,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
     const { id } = req.params;
+    const uid = req.userId;
 
-    await db.prepare('DELETE FROM suppression_list WHERE id = ?').run(id);
+    const result = await db.prepare('DELETE FROM suppression_list WHERE id = ? AND (user_id = ? OR user_id IS NULL)').run(id, uid);
+    if (!result.changes) return res.status(404).json({ error: 'Suppression entry not found or unauthorized.' });
     res.json({ success: true, message: 'Removed from suppression list.' });
   } catch (err) {
     res.status(500).json({ error: err.message });

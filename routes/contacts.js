@@ -118,18 +118,19 @@ router.get('/history/:email', async (req, res) => {
     // Logs
     const logItems = await db.prepare(`
       SELECT l.* FROM logs l
-      JOIN accounts a ON l.account_id = a.id
-      WHERE l.recipient_email = ? AND a.user_id = ?
+      LEFT JOIN campaigns c ON l.campaign_id = c.id
+      LEFT JOIN accounts a ON l.account_id = a.id
+      WHERE l.recipient_email = ? AND (c.user_id = ? OR a.user_id = ?)
       ORDER BY l.id DESC LIMIT 20
-    `).all(email, req.userId);
+    `).all(email, req.userId, req.userId);
 
     // Received inbox replies
     const replies = await db.prepare(`
       SELECT m.* FROM inbox_messages m
-      JOIN accounts a ON m.account_id = a.id
-      WHERE (m.sender_email = ? OR m.recipient_email = ?) AND a.user_id = ?
+      LEFT JOIN accounts a ON m.account_id = a.id
+      WHERE (m.sender_email = ? OR m.recipient_email = ?) AND (m.user_id = ? OR a.user_id = ?)
       ORDER BY m.id DESC
-    `).all(email, email, req.userId);
+    `).all(email, email, req.userId, req.userId);
 
     res.json({
       sends: queueSends || [],
@@ -186,9 +187,9 @@ router.get('/:listName', async (req, res) => {
         const queueRows = await db.prepare(`
           SELECT q.recipient_email, q.status, q.sent_at, q.error, c.name as campaign_name
           FROM queue q
-          LEFT JOIN campaigns c ON q.campaign_id = c.id
-          WHERE q.recipient_email IN (${placeholders})
-        `).all(...chunk);
+          JOIN campaigns c ON q.campaign_id = c.id
+          WHERE c.user_id = ? AND q.recipient_email IN (${placeholders})
+        `).all(req.userId, ...chunk);
 
         for (const row of queueRows) {
           const emailLower = (row.recipient_email || '').toLowerCase();

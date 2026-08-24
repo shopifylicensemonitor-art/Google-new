@@ -13,7 +13,7 @@ import {
   Copy, Check, Trash2, ShieldCheck, Zap, Activity, AlertCircle
 } from 'lucide-react';
 
-interface AIProviderPreset {
+export interface AIProviderPreset {
   id: string;
   name: string;
   baseUrl: string;
@@ -21,6 +21,7 @@ interface AIProviderPreset {
   getKeyUrl: string;
   badge?: string;
   description: string;
+  recommendedModels?: string[];
 }
 
 const PROVIDERS: AIProviderPreset[] = [
@@ -31,7 +32,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'meta/llama-3.3-70b-instruct',
     getKeyUrl: 'https://build.nvidia.com/explore/discover',
     badge: 'Enterprise',
-    description: 'High-throughput accelerated inference for Llama 3.3 and DeepSeek models.'
+    description: 'High-throughput accelerated inference for Llama 3.3 and DeepSeek models.',
+    recommendedModels: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-8b-instruct', 'mistralai/mistral-large-2-instruct']
   },
   {
     id: 'openrouter',
@@ -40,7 +42,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'openai/gpt-4o-mini',
     getKeyUrl: 'https://openrouter.ai/keys',
     badge: '200+ Models',
-    description: 'Universal unified router with access to Claude, GPT-4o, Llama 3, and Mistral.'
+    description: 'Universal unified router with access to Claude, GPT-4o, Llama 3, and Mistral.',
+    recommendedModels: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat']
   },
   {
     id: 'openai',
@@ -49,7 +52,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'gpt-4o-mini',
     getKeyUrl: 'https://platform.openai.com/api-keys',
     badge: 'Industry Standard',
-    description: 'Direct GPT-4o, GPT-4o-mini, and o1 models from OpenAI.'
+    description: 'Direct GPT-4o, GPT-4o-mini, and o1 models from OpenAI.',
+    recommendedModels: ['gpt-4o-mini', 'gpt-4o', 'o1-mini', 'gpt-3.5-turbo']
   },
   {
     id: 'gemini',
@@ -58,16 +62,18 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'gemini-1.5-flash',
     getKeyUrl: 'https://aistudio.google.com/apikey',
     badge: 'Multimodal / Fast',
-    description: 'Google Gemini 1.5 Flash and Pro with large context and fast reasoning.'
+    description: 'Google Gemini 1.5 Flash and Pro with large context and fast reasoning.',
+    recommendedModels: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
   },
   {
     id: 'groq',
     name: 'Groq API',
     baseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'llama-3.1-8b-instant',
     getKeyUrl: 'https://console.groq.com/keys',
     badge: 'Ultra Fast LPU',
-    description: 'Sub-second real-time email generation powered by Groq LPUs.'
+    description: 'Sub-second real-time email generation powered by Groq LPUs.',
+    recommendedModels: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama-3.3-70b-specdec', 'llama3-70b-8192', 'mixtral-8x7b-32768']
   },
   {
     id: 'deepseek',
@@ -76,7 +82,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'deepseek-chat',
     getKeyUrl: 'https://platform.deepseek.com/api_keys',
     badge: 'Deep Reasoning',
-    description: 'Cost-efficient DeepSeek-V3 and DeepSeek-R1 reasoning models.'
+    description: 'Cost-efficient DeepSeek-V3 and DeepSeek-R1 reasoning models.',
+    recommendedModels: ['deepseek-chat', 'deepseek-reasoner']
   },
   {
     id: 'anthropic',
@@ -85,7 +92,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'anthropic/claude-3.5-sonnet',
     getKeyUrl: 'https://openrouter.ai/keys',
     badge: 'Peak Copywriting',
-    description: 'Claude 3.5 Sonnet & Haiku for nuanced, hyper-personalized email outreach.'
+    description: 'Claude 3.5 Sonnet & Haiku for nuanced, hyper-personalized email outreach.',
+    recommendedModels: ['anthropic/claude-3.5-sonnet', 'anthropic/claude-3-5-haiku']
   },
   {
     id: 'together',
@@ -94,7 +102,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
     getKeyUrl: 'https://api.together.ai/settings/api-keys',
     badge: 'Open Source Hub',
-    description: 'Fast open-source model inference on dedicated serverless infrastructure.'
+    description: 'Fast open-source model inference on dedicated serverless infrastructure.',
+    recommendedModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo']
   },
   {
     id: 'custom',
@@ -103,7 +112,8 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'llama3:latest',
     getKeyUrl: '',
     badge: 'Self-Hosted',
-    description: 'Local Ollama, vLLM, LM Studio, or private OpenAI-compatible proxy.'
+    description: 'Local Ollama, vLLM, LM Studio, or private OpenAI-compatible proxy.',
+    recommendedModels: ['llama3:latest', 'mistral:latest', 'qwen2.5:latest']
   }
 ];
 
@@ -749,11 +759,32 @@ export default function AISettings() {
                   </label>
                   <Input
                     type="text"
-                    placeholder="e.g. gpt-4o-mini, llama-3.3-70b-versatile, deepseek-chat"
+                    placeholder="e.g. gpt-4o-mini, llama-3.1-8b-instant, deepseek-chat"
                     value={modelInput}
                     onChange={(e) => setModelInput(e.target.value)}
                     className="font-mono text-xs h-10 bg-background"
                   />
+                  {currentPreset.recommendedModels && currentPreset.recommendedModels.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-[10px] text-muted-foreground font-semibold block mb-1">Recommended Models (Click to use):</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {currentPreset.recommendedModels.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setModelInput(m)}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-medium transition-all ${
+                              modelInput === m
+                                ? 'bg-[#635bff] text-white font-bold'
+                                : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40'
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Form Buttons */}

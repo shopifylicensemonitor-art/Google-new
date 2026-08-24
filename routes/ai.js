@@ -71,12 +71,21 @@ function maskKey(key) {
   return key.slice(0, 4) + '...' + key.slice(-4);
 }
 
-/** Helper: Fetch active AI configuration from DB */
-async function getActiveAIConfig() {
+/** Helper: Fetch active AI configuration from DB (user-scoped with fallback) */
+async function getActiveAIConfig(userId = null) {
   const db = await getDb();
-  let row = await db.prepare('SELECT * FROM ai_config WHERE is_active = 1 ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  let row = null;
+  if (userId) {
+    row = await db.prepare('SELECT * FROM ai_config WHERE is_active = 1 AND user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1').get(userId);
+    if (!row) {
+      row = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1').get(userId);
+    }
+  }
   if (!row) {
-    row = await db.prepare('SELECT * FROM ai_config ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+    row = await db.prepare('SELECT * FROM ai_config WHERE is_active = 1 AND user_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  }
+  if (!row) {
+    row = await db.prepare('SELECT * FROM ai_config WHERE user_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1').get();
   }
   if (!row) {
     return null;
@@ -93,12 +102,19 @@ async function getActiveAIConfig() {
 }
 
 /** Helper: Call the configured AI completions endpoint or fallback to Gemini */
-async function callAI(messages, systemOverride = null) {
-  const config = await getActiveAIConfig();
+async function callAI(messages, systemOverride = null, userId = null) {
+  const config = await getActiveAIConfig(userId);
 
   // Fetch AI Rules & Knowledge Base context to append to system instructions
   const db = await getDb();
-  const rulesRows = await db.prepare('SELECT rule_type, content FROM ai_rules').all();
+  let rulesRows = [];
+  if (userId) {
+    rulesRows = await db.prepare('SELECT rule_type, content FROM ai_rules WHERE user_id = ?').all(userId);
+  }
+  if (!rulesRows || rulesRows.length === 0) {
+    rulesRows = await db.prepare('SELECT rule_type, content FROM ai_rules WHERE user_id IS NULL').all();
+  }
+
   let rulesContext = '';
   if (rulesRows && rulesRows.length > 0) {
     rulesContext = '\n\n=== BRAND KNOWLEDGE BASE & OUTREACH RULES ===\n' +
@@ -175,11 +191,12 @@ async function callAI(messages, systemOverride = null) {
 // Configuration Routes
 // ---------------------------------------------------------------------------
 
-/** GET /api/ai/configs — Retrieve all configured AI providers with status and decrypted key for display */
-router.get('/configs', async (_req, res) => {
+/** GET /api/ai/configs — Retrieve all configured AI providers for current user */
+router.get('/configs', async (req, res) => {
   try {
     const db = await getDb();
-    const rows = await db.prepare('SELECT * FROM ai_config ORDER BY is_active DESC, updated_at DESC, id DESC').all();
+    const uid = req.userId;
+    const rows = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? OR user_id IS NULL ORDER BY is_active DESC, updated_at DESC, id DESC').all(uid);
     const configs = (rows || []).map(row => {
       const decrypted = decryptKey(row.api_key_encrypted);
       return {
@@ -208,10 +225,10 @@ router.get('/configs', async (_req, res) => {
   }
 });
 
-/** GET /api/ai/config — Retrieve current active AI config */
-router.get('/config', async (_req, res) => {
+/** GET /api/ai/config — Retrieve current active AI config for user */
+router.get('/config', async (req, res) => {
   try {
-    const config = await getActiveAIConfig();
+    const config = await getActiveAIConfig(req.userId);
     if (!config) {
       return res.json({ configured: false });
     }
@@ -229,17 +246,18 @@ router.get('/config', async (_req, res) => {
   }
 });
 
-/** POST /api/ai/config — Save/update AI provider config (persisted per provider) */
+/** POST /api/ai/config — Save/update AI provider config for current user */
 router.post('/config', async (req, res) => {
   const { provider, apiKey, baseUrl, model, setActive = true } = req.body;
   const provKey = (provider || 'custom').trim().toLowerCase();
+  const uid = req.userId;
 
   try {
     const db = await getDb();
     const cleanBaseUrl = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://openrouter.ai/api/v1';
     const cleanModel = (model || '').trim() || 'openai/gpt-4o-mini';
 
-    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provKey);
+    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provKey, uid);
 
     let encKey = '';
     if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
@@ -251,21 +269,21 @@ router.post('/config', async (req, res) => {
     }
 
     if (setActive) {
-      // Set all other providers to inactive
-      await db.prepare('UPDATE ai_config SET is_active = 0').run();
+      // Set all other providers for this user to inactive
+      await db.prepare('UPDATE ai_config SET is_active = 0 WHERE user_id = ?').run(uid);
     }
 
     const isActiveVal = setActive ? 1 : (existing ? (existing.is_active || 0) : 0);
 
     if (existing) {
-      await db.prepare('UPDATE ai_config SET api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run(encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id);
+      await db.prepare('UPDATE ai_config SET api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?')
+        .run(encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id, uid);
     } else {
-      await db.prepare('INSERT INTO ai_config (provider, api_key_encrypted, base_url, model, is_active) VALUES (?, ?, ?, ?, ?)')
-        .run(provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal);
+      await db.prepare('INSERT INTO ai_config (provider, api_key_encrypted, base_url, model, is_active, user_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal, uid);
     }
 
-    logger.info({ provider: provKey, model: cleanModel, setActive }, 'AI configuration saved successfully');
+    logger.info({ provider: provKey, model: cleanModel, setActive, userId: uid }, 'AI configuration saved successfully');
     res.json({ 
       success: true, 
       message: `${provKey.toUpperCase()} configuration saved successfully.`,
@@ -279,21 +297,22 @@ router.post('/config', async (req, res) => {
   }
 });
 
-/** POST /api/ai/active — Switch active AI provider */
+/** POST /api/ai/active — Switch active AI provider for current user */
 router.post('/active', async (req, res) => {
   const { provider } = req.body;
   if (!provider) return res.status(400).json({ error: 'Provider is required.' });
   const provKey = String(provider).trim().toLowerCase();
+  const uid = req.userId;
 
   try {
     const db = await getDb();
-    const target = await db.prepare('SELECT * FROM ai_config WHERE provider = ?').get(provKey);
+    const target = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provKey, uid);
     if (!target) {
       return res.status(404).json({ error: `No configuration found for provider "${provKey}". Please save an API key first.` });
     }
 
-    await db.prepare('UPDATE ai_config SET is_active = 0').run();
-    await db.prepare('UPDATE ai_config SET is_active = 1, updated_at = datetime(\'now\') WHERE id = ?').run(target.id);
+    await db.prepare('UPDATE ai_config SET is_active = 0 WHERE user_id = ?').run(uid);
+    await db.prepare('UPDATE ai_config SET is_active = 1, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?').run(target.id, uid);
 
     res.json({ success: true, message: `Activated ${provKey.toUpperCase()} as active AI provider.`, provider: provKey });
   } catch (err) {
@@ -301,12 +320,13 @@ router.post('/active', async (req, res) => {
   }
 });
 
-/** DELETE /api/ai/config/:provider — Delete/clear configuration for a provider */
+/** DELETE /api/ai/config/:provider — Delete/clear configuration for a provider for current user */
 router.delete('/config/:provider', async (req, res) => {
   const provKey = String(req.params.provider).trim().toLowerCase();
+  const uid = req.userId;
   try {
     const db = await getDb();
-    await db.prepare('DELETE FROM ai_config WHERE provider = ?').run(provKey);
+    await db.prepare('DELETE FROM ai_config WHERE provider = ? AND user_id = ?').run(provKey, uid);
     res.json({ success: true, message: `Configuration for ${provKey} removed.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -400,7 +420,7 @@ router.post('/test', async (req, res) => {
 
     const response = await callAI([
       { role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }
-    ]);
+    ], null, req.userId);
     res.json({ success: true, response });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -496,22 +516,27 @@ router.post('/validate-all', async (_req, res) => {
 // AI Stage Rules & Knowledge Base Routes
 // ---------------------------------------------------------------------------
 
-/** GET /api/ai/rules â€” Get all AI stage rules */
-router.get('/rules', async (_req, res) => {
+/** GET /api/ai/rules — Get all AI stage rules for current user */
+router.get('/rules', async (req, res) => {
   try {
     const db = await getDb();
-    const rules = await db.prepare('SELECT rule_type, content FROM ai_rules').all();
+    const uid = req.userId;
+    let rules = await db.prepare('SELECT rule_type, content FROM ai_rules WHERE user_id = ?').all(uid);
+    if (!rules || rules.length === 0) {
+      rules = await db.prepare('SELECT rule_type, content FROM ai_rules WHERE user_id IS NULL').all();
+    }
     const rulesMap = {};
-    rules.forEach(r => { rulesMap[r.rule_type] = r.content; });
+    (rules || []).forEach(r => { rulesMap[r.rule_type] = r.content; });
     res.json(rulesMap);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** POST /api/ai/rules â€” Save or update AI stage rules */
+/** POST /api/ai/rules — Save or update AI stage rules for current user */
 router.post('/rules', async (req, res) => {
   const { rules } = req.body;
+  const uid = req.userId;
   if (!rules || typeof rules !== 'object') {
     return res.status(400).json({ error: 'Rules object is required.' });
   }
@@ -519,13 +544,13 @@ router.post('/rules', async (req, res) => {
   try {
     const db = await getDb();
     for (const [ruleType, content] of Object.entries(rules)) {
-      const existing = await db.prepare('SELECT id FROM ai_rules WHERE rule_type = ?').get(ruleType);
+      const existing = await db.prepare('SELECT id FROM ai_rules WHERE rule_type = ? AND user_id = ?').get(ruleType, uid);
       if (existing) {
-        await db.prepare('UPDATE ai_rules SET content = ?, updated_at = datetime(\'now\') WHERE rule_type = ?')
-          .run(String(content || ''), ruleType);
+        await db.prepare('UPDATE ai_rules SET content = ?, updated_at = datetime(\'now\') WHERE rule_type = ? AND user_id = ?')
+          .run(String(content || ''), ruleType, uid);
       } else {
-        await db.prepare('INSERT INTO ai_rules (rule_type, content) VALUES (?, ?)')
-          .run(ruleType, String(content || ''));
+        await db.prepare('INSERT INTO ai_rules (rule_type, content, user_id) VALUES (?, ?, ?)')
+          .run(ruleType, String(content || ''), uid);
       }
     }
     res.json({ success: true, message: 'AI Rules updated successfully.' });
@@ -538,7 +563,7 @@ router.post('/rules', async (req, res) => {
 // AI Features (Generator, Rewriter, Spintax, Subjects, Reply Draft)
 // ---------------------------------------------------------------------------
 
-/** POST /api/ai/generate â€” Generate email content from a prompt */
+/** POST /api/ai/generate — Generate email content from a prompt */
 router.post('/generate', async (req, res) => {
   const { prompt, stage = 'initial', contactFields = {} } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
@@ -553,7 +578,7 @@ router.post('/generate', async (req, res) => {
         role: 'user', 
         content: `Write a high-converting cold email for stage "${stage}".\nPrompt/Goal: ${prompt}${contextStr}\nFormat the output as JSON with keys "subject" and "body_html". Do not include markdown code block backticks.` 
       }
-    ]);
+    ], null, req.userId);
 
     let result = { subject: 'Outreach Request', body_html: text };
     try {
@@ -567,7 +592,7 @@ router.post('/generate', async (req, res) => {
   }
 });
 
-/** POST /api/ai/rewrite â€” Rewrite or improve existing email copy */
+/** POST /api/ai/rewrite — Rewrite or improve existing email copy */
 router.post('/rewrite', async (req, res) => {
   const { subject, body, instruction = 'Improve readability, deliverability, and urgency' } = req.body;
   if (!body) return res.status(400).json({ error: 'Email body is required.' });
@@ -578,7 +603,7 @@ router.post('/rewrite', async (req, res) => {
         role: 'user',
         content: `Rewrite and polish this cold email copy to maximize response rates.\nInstruction: ${instruction}\nOriginal Subject: ${subject || ''}\nOriginal Body:\n${body}\n\nReturn JSON with keys "subject" and "body_html". Do not use code block formatting.`
       }
-    ]);
+    ], null, req.userId);
 
     let result = { subject: subject || 'Polished Outreach', body_html: text };
     try {
@@ -592,7 +617,7 @@ router.post('/rewrite', async (req, res) => {
   }
 });
 
-/** POST /api/ai/spintax â€” Convert flat text to spintax format {hi|hello|hey} */
+/** POST /api/ai/spintax — Convert flat text to spintax format {hi|hello|hey} */
 router.post('/spintax', async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'Text is required.' });
@@ -603,14 +628,14 @@ router.post('/spintax', async (req, res) => {
         role: 'user',
         content: `Convert the following email copy into high-deliverability Spintax format using {option1|option2|option3} syntax for key greetings, phrases, and verbs. Preserve any variable tags like {store_name} or {first_name}.\n\nOriginal Text:\n${text}`
       }
-    ]);
+    ], null, req.userId);
     res.json({ success: true, spintax: spintaxText });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** POST /api/ai/subjects â€” Generate subject line variants for A/B testing */
+/** POST /api/ai/subjects — Generate subject line variants for A/B testing */
 router.post('/subjects', async (req, res) => {
   const { body, count = 5 } = req.body;
   if (!body) return res.status(400).json({ error: 'Email body context is required.' });
@@ -621,7 +646,7 @@ router.post('/subjects', async (req, res) => {
         role: 'user',
         content: `Generate ${count} punchy, high-open-rate cold email subject lines based on this email body:\n${body}\n\nReturn JSON as an array of strings under key "subjects".`
       }
-    ]);
+    ], null, req.userId);
 
     let subjects = [];
     try {
@@ -638,7 +663,7 @@ router.post('/subjects', async (req, res) => {
   }
 });
 
-/** POST /api/ai/reply-draft â€” Generate AI response to an incoming prospect reply */
+/** POST /api/ai/reply-draft — Generate AI response to an incoming prospect reply */
 router.post('/reply-draft', async (req, res) => {
   const { incomingSubject, incomingBody, senderEmail, contactFields = {} } = req.body;
   if (!incomingBody) return res.status(400).json({ error: 'Incoming email body is required.' });
@@ -651,7 +676,7 @@ router.post('/reply-draft', async (req, res) => {
         role: 'user',
         content: `A prospect (${senderEmail}) replied to your email campaign.\nProspect Details: ${dossierStr}\nSubject: ${incomingSubject || ''}\nMessage Body:\n${incomingBody}\n\nWrite a friendly, professional, and conversion-focused reply addressing their message according to our AI Stage Rules.`
       }
-    ]);
+    ], null, req.userId);
 
     res.json({ success: true, replyDraft: draft });
   } catch (err) {
@@ -662,6 +687,7 @@ router.post('/reply-draft', async (req, res) => {
 /** POST /api/ai/chat — Multi-turn Gemini chatbot with deep app integration via Function Calling */
 router.post('/chat', async (req, res) => {
   const { messages, systemInstruction, currentPage } = req.body;
+  const uid = req.userId;
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Messages array is required.' });
   }
@@ -769,18 +795,18 @@ router.post('/chat', async (req, res) => {
         ]
       }];
 
-      // Function execution dispatcher
+      // Function execution dispatcher (strictly scoped to req.userId)
       const executeToolCall = async (call) => {
         const db = await getDb();
         const args = call.args || {};
 
         if (call.name === 'get_app_overview') {
-          const totalCampaignsRow = await db.prepare('SELECT COUNT(*) as cnt FROM campaigns').get();
-          const activeCampaignsRow = await db.prepare("SELECT COUNT(*) as cnt FROM campaigns WHERE status='sending'").get();
-          const unreadInboxRow = await db.prepare('SELECT COUNT(*) as cnt FROM inbox_messages WHERE is_read=0').get();
-          const hotLeadsRow = await db.prepare("SELECT COUNT(*) as cnt FROM inbox_messages WHERE sentiment='hot_lead'").get();
-          const accountsCountRow = await db.prepare('SELECT COUNT(*) as cnt FROM accounts').get();
-          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name').all();
+          const totalCampaignsRow = await db.prepare('SELECT COUNT(*) as cnt FROM campaigns WHERE user_id = ?').get(uid);
+          const activeCampaignsRow = await db.prepare("SELECT COUNT(*) as cnt FROM campaigns WHERE status='sending' AND user_id = ?").get(uid);
+          const unreadInboxRow = await db.prepare('SELECT COUNT(*) as cnt FROM inbox_messages WHERE is_read=0 AND user_id = ?').get(uid);
+          const hotLeadsRow = await db.prepare("SELECT COUNT(*) as cnt FROM inbox_messages WHERE sentiment='hot_lead' AND user_id = ?").get(uid);
+          const accountsCountRow = await db.prepare('SELECT COUNT(*) as cnt FROM accounts WHERE user_id = ?').get(uid);
+          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts WHERE user_id = ? GROUP BY list_name').all(uid);
           return {
             totalCampaigns: totalCampaignsRow?.cnt || 0,
             activeCampaigns: activeCampaignsRow?.cnt || 0,
@@ -792,8 +818,8 @@ router.post('/chat', async (req, res) => {
         }
 
         if (call.name === 'list_campaigns') {
-          const query = args.status && args.status !== 'all' ? 'SELECT * FROM campaigns WHERE status = ?' : 'SELECT * FROM campaigns';
-          const params = args.status && args.status !== 'all' ? [args.status] : [];
+          const query = args.status && args.status !== 'all' ? 'SELECT * FROM campaigns WHERE status = ? AND user_id = ?' : 'SELECT * FROM campaigns WHERE user_id = ?';
+          const params = args.status && args.status !== 'all' ? [args.status, uid] : [uid];
           const campaigns = await db.prepare(query).all(...params);
           return { campaigns: campaigns || [] };
         }
@@ -801,12 +827,12 @@ router.post('/chat', async (req, res) => {
         if (call.name === 'create_campaign') {
           let totalContacts = 0;
           if (args.contact_list) {
-            const cntRow = await db.prepare('SELECT COUNT(*) as cnt FROM contacts WHERE list_name = ?').get(args.contact_list);
+            const cntRow = await db.prepare('SELECT COUNT(*) as cnt FROM contacts WHERE list_name = ? AND user_id = ?').get(args.contact_list, uid);
             totalContacts = cntRow?.cnt || 0;
           }
           const plainText = (args.body_html || '').replace(/<[^>]+>/g, '');
-          const result = await db.prepare('INSERT INTO campaigns (name, subject, body_html, body_plain, contact_list, total_contacts, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(args.name, args.subject, args.body_html, plainText, args.contact_list || null, totalContacts, 'draft');
+          const result = await db.prepare('INSERT INTO campaigns (name, subject, body_html, body_plain, contact_list, total_contacts, status, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(args.name, args.subject, args.body_html, plainText, args.contact_list || null, totalContacts, 'draft', uid);
           const id = result.lastInsertRowid || result.id || 0;
           return { success: true, campaign_id: id, name: args.name, status: 'draft', total_contacts: totalContacts, navigate: '/campaigns' };
         }
@@ -815,34 +841,34 @@ router.post('/chat', async (req, res) => {
           let newStatus = 'draft';
           if (args.action === 'start' || args.action === 'resume') newStatus = 'sending';
           if (args.action === 'pause') newStatus = 'paused';
-          await db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run(newStatus, args.campaign_id);
+          await db.prepare('UPDATE campaigns SET status = ? WHERE id = ? AND user_id = ?').run(newStatus, args.campaign_id, uid);
           return { success: true, campaign_id: args.campaign_id, status: newStatus };
         }
 
         if (call.name === 'list_prospect_lists') {
-          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts GROUP BY list_name').all();
+          const lists = await db.prepare('SELECT list_name, COUNT(*) as count FROM contacts WHERE user_id = ? GROUP BY list_name').all(uid);
           return { lists: lists || [] };
         }
 
         if (call.name === 'search_inbox_messages') {
-          let query = 'SELECT * FROM inbox_messages ORDER BY id DESC LIMIT 10';
-          let params = [];
+          let query = 'SELECT * FROM inbox_messages WHERE user_id = ? ORDER BY id DESC LIMIT 10';
+          let params = [uid];
           if (args.sentiment && args.sentiment !== 'all') {
-            query = 'SELECT * FROM inbox_messages WHERE sentiment = ? ORDER BY id DESC LIMIT 10';
-            params = [args.sentiment];
+            query = 'SELECT * FROM inbox_messages WHERE sentiment = ? AND user_id = ? ORDER BY id DESC LIMIT 10';
+            params = [args.sentiment, uid];
           }
           const messages = await db.prepare(query).all(...params);
           return { messages: messages || [] };
         }
 
         if (call.name === 'get_sending_accounts') {
-          const accounts = await db.prepare('SELECT id, email, status, daily_limit, daily_sent, display_name FROM accounts').all();
+          const accounts = await db.prepare('SELECT id, email, status, daily_limit, daily_sent, display_name FROM accounts WHERE user_id = ?').all(uid);
           return { accounts: accounts || [] };
         }
 
         if (call.name === 'create_template') {
-          const result = await db.prepare('INSERT INTO templates (name, subject, body_html) VALUES (?, ?, ?)')
-            .run(args.name, args.subject, args.body_html);
+          const result = await db.prepare('INSERT INTO templates (name, subject, body_html, user_id) VALUES (?, ?, ?, ?)')
+            .run(args.name, args.subject, args.body_html, uid);
           const id = result.lastInsertRowid || result.id || 0;
           return { success: true, template_id: id, name: args.name, navigate: '/templates' };
         }
@@ -911,13 +937,13 @@ router.post('/chat', async (req, res) => {
       return res.json({ success: true, reply, clientAction });
     } else {
       // Fallback via callAI
-      const reply = await callAI(messages, sysPrompt);
+      const reply = await callAI(messages, sysPrompt, uid);
       return res.json({ success: true, reply });
     }
   } catch (err) {
     logger.error({ err }, 'AI Chat endpoint failed');
     try {
-      const fallbackReply = await callAI(messages, systemInstruction || 'You are Peak Xender AI Advisor. Be helpful and concise.');
+      const fallbackReply = await callAI(messages, systemInstruction || 'You are Peak Xender AI Advisor. Be helpful and concise.', uid);
       return res.json({ success: true, reply: fallbackReply });
     } catch (fErr) {
       res.status(500).json({ error: 'AI Service is temporarily busy. Please try again in a moment.' });
@@ -937,7 +963,7 @@ router.post('/search-grounding', async (req, res) => {
       // Fallback if genAI not initialized
       const fallbackText = await callAI([
         { role: 'user', content: `Research and summarize key insights about: ${query} for ${topic}.` }
-      ]);
+      ], null, req.userId);
       return res.json({ success: true, text: fallbackText, sources: [] });
     }
 
@@ -964,7 +990,7 @@ router.post('/search-grounding', async (req, res) => {
     try {
       const fallbackText = await callAI([
         { role: 'user', content: `Research and summarize key insights about: ${query} for ${topic}.` }
-      ]);
+      ], null, req.userId);
       return res.json({ success: true, text: fallbackText, sources: [] });
     } catch (fErr) {
       res.status(500).json({ error: 'Search grounding failed.' });

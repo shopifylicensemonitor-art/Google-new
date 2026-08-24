@@ -911,7 +911,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="font-heading text-base font-bold text-foreground">
+                    <h2 className="font-heading text-sm sm:text-base font-bold text-foreground truncate max-w-[180px] sm:max-w-none">
                       {selectedMailboxDetail.email}
                     </h2>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold border border-emerald-500/20">
@@ -984,7 +984,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
                         placeholder="e.g. Sales Team"
                         value={editingName[selectedMailboxDetail.id] ?? ''}
                         onChange={(e) => setEditingName({ ...editingName, [selectedMailboxDetail.id]: e.target.value })}
-                        className="h-8 px-2.5 rounded-md border border-border/80 bg-background text-xs w-44"
+                        className="h-8 px-2.5 rounded-md border border-border/80 bg-background text-xs w-full sm:w-44"
                       />
                       <Button
                         size="sm"

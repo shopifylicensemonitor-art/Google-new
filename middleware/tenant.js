@@ -20,13 +20,13 @@ async function resolveUserId(user) {
     if (row) return row.id;
   }
 
-  const email = (user && user.email) || 'admin@local';
+  const email = (user && user.email) || 'user@local';
   let existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return existing.id;
 
   await db
     .prepare('INSERT INTO users (email, name, picture, role, email_verified) VALUES (?, ?, ?, ?, true)')
-    .run(email, (user && user.name) || email.split('@')[0], '', (user && user.role) || 'admin');
+    .run(email, (user && user.name) || email.split('@')[0], '', (user && user.role) || 'user');
 
   existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   const id = existing ? existing.id : 1;

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { 
   ShieldAlert, ShieldCheck, Trash2, Plus, Search, Upload, 
-  RefreshCw, FileText, Ban, AlertOctagon, CheckCircle2, UserX, Globe 
+  RefreshCw, FileText, Ban, AlertOctagon, CheckCircle2, UserX, Globe, X 
 } from 'lucide-react';
 
 interface SuppressionItem {
@@ -345,7 +345,7 @@ export function SuppressionManager() {
                 onClick={() => setShowAddModal(false)}
                 className="h-7 w-7 p-0 rounded-lg text-muted-foreground"
               >
-                ✕
+                <X className="h-4 w-4" />
               </Button>
             </div>
 
@@ -445,7 +445,7 @@ export function SuppressionManager() {
                 onClick={() => setShowBulkModal(false)}
                 className="h-7 w-7 p-0 rounded-lg text-muted-foreground"
               >
-                ✕
+                <X className="h-4 w-4" />
               </Button>
             </div>
 

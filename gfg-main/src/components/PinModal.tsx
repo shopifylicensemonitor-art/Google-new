@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../api';
-import { Lock } from 'lucide-react';
+import { Lock, X } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface PinModalProps {
@@ -74,7 +74,14 @@ export default function PinModal({ onSuccess, onCancel, actionLabel }: PinModalP
 
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
-      <div className="bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-8 max-w-sm w-full mx-4 flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+      <div className="bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-8 max-w-sm w-full mx-4 flex flex-col items-center text-center animate-in zoom-in-95 duration-200 relative">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="absolute right-4 top-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
         
         {/* Glowy Lock Icon */}
         <div className="h-16 w-16 bg-primary/10 text-primary border border-primary/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner animate-pulse">

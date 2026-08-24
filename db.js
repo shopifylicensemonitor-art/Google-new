@@ -495,7 +495,7 @@ const SQLITE_DDL = `
     email TEXT NOT NULL UNIQUE,
     name TEXT DEFAULT '',
     picture TEXT DEFAULT '',
-    role TEXT DEFAULT 'admin',
+    role TEXT DEFAULT 'user',
     last_login TEXT DEFAULT (datetime('now')),
     created_at TEXT DEFAULT (datetime('now')),
     password_hash TEXT,
@@ -572,13 +572,15 @@ const SQLITE_DDL = `
     base_url TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
     model TEXT NOT NULL DEFAULT 'openai/gpt-4o-mini',
     is_active INTEGER DEFAULT 0,
+    user_id INTEGER,
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS ai_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    rule_type TEXT NOT NULL UNIQUE,
+    rule_type TEXT NOT NULL,
     content TEXT NOT NULL,
+    user_id INTEGER,
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -601,7 +603,7 @@ const SQLITE_DDL = `
   CREATE TABLE IF NOT EXISTS suppression_list (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL DEFAULT 'email',
-    value TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
     reason TEXT DEFAULT 'unsubscribed',
     user_id INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
@@ -664,8 +666,18 @@ const PG_DDL = `
     ignore_window INTEGER DEFAULT 0,
     timezone TEXT DEFAULT 'Africa/Lagos',
     target_limit INTEGER DEFAULT 0,
+    target_range_start INTEGER DEFAULT 0,
+    target_range_end INTEGER DEFAULT 0,
+    exclude_previously_contacted INTEGER DEFAULT 0,
     custom_filters TEXT,
     format_type TEXT DEFAULT 'html',
+    timing_mode TEXT DEFAULT 'smart',
+    min_delay INTEGER DEFAULT 30,
+    max_delay INTEGER DEFAULT 90,
+    cooldown_enabled INTEGER DEFAULT 1,
+    cooldown_batch_size INTEGER DEFAULT 15,
+    cooldown_duration_minutes INTEGER DEFAULT 5,
+    user_id INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   );
@@ -675,6 +687,7 @@ const PG_DDL = `
     name TEXT NOT NULL,
     subject TEXT,
     body_html TEXT,
+    user_id INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -698,6 +711,9 @@ const PG_DDL = `
     wait_days INTEGER DEFAULT 3,
     subject TEXT,
     body_html TEXT,
+    body_plain TEXT,
+    delay_seconds INTEGER DEFAULT 86400,
+    trigger_event TEXT DEFAULT 'wait',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(campaign_id, step_number)
   );
@@ -742,7 +758,7 @@ const PG_DDL = `
     email TEXT NOT NULL UNIQUE,
     name TEXT,
     picture TEXT,
-    role TEXT DEFAULT 'admin',
+    role TEXT DEFAULT 'user',
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -758,8 +774,9 @@ const PG_DDL = `
 
   CREATE TABLE IF NOT EXISTS ai_rules (
     id SERIAL PRIMARY KEY,
-    rule_type TEXT NOT NULL UNIQUE,
+    rule_type TEXT NOT NULL,
     content TEXT NOT NULL,
+    user_id INTEGER,
     updated_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -786,13 +803,14 @@ const PG_DDL = `
     base_url TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
     model TEXT NOT NULL DEFAULT 'openai/gpt-4o-mini',
     is_active INTEGER DEFAULT 0,
+    user_id INTEGER,
     updated_at TIMESTAMPTZ DEFAULT NOW()
   );
 
   CREATE TABLE IF NOT EXISTS suppression_list (
     id SERIAL PRIMARY KEY,
     type TEXT NOT NULL DEFAULT 'email',
-    value TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
     reason TEXT DEFAULT 'unsubscribed',
     user_id INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -804,7 +822,7 @@ const PG_DDL = `
 // ============================================================================
 
 /** Tables whose rows belong to a single application user. */
-const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list', 'inbox_messages'];
+const TENANT_TABLES = ['accounts', 'contacts', 'campaigns', 'templates', 'suppression_list', 'inbox_messages', 'ai_config', 'ai_rules'];
 
 const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
@@ -812,6 +830,8 @@ const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_campaigns_user ON campaigns(user_id);
   CREATE INDEX IF NOT EXISTS idx_templates_user ON templates(user_id);
   CREATE INDEX IF NOT EXISTS idx_inbox_messages_user ON inbox_messages(user_id);
+  CREATE INDEX IF NOT EXISTS idx_ai_config_user ON ai_config(user_id);
+  CREATE INDEX IF NOT EXISTS idx_ai_rules_user ON ai_rules(user_id);
 `;
 
 /**
@@ -821,8 +841,13 @@ const TENANT_INDEX_DDL = `
  */
 async function backfillTenantOwnership(db) {
   try {
+    const countRow = await db.prepare('SELECT COUNT(*) as c FROM users').get();
+    if (!countRow || Number(countRow.c) !== 1) {
+      // Only backfill legacy pre-multi-tenancy data when exactly one initial user exists.
+      return;
+    }
     const owner = await db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
-    if (!owner) return; // nobody has logged in yet; claimed on first login instead
+    if (!owner) return;
     for (const t of TENANT_TABLES) {
       try {
         await db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id IS NULL`).run(owner.id);
@@ -881,6 +906,17 @@ ready = (async () => {
         await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS exclude_previously_contacted INTEGER DEFAULT 0;");
         await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS custom_filters TEXT;");
         await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS format_type TEXT DEFAULT 'html';");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS timing_mode TEXT DEFAULT 'smart';");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS min_delay INTEGER DEFAULT 30;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS max_delay INTEGER DEFAULT 90;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cooldown_enabled INTEGER DEFAULT 1;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cooldown_batch_size INTEGER DEFAULT 15;");
+        await adapter.exec("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cooldown_duration_minutes INTEGER DEFAULT 5;");
+      } catch (_) {}
+      try {
+        await adapter.exec("ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS body_plain TEXT;");
+        await adapter.exec("ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS delay_seconds INTEGER DEFAULT 86400;");
+        await adapter.exec("ALTER TABLE campaign_steps ADD COLUMN IF NOT EXISTS trigger_event TEXT DEFAULT 'wait';");
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS queue_id INTEGER;");

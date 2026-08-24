@@ -364,14 +364,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   const handleCreate = async (launchImmediately: boolean = false) => {
     const action = async () => {
-      if (!name) {
-        toast({
-          variant: 'destructive',
-          title: 'Missing information',
-          description: 'Campaign name is required.'
-        });
-        return;
-      }
+      const campaignName = (name || '').trim() || (selectedList ? `${selectedList} Campaign - ${new Date().toLocaleDateString()}` : `Campaign ${new Date().toLocaleDateString()}`);
 
       let finalSubject = subject;
       let finalBodyHtml = bodyHtml;
@@ -416,7 +409,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
       setLoading(true);
       try {
         const res = await api.createCampaign({
-          name,
+          name: campaignName,
           subject: finalSubject,
           body_html: formatType === 'plain' ? '' : finalBodyHtml,
           body_plain: finalBodyPlain,
@@ -1065,6 +1058,17 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               {/* Step 1: Audience */}
               {formStep === 1 && (
                 <div className="py-4 space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Campaign Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Q4 Growth Outreach (Optional, auto-generated if left blank)"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      className="w-full bg-background text-xs sm:text-sm rounded-xl border border-input px-3.5 py-2.5 focus:ring-1 focus:ring-primary font-medium"
+                    />
+                  </div>
+
                   <div>
                     <h3 className="text-sm font-bold text-foreground mb-1">Target Contact List &amp; Audience Filters</h3>
                     <p className="text-xs text-muted-foreground">Select your prospect list, apply custom field criteria (e.g. revenue, company size), and define volume limits.</p>
@@ -2599,9 +2603,15 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                   </div>
 
                   <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3 text-xs">
-                    <div className="flex justify-between py-1.5 border-b border-border/20">
+                    <div className="flex items-center justify-between py-1.5 border-b border-border/20">
                       <span className="text-muted-foreground font-medium">Campaign Name:</span>
-                      <span className="font-bold text-foreground">{name || 'Untitled Campaign'}</span>
+                      <input
+                        type="text"
+                        placeholder={selectedList ? `${selectedList} Campaign` : 'Untitled Campaign'}
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        className="bg-background text-xs font-bold text-foreground rounded-lg border border-input px-2.5 py-1 text-right focus:ring-1 focus:ring-primary max-w-[260px]"
+                      />
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/20">
                       <span className="text-muted-foreground font-medium">Target Contact List:</span>
@@ -2992,14 +3002,14 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                     <span>Retry Processing</span>
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" onClick={closeDetails} className="h-7 w-7 p-0">
-                  ✕
-                </Button>
+              <Button size="sm" variant="ghost" onClick={closeDetails} className="h-7 w-7 p-0">
+                <X className="h-4 w-4" />
+              </Button>
               </div>
             </div>
 
             <div className="grid gap-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-border/60 bg-muted/50 p-4">
                   <p className="text-[10px] uppercase font-bold text-muted-foreground">Status</p>
                   <p className="mt-2 font-semibold text-foreground capitalize">{campaignDetail.status}</p>
@@ -3009,7 +3019,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                   <p className="mt-2 font-semibold text-foreground">{campaignDetail.total_contacts}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-border/60 bg-muted/50 p-4">
                   <p className="text-[10px] uppercase font-bold text-muted-foreground">Pending</p>
                   <p className="mt-2 font-semibold text-foreground">{campaignDetail.queue_stats?.pending ?? 0}</p>
@@ -3035,7 +3045,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
               <div className="grid lg:grid-cols-2 gap-4">
                 <div className="rounded-2xl border border-border/60 overflow-hidden">
                   <div className="bg-muted/40 px-4 py-3 text-[10px] uppercase font-bold text-muted-foreground">Recipients</div>
-                  <div className="max-h-64 overflow-y-auto text-[11px]">
+                  <div className="max-h-64 overflow-y-auto overflow-x-auto text-[11px]">
                     {campaignRecipients.length === 0 ? (
                       <div className="p-4 text-muted-foreground">No recipient tracking records available yet.</div>
                     ) : (
@@ -3100,7 +3110,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 <h3 className="text-sm sm:text-base font-bold text-foreground">Edit Campaign #{editingCampaign.id}</h3>
               </div>
               <Button size="sm" variant="ghost" onClick={() => setEditingCampaign(null)} className="h-7 w-7 p-0">
-                ✕
+                <X className="h-4 w-4" />
               </Button>
             </div>
 

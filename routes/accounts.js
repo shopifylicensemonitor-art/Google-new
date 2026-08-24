@@ -159,39 +159,18 @@ function createSmtpTransport(account) {
 // Routes
 // ---------------------------------------------------------------------------
 
-/** List accounts. Admins see all workspace accounts, users see their own or shared accounts. */
+/** List accounts for the current user. */
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
-    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'superadmin');
-    
-    let accounts;
-    if (isAdmin) {
-      accounts = await db.prepare(`
-        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
-        FROM accounts
-        ORDER BY id ASC
-      `).all();
-    } else {
-      accounts = await db.prepare(`
-        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
-        FROM accounts
-        WHERE user_id = ? OR user_id IS NULL
-        ORDER BY id ASC
-      `).all(req.userId);
+    const accounts = await db.prepare(`
+      SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
+             type, smtp_host, smtp_port, smtp_secure, created_at, user_id
+      FROM accounts
+      WHERE user_id = ?
+      ORDER BY id ASC
+    `).all(req.userId);
 
-      // If no accounts found specifically for this user, return active accounts so they can be viewed
-      if (!accounts || accounts.length === 0) {
-        accounts = await db.prepare(`
-          SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-                 type, smtp_host, smtp_port, smtp_secure, created_at, user_id
-          FROM accounts
-          ORDER BY id ASC
-        `).all();
-      }
-    }
     res.json(accounts || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -239,8 +218,8 @@ router.get('/callback', async (req, res) => {
     const db = await getDb();
     const ownerId = await readOwnerState(req.query.state);
     const existing = await db
-      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?)')
-      .get(email);
+      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?) AND user_id = ?')
+      .get(email, ownerId);
 
     if (existing) {
       await db.prepare(`
@@ -575,19 +554,19 @@ router.delete('/:id', async (req, res) => {
 
     // Safely unassign or clean up foreign key references in related tables
     try {
-      await db.prepare('UPDATE queue SET account_id = NULL WHERE account_id = ?').run(accountId);
+      await db.prepare('UPDATE queue SET account_id = NULL WHERE account_id = ? AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)').run(accountId, req.userId);
     } catch (e) {
       logger.warn({ err: e, accountId }, 'Queue unassign error');
     }
 
     try {
-      await db.prepare('UPDATE inbox_messages SET account_id = NULL WHERE account_id = ?').run(accountId);
+      await db.prepare('UPDATE inbox_messages SET account_id = NULL WHERE account_id = ? AND user_id = ?').run(accountId, req.userId);
     } catch (e) {
       logger.warn({ err: e, accountId }, 'Inbox messages unassign error');
     }
 
     try {
-      await db.prepare('UPDATE logs SET account_id = NULL WHERE account_id = ?').run(accountId);
+      await db.prepare('UPDATE logs SET account_id = NULL WHERE account_id = ? AND campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)').run(accountId, req.userId);
     } catch (e) {
       logger.warn({ err: e, accountId }, 'Logs unassign error');
     }

@@ -432,6 +432,9 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(data)
   }),
+  deleteCampaign: (id: number) => apiFetch<{ success: boolean; message?: string }>(`/api/campaigns/${id}`, {
+    method: 'DELETE'
+  }),
   launchCampaign: (id: number, options?: { account_ids?: number[]; custom_filters?: any[]; target_limit?: number; target_range_start?: number; target_range_end?: number; exclude_previously_contacted?: boolean | number; recipients?: any[]; contacts?: any[] }) => apiFetch<{ success: boolean; message: string; processing_started?: boolean; processing_error?: string; recipients_count?: number; accounts_count?: number }>(`/api/campaigns/${id}/launch`, {
     method: 'POST',
     body: options ? JSON.stringify(options) : undefined

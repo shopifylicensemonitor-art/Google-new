@@ -298,11 +298,14 @@ async function syncAccountInbox(account, db, uid) {
         accountNewCount++;
 
         // Auto-lead lifecycle updates:
-        // 1. Check if sender is a recipient in campaign_recipients and mark as 'replied'
+        // 1. Check if sender is a recipient in campaign_recipients and mark as 'replied' for current user's campaigns
         try {
-          const matchedRecipients = await db.prepare(
-            'SELECT id, campaign_id FROM campaign_recipients WHERE LOWER(recipient_email) = ?'
-          ).all(senderEmail);
+          const matchedRecipients = await db.prepare(`
+            SELECT cr.id, cr.campaign_id
+            FROM campaign_recipients cr
+            JOIN campaigns c ON cr.campaign_id = c.id
+            WHERE LOWER(cr.recipient_email) = ? AND c.user_id = ?
+          `).all(senderEmail, uid);
 
           for (const rec of matchedRecipients) {
             await db.prepare(
@@ -311,9 +314,12 @@ async function syncAccountInbox(account, db, uid) {
           }
         } catch (_) {
           try {
-            const matchedRecipients = await db.prepare(
-              'SELECT id, campaign_id FROM campaign_recipients WHERE LOWER(email) = ?'
-            ).all(senderEmail);
+            const matchedRecipients = await db.prepare(`
+              SELECT cr.id, cr.campaign_id
+              FROM campaign_recipients cr
+              JOIN campaigns c ON cr.campaign_id = c.id
+              WHERE LOWER(cr.email) = ? AND c.user_id = ?
+            `).all(senderEmail, uid);
 
             for (const rec of matchedRecipients) {
               await db.prepare(
@@ -373,10 +379,9 @@ router.get('/counts', async (req, res) => {
   try {
     const db = await getDb();
     const uid = req.userId;
-    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'superadmin');
 
-    const baseWhere = isAdmin ? '1=1' : '(m.user_id = ? OR a.user_id = ? OR m.user_id IS NULL)';
-    const baseParams = isAdmin ? [] : [uid, uid];
+    const baseWhere = '(m.user_id = ? OR a.user_id = ?)';
+    const baseParams = [uid, uid];
 
     // Total counts
     const countsRow = await db.prepare(`
@@ -432,18 +437,12 @@ router.get('/', async (req, res) => {
     const db = await getDb();
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 300);
     const uid = req.userId;
-    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'superadmin');
     
     const { account_id, sentiment, starred, read, search, q, contact_list } = req.query;
     const searchTerm = (search || q || '').trim();
 
-    const conditions = [];
-    const params = [];
-
-    if (!isAdmin) {
-      conditions.push('(m.user_id = ? OR a.user_id = ? OR m.user_id IS NULL)');
-      params.push(uid, uid);
-    }
+    const conditions = ['(m.user_id = ? OR a.user_id = ?)'];
+    const params = [uid, uid];
 
     if (account_id && account_id !== 'all') {
       conditions.push('m.account_id = ?');
@@ -522,17 +521,8 @@ router.post('/sync', async (req, res) => {
   try {
     const db = await getDb();
     const uid = req.userId;
-    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'superadmin');
     
-    let accounts;
-    if (isAdmin) {
-      accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active'").all();
-    } else {
-      accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL)").all(uid);
-      if (!accounts || accounts.length === 0) {
-        accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active'").all();
-      }
-    }
+    const accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ?").all(uid);
     
     if (!accounts || accounts.length === 0) {
       return res.json({
@@ -586,7 +576,7 @@ router.post('/sync', async (req, res) => {
 router.post('/:id/read', async (req, res) => {
   try {
     const db = await getDb();
-    await db.prepare('UPDATE inbox_messages SET is_read = 1 WHERE id = ?').run(req.params.id);
+    await db.prepare('UPDATE inbox_messages SET is_read = 1 WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').run(req.params.id, req.userId, req.userId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -602,17 +592,17 @@ router.post('/:id/reply', async (req, res) => {
 
   try {
     const db = await getDb();
-    const msg = await db.prepare('SELECT * FROM inbox_messages WHERE id = ?').get(req.params.id);
+    const msg = await db.prepare('SELECT * FROM inbox_messages WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').get(req.params.id, req.userId, req.userId);
     if (!msg) return res.status(404).json({ error: 'Message not found.' });
 
     // Get the account to send from
     let account = null;
     if (msg.account_id) {
-      account = await db.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active'").get(msg.account_id);
+      account = await db.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active' AND user_id = ?").get(msg.account_id, req.userId);
     }
     
     if (!account) {
-      account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id ASC LIMIT 1").get(msg.user_id || req.userId);
+      account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id ASC LIMIT 1").get(req.userId);
     }
 
     if (!account) {
@@ -669,7 +659,7 @@ router.post('/:id/reply', async (req, res) => {
           body_text, body_html, sentiment, is_read, thread_id, status, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'sent', 1, ?, 'replied', NOW())
       `).run(
-        msg.user_id || req.userId,
+        req.userId,
         account.id,
         account.email,
         msg.sender_email,
@@ -686,7 +676,7 @@ router.post('/:id/reply', async (req, res) => {
             body_text, body_html, sentiment, is_read, thread_id, status
           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'sent', 1, ?, 'replied')
         `).run(
-          msg.user_id || req.userId,
+          req.userId,
           account.id,
           account.email,
           msg.sender_email,
@@ -724,14 +714,14 @@ router.post('/:id/reply', async (req, res) => {
 router.post('/:id/star', async (req, res) => {
   try {
     const db = await getDb();
-    const msg = await db.prepare('SELECT id, is_starred FROM inbox_messages WHERE id = ?').get(req.params.id);
+    const msg = await db.prepare('SELECT id, is_starred FROM inbox_messages WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').get(req.params.id, req.userId, req.userId);
     if (!msg) return res.status(404).json({ error: 'Message not found.' });
 
     const newStarred = msg.is_starred ? 0 : 1;
     try {
-      await db.prepare('UPDATE inbox_messages SET is_starred = ?, starred_at = NOW() WHERE id = ?').run(newStarred, req.params.id);
+      await db.prepare('UPDATE inbox_messages SET is_starred = ?, starred_at = NOW() WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').run(newStarred, req.params.id, req.userId, req.userId);
     } catch (_) {
-      await db.prepare('UPDATE inbox_messages SET is_starred = ? WHERE id = ?').run(newStarred, req.params.id);
+      await db.prepare('UPDATE inbox_messages SET is_starred = ? WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').run(newStarred, req.params.id, req.userId, req.userId);
     }
 
     res.json({ success: true, is_starred: newStarred });
@@ -746,7 +736,7 @@ router.post('/:id/star', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    await db.prepare('DELETE FROM inbox_messages WHERE id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM inbox_messages WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').run(req.params.id, req.userId, req.userId);
     res.json({ success: true, message: 'Message deleted.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -765,22 +755,23 @@ router.post('/bulk', async (req, res) => {
   try {
     const db = await getDb();
     const placeholders = ids.map(() => '?').join(',');
+    const ownershipClause = 'AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))';
 
     switch (action) {
       case 'mark_read':
-        await db.prepare(`UPDATE inbox_messages SET is_read = 1 WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE inbox_messages SET is_read = 1 WHERE id IN (${placeholders}) ${ownershipClause}`).run(...ids, req.userId, req.userId);
         break;
       case 'mark_unread':
-        await db.prepare(`UPDATE inbox_messages SET is_read = 0 WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE inbox_messages SET is_read = 0 WHERE id IN (${placeholders}) ${ownershipClause}`).run(...ids, req.userId, req.userId);
         break;
       case 'star':
-        await db.prepare(`UPDATE inbox_messages SET is_starred = 1 WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE inbox_messages SET is_starred = 1 WHERE id IN (${placeholders}) ${ownershipClause}`).run(...ids, req.userId, req.userId);
         break;
       case 'unstar':
-        await db.prepare(`UPDATE inbox_messages SET is_starred = 0 WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`UPDATE inbox_messages SET is_starred = 0 WHERE id IN (${placeholders}) ${ownershipClause}`).run(...ids, req.userId, req.userId);
         break;
       case 'delete':
-        await db.prepare(`DELETE FROM inbox_messages WHERE id IN (${placeholders})`).run(...ids);
+        await db.prepare(`DELETE FROM inbox_messages WHERE id IN (${placeholders}) ${ownershipClause}`).run(...ids, req.userId, req.userId);
         break;
       default:
         return res.status(400).json({ error: `Unsupported action: ${action}` });
@@ -800,7 +791,7 @@ router.get('/thread/:id', async (req, res) => {
     const db = await getDb();
     const uid = req.userId;
 
-    const baseMsg = await db.prepare('SELECT * FROM inbox_messages WHERE id = ?').get(req.params.id);
+    const baseMsg = await db.prepare('SELECT * FROM inbox_messages WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').get(req.params.id, uid, uid);
     if (!baseMsg) return res.status(404).json({ error: 'Message not found.' });
 
     const prospectEmail = (baseMsg.sender_email || '').toLowerCase();
@@ -814,29 +805,29 @@ router.get('/thread/:id', async (req, res) => {
         SELECT m.*, a.email as account_email, a.display_name as account_display_name
         FROM inbox_messages m
         LEFT JOIN accounts a ON m.account_id = a.id
-        WHERE m.thread_id = ? OR m.id = ?
+        WHERE (m.thread_id = ? OR m.id = ?) AND (m.user_id = ? OR a.user_id = ?)
         ORDER BY m.created_at ASC, m.id ASC
-      `).all(threadId, baseMsg.id);
+      `).all(threadId, baseMsg.id, uid, uid);
     } else {
       threadMessages = await db.prepare(`
         SELECT m.*, a.email as account_email, a.display_name as account_display_name
         FROM inbox_messages m
         LEFT JOIN accounts a ON m.account_id = a.id
-        WHERE (LOWER(m.sender_email) = ? OR LOWER(m.recipient_email) = ?)
+        WHERE (LOWER(m.sender_email) = ? OR LOWER(m.recipient_email) = ?) AND (m.user_id = ? OR a.user_id = ?)
         ORDER BY m.created_at ASC, m.id ASC
-      `).all(prospectEmail, prospectEmail);
+      `).all(prospectEmail, prospectEmail, uid, uid);
     }
 
     // 2. Fetch actual outbound campaign email sent to this prospect from queue/logs
     const initialSentQueue = await db.prepare(`
       SELECT q.id, q.final_subject, q.final_body, q.sent_at, q.scheduled_at, q.step_number, c.name as campaign_name, c.contact_list, a.email as sender_account_email
       FROM queue q
-      LEFT JOIN campaigns c ON q.campaign_id = c.id
+      JOIN campaigns c ON q.campaign_id = c.id
       LEFT JOIN accounts a ON q.account_id = a.id
-      WHERE LOWER(q.recipient_email) = ? AND q.status = 'sent'
+      WHERE c.user_id = ? AND LOWER(q.recipient_email) = ? AND q.status = 'sent'
       ORDER BY q.sent_at ASC
       LIMIT 5
-    `).all(prospectEmail);
+    `).all(uid, prospectEmail);
 
     res.json({
       thread: threadMessages,

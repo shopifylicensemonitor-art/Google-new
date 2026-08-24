@@ -334,12 +334,19 @@ export default function Contacts({ requirePin }: ContactsProps) {
   };
 
   const getInitials = (c: Contact) => {
-    const name = getContactName(c);
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
+    try {
+      const name = String(getContactName(c) || c.email || 'CP').trim();
+      const parts = name.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2 && parts[0] && parts[1] && parts[0][0] && parts[1][0]) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      if (name.length >= 2) {
+        return name.substring(0, 2).toUpperCase();
+      }
+      return (name[0] || 'C').toUpperCase();
+    } catch {
+      return 'CP';
     }
-    return name.substring(0, 2).toUpperCase();
   };
 
   // Filter contacts by query, domain, industry, and status
@@ -845,19 +852,19 @@ export default function Contacts({ requirePin }: ContactsProps) {
           <div className="bg-card border border-border/80 shadow-2xl rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
-            <div className="p-4 bg-muted/30 border-b border-border/60 flex items-center justify-between shrink-0">
+            <div className="p-4 bg-muted/30 border-b border-border/60 flex items-center justify-between shrink-0 gap-2">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-[#635bff]/10 text-[#635bff] border border-[#635bff]/20 flex items-center justify-center font-bold text-base shrink-0">
                   {getInitials(detailContact)}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-heading text-base sm:text-lg font-bold text-foreground">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-heading text-sm sm:text-lg font-bold text-foreground truncate">
                       {getContactName(detailContact)}
                     </h2>
                     {renderStatusBadge(detailContact.status)}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground truncate">
                     {detailContact.fields?.title || detailContact.fields?.role || 'Contact'} at <strong className="text-foreground">{getContactCompany(detailContact)}</strong>
                   </p>
                 </div>

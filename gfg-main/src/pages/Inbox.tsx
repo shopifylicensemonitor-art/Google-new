@@ -365,12 +365,17 @@ export default function Inbox() {
     });
   }, [messages, activeSegment]);
 
-  // Helpers
   const getInitials = (email: string) => {
-    const namePart = email.split('@')[0];
-    const parts = namePart.split(/[._-]/);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return namePart.substring(0, 2).toUpperCase();
+    try {
+      const safeEmail = String(email || 'CP').trim();
+      const namePart = safeEmail.split('@')[0] || safeEmail;
+      const parts = namePart.split(/[._\-\s]+/).filter(Boolean);
+      if (parts.length >= 2 && parts[0]?.[0] && parts[1]?.[0]) return (parts[0][0] + parts[1][0]).toUpperCase();
+      if (namePart.length >= 2) return namePart.substring(0, 2).toUpperCase();
+      return (namePart[0] || 'C').toUpperCase();
+    } catch {
+      return 'CP';
+    }
   };
 
   const formatRelativeTime = (dateStr: string) => {

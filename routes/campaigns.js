@@ -187,7 +187,7 @@ router.post('/preview-timing', async (req, res) => {
     let accounts = [];
     if (account_ids && Array.isArray(account_ids) && account_ids.length > 0) {
       const placeholders = account_ids.map(() => '?').join(',');
-      accounts = await db.prepare(`SELECT id, email, daily_limit FROM accounts WHERE id IN (${placeholders}) AND status = 'active'`).all(...account_ids);
+      accounts = await db.prepare(`SELECT id, email, daily_limit FROM accounts WHERE id IN (${placeholders}) AND status = 'active' AND user_id = ?`).all(...account_ids, req.userId);
     } else {
       accounts = await db.prepare("SELECT id, email, daily_limit FROM accounts WHERE status = 'active' AND user_id = ?").all(req.userId);
     }
@@ -469,9 +469,9 @@ router.post('/create-from-csv', async (req, res) => {
     const createFromCsvTx = db.transaction(async (txDb) => {
       const result = await txDb.prepare(`
         INSERT INTO campaigns
-          (name, subject, body_html, body_plain, contact_list, status, delay_seconds, start_time, end_time, total_contacts)
-        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
-      `).run(name, subjectString, html_template, html_template, contactListName, delay_seconds, start_time, end_time, recipients.length);
+          (name, subject, body_html, body_plain, contact_list, status, delay_seconds, start_time, end_time, total_contacts, user_id)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+      `).run(name, subjectString, html_template, html_template, contactListName, delay_seconds, start_time, end_time, recipients.length, req.userId);
 
       const campaignId = result.lastInsertRowid;
 
@@ -572,9 +572,12 @@ router.post('/:id/launch', async (req, res) => {
       : !!campaign.exclude_previously_contacted;
 
     if (excludeContacted) {
-      const previouslySentRows = await db.prepare(
-        "SELECT DISTINCT LOWER(recipient_email) as email FROM logs WHERE (user_id = ? OR user_id IS NULL) AND status = 'sent'"
-      ).all(req.userId);
+      const previouslySentRows = await db.prepare(`
+        SELECT DISTINCT LOWER(l.recipient_email) as email
+        FROM logs l
+        JOIN campaigns c ON l.campaign_id = c.id
+        WHERE c.user_id = ? AND l.status = 'sent'
+      `).all(req.userId);
       const sentEmailSet = new Set(previouslySentRows.map(r => (r.email || '').toLowerCase().trim()));
       contacts = contacts.filter(c => !sentEmailSet.has((c.email || '').toLowerCase().trim()));
     }
@@ -899,6 +902,9 @@ router.get('/:id/preview', async (req, res) => {
 router.get('/:id/recipients', async (req, res) => {
   try {
     const db = await getDb();
+    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'id');
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+
     const recipients = await db.prepare(`
       SELECT recipient_email, status, current_step, last_sent_at, created_at
       FROM campaign_recipients
@@ -920,6 +926,9 @@ router.post('/:id/recipients/status', async (req, res) => {
 
   try {
     const db = await getDb();
+    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'id');
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+
     const tx = db.transaction(async (txDb) => {
       await txDb.prepare(`
         UPDATE campaign_recipients

@@ -358,9 +358,16 @@ async function syncContactListsToActiveCampaigns(db) {
       );
 
       if (missingContacts.length > 0) {
-        const accounts = await db.prepare(`
-          SELECT id FROM accounts WHERE status = 'active'
-        `).all();
+        let accounts = [];
+        if (campaign.user_id) {
+          accounts = await db.prepare(`
+            SELECT id FROM accounts WHERE status = 'active' AND user_id = ?
+          `).all(campaign.user_id);
+        } else {
+          accounts = await db.prepare(`
+            SELECT id FROM accounts WHERE status = 'active'
+          `).all();
+        }
 
         let accountIdx = 0;
         for (const contact of missingContacts) {

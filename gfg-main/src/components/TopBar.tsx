@@ -99,13 +99,17 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   }, [setNotificationsOpen]);
 
   const getInitials = (name: string) => {
-    if (!name) return 'A';
-    const parts = name
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .split(/\s+/)
-      .filter(Boolean);
-    if (parts.length === 0) return 'A';
-    return parts.map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    try {
+      if (!name) return 'A';
+      const parts = String(name)
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+      if (parts.length === 0) return 'A';
+      return parts.map(n => n?.[0] || '').filter(Boolean).join('').toUpperCase().slice(0, 2) || 'A';
+    } catch {
+      return 'A';
+    }
   };
 
   const handleOpenProfile = () => {
@@ -403,8 +407,15 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       {/* Profile Settings Modal — Rendered at body root via portal with top z-index */}
       {showProfileModal && createPortal(
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex justify-center z-[9999] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold tracking-tight mb-1">Admin Profile Settings</h3>
+          <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200 relative">
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(false)}
+              className="absolute right-4 top-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h3 className="text-lg font-bold tracking-tight mb-1 pr-8">Admin Profile Settings</h3>
             <p className="text-xs text-muted-foreground mb-4">Update your administrative profile details.</p>
             
             <form onSubmit={handleSaveProfile} className="space-y-4">
@@ -466,8 +477,15 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       {/* System Settings Modal — Rendered at body root via portal with top z-index */}
       {showSettingsModal && createPortal(
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex justify-center z-[9999] overflow-y-auto p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold tracking-tight mb-1">System Control Panel</h3>
+          <div className="my-auto bg-card text-card-foreground border border-border shadow-2xl rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200 relative">
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute right-4 top-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h3 className="text-lg font-bold tracking-tight mb-1 pr-8">System Control Panel</h3>
             <p className="text-xs text-muted-foreground mb-4">Configure system parameters and deployment settings.</p>
             <div className={`rounded-2xl border p-4 mb-4 ${schedulerEnabled === null ? 'bg-muted/30 border-border text-muted-foreground' : schedulerEnabled ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
               <p className="text-xs font-semibold uppercase tracking-wide">Background Scheduler</p>

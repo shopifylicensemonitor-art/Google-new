@@ -34,7 +34,7 @@ router.post('/worker/trigger', async (req, res) => {
   }
 });
 
-/** Get recent logs across all campaigns. */
+/** Get recent logs for the current user's campaigns and accounts. */
 router.get('/logs/recent', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   try {
@@ -49,20 +49,24 @@ router.get('/logs/recent', async (req, res) => {
         l.queue_id,
         (SELECT id FROM queue WHERE campaign_id = l.campaign_id AND recipient_email = l.recipient_email LIMIT 1)
       )
+      WHERE c.user_id = ? OR a.user_id = ?
       ORDER BY l.created_at DESC
       LIMIT ?
-    `).all(limit);
+    `).all(req.userId, req.userId, limit);
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** Get queue items for a specific campaign. */
+/** Get queue items for a specific campaign (only if owned by current user). */
 router.get('/:campaignId', async (req, res) => {
   const status = req.query.status; // optional filter
   try {
     const db = await getDb();
+    const campaign = await db.prepare('SELECT id FROM campaigns WHERE id = ? AND user_id = ?').get(req.params.campaignId, req.userId);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+
     let sql = 'SELECT * FROM queue WHERE campaign_id = ?';
     const params = [req.params.campaignId];
 
@@ -79,10 +83,13 @@ router.get('/:campaignId', async (req, res) => {
   }
 });
 
-/** Get aggregate stats for a campaign's queue. */
+/** Get aggregate stats for a campaign's queue (only if owned by current user). */
 router.get('/:campaignId/stats', async (req, res) => {
   try {
     const db = await getDb();
+    const campaign = await db.prepare('SELECT id FROM campaigns WHERE id = ? AND user_id = ?').get(req.params.campaignId, req.userId);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
+
     const stats = await db.prepare(`
       SELECT
         COUNT(*)                                          as total,
