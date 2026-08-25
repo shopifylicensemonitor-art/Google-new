@@ -48,6 +48,7 @@ const Dashboard = lazyWithRetry(() => import("./pages/Dashboard"));
 const Tracker = lazyWithRetry(() => import("./pages/Tracker"));
 const NotFound = lazyWithRetry(() => import("./pages/NotFound"));
 const Login = lazyWithRetry(() => import("./pages/Login"));
+const EmailVerification = lazyWithRetry(() => import("./pages/EmailVerification"));
 
 // Peak Xender Integrated Pages
 const Accounts = lazyWithRetry(() => import("./pages/Accounts"));
@@ -163,6 +164,9 @@ const App = () => {
               <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/verify-email" element={<EmailVerification />} />
+              <Route path="/forgot-password" element={<EmailVerification />} />
+              <Route path="/reset-password" element={<EmailVerification />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/help" element={<Help />} />

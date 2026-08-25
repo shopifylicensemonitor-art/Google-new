@@ -3,23 +3,25 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Send, LayoutDashboard, RefreshCw, Inbox, MoreHorizontal,
   Users, Flame, Layout, Sparkles, BarChart3, Settings, Home,
-  HelpCircle, Building2, Mail, Shield, Scale, X
+  HelpCircle, Building2, Mail, Shield, Scale, X, Globe, FileText
 } from 'lucide-react';
 
 const primaryTabs = [
-  { path: '/send', label: 'Send', icon: Send },
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/campaigns', label: 'Campaigns', icon: RefreshCw },
+  { path: '/send', label: 'Direct Send', icon: Send },
   { path: '/inbox', label: 'Inbox', icon: Inbox },
 ];
 
 const moreItems = [
   { path: '/contacts', label: 'Prospects', icon: Users },
+  { path: '/domains', label: 'Sender Domains', icon: Globe },
   { path: '/accounts', label: 'Warm-up', icon: Flame },
   { path: '/templates', label: 'Templates', icon: Layout },
-  { path: '/settings', label: 'Settings', icon: Settings },
   { path: '/ai-settings', label: 'AI & SOP', icon: Sparkles },
   { path: '/tracker', label: 'Reports', icon: BarChart3 },
+  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/logs', label: 'Logs', icon: FileText },
   { path: '/', label: 'Home', icon: Home },
   { path: '/help', label: 'Guide', icon: HelpCircle },
   { path: '/about', label: 'About', icon: Building2 },

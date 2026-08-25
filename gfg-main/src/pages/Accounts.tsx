@@ -11,7 +11,8 @@ import {
   Mail, Plus, Trash2, RefreshCw, Play, Pause, User, Sparkles, CheckCircle2, 
   AlertTriangle, Info, Server, Search, Filter, ShieldCheck, Activity, 
   Settings, ArrowLeft, ExternalLink, X, TrendingUp, Check, ShieldAlert,
-  Flame, MonitorHeart, SlidersHorizontal, MoreVertical, Layers, Lock, Key
+  Flame, MonitorHeart, SlidersHorizontal, MoreVertical, Layers, Lock, Key,
+  Eye, EyeOff
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,9 @@ export default function Accounts({ requirePin }: AccountsProps) {
   const [editingLimit, setEditingLimit] = useState<Record<number, number>>({});
   const [savingNameId, setSavingNameId] = useState<number | null>(null);
   const [savingLimitId, setSavingLimitId] = useState<number | null>(null);
+  const [showResetCode, setShowResetCode] = useState(false);
+  const [showConfirmResetCode, setShowConfirmResetCode] = useState(false);
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
 
   // Security Reset Code Protection
   const [resetCodeConfigured, setResetCodeConfigured] = useState<boolean>(false);
@@ -688,14 +692,24 @@ export default function Accounts({ requirePin }: AccountsProps) {
           <form onSubmit={handleSetResetCode} className="space-y-4 py-3">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">Set Security Reset Code (PIN / Password)</label>
-              <Input
-                type="password"
-                placeholder="e.g. 7842 or MySecretPin"
-                value={resetCodeInput}
-                onChange={e => setResetCodeInput(e.target.value)}
-                className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest"
-                required
-              />
+              <div className="relative">
+                <Input
+                  type={showResetCode ? "text" : "password"}
+                  placeholder="e.g. 7842 or MySecretPin"
+                  value={resetCodeInput}
+                  onChange={e => setResetCodeInput(e.target.value)}
+                  className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest pr-9"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowResetCode(!showResetCode)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showResetCode ? "Hide code" : "Show code"}
+                >
+                  {showResetCode ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Minimum 3 characters. Once set, resetting an account's daily volume requires this code.
               </p>
@@ -737,15 +751,25 @@ export default function Accounts({ requirePin }: AccountsProps) {
           <form onSubmit={handleAuthorizedReset} className="space-y-4 py-3">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">Security Reset Code</label>
-              <Input
-                type="password"
-                placeholder="Enter reset code..."
-                value={resetCodeConfirmInput}
-                onChange={e => setResetCodeConfirmInput(e.target.value)}
-                className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest"
-                required
-                autoFocus
-              />
+              <div className="relative">
+                <Input
+                  type={showConfirmResetCode ? "text" : "password"}
+                  placeholder="Enter reset code..."
+                  value={resetCodeConfirmInput}
+                  onChange={e => setResetCodeConfirmInput(e.target.value)}
+                  className="rounded-lg h-10 border-border/80 text-sm font-mono tracking-widest pr-9"
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmResetCode(!showConfirmResetCode)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showConfirmResetCode ? "Hide code" : "Show code"}
+                >
+                  {showConfirmResetCode ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Enter the code configured in your security settings to proceed with the reset.
               </p>
@@ -897,13 +921,23 @@ export default function Accounts({ requirePin }: AccountsProps) {
               </div>
               <div className="space-y-1">
                 <label className="font-bold text-foreground">SMTP Password*</label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={smtpPass}
-                  onChange={e => setSmtpPass(e.target.value)}
-                  className="rounded-lg h-9 border-border/80"
-                />
+                <div className="relative">
+                  <Input
+                    type={showSmtpPass ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={smtpPass}
+                    onChange={e => setSmtpPass(e.target.value)}
+                    className="rounded-lg h-9 border-border/80 pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSmtpPass(!showSmtpPass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={showSmtpPass ? "Hide password" : "Show password"}
+                  >
+                    {showSmtpPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
             </div>
 

@@ -941,12 +941,15 @@ router.post('/chat', async (req, res) => {
       return res.json({ success: true, reply });
     }
   } catch (err) {
-    logger.error({ err }, 'AI Chat endpoint failed');
+    logger.error({ err: err.message }, 'AI Chat endpoint error');
     try {
-      const fallbackReply = await callAI(messages, systemInstruction || 'You are Peak Xender AI Advisor. Be helpful and concise.', uid);
+      const fallbackReply = await callAI(messages, sysPrompt, uid);
       return res.json({ success: true, reply: fallbackReply });
     } catch (fErr) {
-      res.status(500).json({ error: 'AI Service is temporarily busy. Please try again in a moment.' });
+      return res.json({
+        success: true,
+        reply: "I'm your Peak Xender Outreach Advisor! You can use the quick actions below to manage campaigns, check warmup accounts, or prospect lists. To activate real-time custom LLM reasoning, ensure your preferred API key (OpenAI, Gemini, OpenRouter, Groq, DeepSeek, or Nvidia) is active in AI Settings."
+      });
     }
   }
 });

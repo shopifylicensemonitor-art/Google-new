@@ -15,7 +15,8 @@ import {
   AlertTriangle, Plus, Save, Building, Mail, FileText, Globe, Clock, 
   Key, Check, CheckCircle2, RefreshCw, ChevronRight, Laptop, Smartphone,
   Zap, ArrowUpRight, Sun, Moon, Keyboard, BatteryCharging, ZapOff,
-  Target, TrendingUp, MailOpen, MousePointerClick, MessageSquare, ShieldAlert, RotateCcw
+  Target, TrendingUp, MailOpen, MousePointerClick, MessageSquare, ShieldAlert, RotateCcw,
+  Eye, EyeOff
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
@@ -72,6 +73,9 @@ export default function Settings() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
@@ -1011,43 +1015,79 @@ export default function Settings() {
               <form onSubmit={handlePasswordChange} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-foreground">Current Password</label>
-                  <Input
-                    type="password"
-                    placeholder="••••••••••••"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="h-10 text-xs bg-background"
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showCurrentPassword ? "text" : "password"}
+                      placeholder="••••••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="h-10 text-xs bg-background pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                    >
+                      {showCurrentPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-foreground">New Password</label>
-                    <Input
-                      type="password"
-                      placeholder="At least 8 characters"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="h-10 text-xs bg-background"
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="At least 8 characters"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="h-10 text-xs bg-background pr-9"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-foreground">Confirm New Password</label>
-                    <Input
-                      type="password"
-                      placeholder="Repeat new password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="h-10 text-xs bg-background"
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Repeat new password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="h-10 text-xs bg-background pr-9"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <Button
                   type="submit"
+                  disabled={updatingPassword}
                   className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
                 >
-                  <Save className="h-4 w-4" /> Update Password
+                  {updatingPassword ? (
+                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-white" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  {updatingPassword ? 'Updating Password...' : 'Update Password'}
                 </Button>
               </form>
             </div>

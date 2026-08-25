@@ -16,10 +16,23 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const dns = require('dns').promises;
+const dns = require('dns');
+const dnsPromises = dns.promises;
 const { getDb } = require('../db');
 const logger = require('../logger');
 const { encrypt, decrypt } = require('../crypto');
+
+// Create a custom DNS resolver with Google and Cloudflare nameservers for reliable resolution
+const publicResolver = new dns.promises.Resolver();
+publicResolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+
+/** Helper with timeout to resolve DNS queries without hanging */
+async function resolveWithTimeout(fn, timeoutMs = 4000) {
+  return Promise.race([
+    fn(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('DNS query timed out')), timeoutMs))
+  ]);
+}
 
 /** Generate 2048-bit RSA Keypair for DKIM Signing */
 function generateDkimKeypair() {
@@ -173,8 +186,8 @@ router.post('/:id/verify', async (req, res) => {
 
     // 1. Verify SPF Record
     try {
-      const txtRecords = await dns.resolveTxt(domain);
-      const flat = (txtRecords || []).map(r => r.join(''));
+      const txtRecords = await resolveWithTimeout(() => publicResolver.resolveTxt(domain).catch(() => dnsPromises.resolveTxt(domain)));
+      const flat = (txtRecords || []).map(r => Array.isArray(r) ? r.join('') : String(r));
       const spf = flat.find(t => t.toLowerCase().startsWith('v=spf1'));
       if (spf) {
         verification.spf.valid = true;
@@ -190,9 +203,9 @@ router.post('/:id/verify', async (req, res) => {
     // 2. Verify DKIM Record
     try {
       const dkimHost = `${selector}._domainkey.${domain}`;
-      const dkimTxt = await dns.resolveTxt(dkimHost);
-      const flatDkim = (dkimTxt || []).map(r => r.join(''));
-      const dkimFound = flatDkim.find(t => t.toLowerCase().startsWith('v=dkim1') || t.includes(domainRow.dkim_public_key.slice(0, 30)));
+      const dkimTxt = await resolveWithTimeout(() => publicResolver.resolveTxt(dkimHost).catch(() => dnsPromises.resolveTxt(dkimHost)));
+      const flatDkim = (dkimTxt || []).map(r => Array.isArray(r) ? r.join('') : String(r));
+      const dkimFound = flatDkim.find(t => t.toLowerCase().startsWith('v=dkim1') || t.includes((domainRow.dkim_public_key || '').slice(0, 30)));
       if (dkimFound) {
         verification.dkim.valid = true;
         verification.dkim.record = dkimFound;
@@ -207,8 +220,8 @@ router.post('/:id/verify', async (req, res) => {
     // 3. Verify DMARC Record
     try {
       const dmarcHost = `_dmarc.${domain}`;
-      const dmarcTxt = await dns.resolveTxt(dmarcHost);
-      const flatDmarc = (dmarcTxt || []).map(r => r.join(''));
+      const dmarcTxt = await resolveWithTimeout(() => publicResolver.resolveTxt(dmarcHost).catch(() => dnsPromises.resolveTxt(dmarcHost)));
+      const flatDmarc = (dmarcTxt || []).map(r => Array.isArray(r) ? r.join('') : String(r));
       const dmarcFound = flatDmarc.find(t => t.toLowerCase().startsWith('v=dmarc1'));
       if (dmarcFound) {
         verification.dmarc.valid = true;
@@ -223,7 +236,7 @@ router.post('/:id/verify', async (req, res) => {
 
     // 4. Verify MX Mail Routing
     try {
-      const mxRecords = await dns.resolveMx(domain);
+      const mxRecords = await resolveWithTimeout(() => publicResolver.resolveMx(domain).catch(() => dnsPromises.resolveMx(domain)));
       if (mxRecords && mxRecords.length > 0) {
         verification.mx.valid = true;
         verification.mx.records = mxRecords.map(r => r.exchange);
@@ -237,7 +250,7 @@ router.post('/:id/verify', async (req, res) => {
 
     // 5. Verify Custom Tracking CNAME
     try {
-      const cnames = await dns.resolveCname(trackingHost);
+      const cnames = await resolveWithTimeout(() => publicResolver.resolveCname(trackingHost).catch(() => dnsPromises.resolveCname(trackingHost)));
       if (cnames && cnames.length > 0) {
         verification.tracking.valid = true;
         verification.tracking.target = cnames[0];
