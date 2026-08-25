@@ -37,6 +37,26 @@ export interface Account {
   created_at: string;
 }
 
+export interface Domain {
+  id: number;
+  domain: string;
+  status: 'pending' | 'verified' | 'partial' | 'failed';
+  spf_record: string;
+  dkim_selector: string;
+  dkim_public_key: string;
+  dkim_record: string;
+  dkim_host: string;
+  dmarc_record: string;
+  dmarc_host: string;
+  spf_host: string;
+  custom_tracking_domain: string | null;
+  tracking_host: string;
+  tracking_target: string;
+  tracking_status: 'pending' | 'verified';
+  mx_verified: number;
+  created_at: string;
+}
+
 export interface Contact {
   id: number;
   list_name: string;
@@ -759,6 +779,37 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ replyBody, replySubject })
   }),
+
+  // Custom Sender Domains & EMSP DNS Management
+  getDomains: () => apiFetch<{ domains: Domain[] }>('/api/domains'),
+  createDomain: (data: { domain: string; custom_tracking_domain?: string; dkim_selector?: string }) => apiFetch<{
+    success: boolean;
+    domain_id: number;
+    domain: string;
+    status: string;
+    dns_instructions: any;
+  }>('/api/domains', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  verifyDomain: (id: number) => apiFetch<{
+    success: boolean;
+    domain: string;
+    status: string;
+    is_fully_verified: boolean;
+    verification: {
+      spf: { valid: boolean; record: string | null; message: string };
+      dkim: { valid: boolean; record: string | null; message: string };
+      dmarc: { valid: boolean; record: string | null; message: string };
+      mx: { valid: boolean; records: string[]; message: string };
+      tracking: { valid: boolean; target: string | null; message: string };
+    };
+  }>(`/api/domains/${id}/verify`, { method: 'POST' }),
+  updateTrackingDomain: (id: number, customTrackingDomain: string) => apiFetch<{ success: boolean; custom_tracking_domain: string }>(`/api/domains/${id}/tracking`, {
+    method: 'PUT',
+    body: JSON.stringify({ custom_tracking_domain: customTrackingDomain })
+  }),
+  deleteDomain: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/domains/${id}`, { method: 'DELETE' }),
 
   // Master Suppression & Do-Not-Contact List
   getSuppressionList: (q?: string, type?: string) => apiFetch<{ items: { id: number; type: string; value: string; reason: string; created_at: string }[] }>(`/api/suppression${q || type ? `?${q ? `q=${encodeURIComponent(q)}&` : ''}${type ? `type=${type}` : ''}` : ''}`),

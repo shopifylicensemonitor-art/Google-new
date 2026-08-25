@@ -801,7 +801,8 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
 const isNetlifyServerless = process.env.NETLIFY === 'true';
 const schedulerEnabled = !isNetlifyServerless && process.env.DISABLE_SCHEDULER !== 'true';
 let dispatchInterval = null;
-let resetTask;
+let resetTask = null;
+let inboxSyncCron = null;
 let lastTickAt = null;
 let isDispatching = false;
 
@@ -860,7 +861,7 @@ if (schedulerEnabled) {
   });
 
   // Background periodic inbox sync every 5 minutes
-  let inboxSyncCron = cron.schedule('*/5 * * * *', async () => {
+  inboxSyncCron = cron.schedule('*/5 * * * *', async () => {
     try {
       const db = await getDb();
       const accounts = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND (type = 'oauth' OR refresh_token IS NOT NULL)").all();

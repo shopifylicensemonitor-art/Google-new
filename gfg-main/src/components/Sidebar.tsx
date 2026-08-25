@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Send, Users, Flame, Layout, Inbox,
   BarChart3, Settings, History, FileText, HelpCircle,
   Shield, Scale, Building2, Mail, ChevronLeft, ChevronRight, X,
-  Home, Zap, RefreshCw, Sparkles
+  Home, Zap, RefreshCw, Sparkles, Globe
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +23,7 @@ const mainNavItems = [
   { path: '/contacts', label: 'Prospects', icon: Users },
   { path: '/inbox', label: 'Inbox & Replies', icon: Inbox },
   { path: '/accounts', label: 'Deliverability & Warmup', icon: Flame },
+  { path: '/domains', label: 'Sender Domains & DNS', icon: Globe },
   { path: '/templates', label: 'Templates', icon: Layout },
   { path: '/settings', label: 'Settings & Billing', icon: Settings },
   { path: '/ai-settings', label: 'AI & SOP Rules', icon: Sparkles },

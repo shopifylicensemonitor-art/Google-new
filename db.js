@@ -629,6 +629,22 @@ const SQLITE_DDL = `
     user_id INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS domains (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    domain TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    spf_record TEXT,
+    dkim_selector TEXT DEFAULT 'peak',
+    dkim_public_key TEXT,
+    dkim_private_key TEXT,
+    dmarc_record TEXT,
+    custom_tracking_domain TEXT,
+    tracking_status TEXT DEFAULT 'pending',
+    mx_verified INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `;
 
 const PG_DDL = `
@@ -862,6 +878,22 @@ const PG_DDL = `
     user_id INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
+
+  CREATE TABLE IF NOT EXISTS domains (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    domain TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    spf_record TEXT,
+    dkim_selector TEXT DEFAULT 'peak',
+    dkim_public_key TEXT,
+    dkim_private_key TEXT,
+    dmarc_record TEXT,
+    custom_tracking_domain TEXT,
+    tracking_status TEXT DEFAULT 'pending',
+    mx_verified INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
 `;
 
 // ============================================================================
@@ -872,7 +904,7 @@ const PG_DDL = `
 const TENANT_TABLES = [
   'accounts', 'contacts', 'campaigns', 'templates', 'suppression_list',
   'inbox_messages', 'ai_config', 'ai_rules', 'notifications', 'user_settings',
-  'device_states', 'logs', 'queue'
+  'device_states', 'logs', 'queue', 'domains'
 ];
 
 const TENANT_INDEX_DDL = `
@@ -887,6 +919,7 @@ const TENANT_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_device_states_user ON device_states(user_id);
   CREATE INDEX IF NOT EXISTS idx_logs_user ON logs(user_id);
   CREATE INDEX IF NOT EXISTS idx_queue_user ON queue(user_id);
+  CREATE INDEX IF NOT EXISTS idx_domains_user ON domains(user_id);
 `;
 
 /**

@@ -58,6 +58,7 @@ const Logs = lazyWithRetry(() => import("./pages/Logs"));
 const AISettings = lazyWithRetry(() => import("./pages/AISettings"));
 const Settings = lazyWithRetry(() => import("./pages/Settings"));
 const Inbox = lazyWithRetry(() => import("./pages/Inbox"));
+const Domains = lazyWithRetry(() => import("./pages/Domains"));
 
 const Blog = lazyWithRetry(() => import("./pages/Blog"));
 const BlogPost = lazyWithRetry(() => import("./pages/BlogPost"));
@@ -259,6 +260,14 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <Inbox />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/domains" 
+                element={
+                  <ProtectedRoute>
+                    <Domains requirePin={requirePin} />
                   </ProtectedRoute>
                 } 
               />

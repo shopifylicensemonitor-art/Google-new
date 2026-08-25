@@ -126,6 +126,7 @@ app.use('/api/ai', generalLimiter, requireAuth, attachTenant, require('./routes/
 app.use('/api/inbox', generalLimiter, requireAuth, attachTenant, require('./routes/inbox'));
 app.use('/api/suppression', generalLimiter, requireAuth, attachTenant, require('./routes/suppression'));
 app.use('/api/notifications', generalLimiter, requireAuth, attachTenant, require('./routes/notifications'));
+app.use('/api/domains', generalLimiter, requireAuth, attachTenant, require('./routes/domains'));
 
 // Tracking & Unsubscribe routes are PUBLIC
 app.use('/api/track', require('./routes/tracking'));
