@@ -866,11 +866,58 @@ export default function Accounts({ requirePin }: AccountsProps) {
           </DialogHeader>
 
           <div className="grid gap-4 py-4 text-xs">
+            {/* Quick Provider Preset Picker */}
+            <div className="space-y-1">
+              <label className="font-bold text-foreground flex items-center justify-between">
+                <span>Mail Provider Preset</span>
+                <span className="text-[10px] text-[#635bff] font-semibold">1-Click Host Config</span>
+              </label>
+              <select
+                className="w-full h-9 rounded-lg border border-border/80 bg-background px-3 text-xs font-medium text-foreground focus:outline-hidden focus:ring-2 focus:ring-[#635bff]"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'brevo') {
+                    setSmtpHost('smtp-relay.brevo.com');
+                    setSmtpPort('587');
+                    setSmtpSecure(false);
+                  } else if (val === 'namecheap') {
+                    setSmtpHost('mail.privateemail.com');
+                    setSmtpPort('465');
+                    setSmtpSecure(true);
+                  } else if (val === 'zoho') {
+                    setSmtpHost('smtp.zoho.com');
+                    setSmtpPort('465');
+                    setSmtpSecure(true);
+                  } else if (val === 'ses') {
+                    setSmtpHost('email-smtp.us-east-1.amazonaws.com');
+                    setSmtpPort('587');
+                    setSmtpSecure(false);
+                  } else if (val === 'mailgun') {
+                    setSmtpHost('smtp.mailgun.org');
+                    setSmtpPort('587');
+                    setSmtpSecure(false);
+                  } else if (val === 'gmail_app_pass') {
+                    setSmtpHost('smtp.gmail.com');
+                    setSmtpPort('587');
+                    setSmtpSecure(false);
+                  }
+                }}
+              >
+                <option value="custom">Custom SMTP Server (Manual Entry)</option>
+                <option value="brevo">Brevo (Sendinblue) — 300 Free/Day (smtp-relay.brevo.com:587)</option>
+                <option value="namecheap">Namecheap Private Email (mail.privateemail.com:465)</option>
+                <option value="zoho">Zoho Mail (smtp.zoho.com:465)</option>
+                <option value="ses">Amazon SES (email-smtp.us-east-1.amazonaws.com:587)</option>
+                <option value="mailgun">Mailgun (smtp.mailgun.org:587)</option>
+                <option value="gmail_app_pass">Google Workspace / Gmail App Password (smtp.gmail.com:587)</option>
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="font-bold text-foreground">Display Name</label>
                 <Input
-                  placeholder="e.g. Sales Team"
+                  placeholder="e.g. Gabriel"
                   value={smtpDisplayName}
                   onChange={e => setSmtpDisplayName(e.target.value)}
                   className="rounded-lg h-9 border-border/80"
@@ -880,7 +927,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
                 <label className="font-bold text-foreground">Sender Email*</label>
                 <Input
                   type="email"
-                  placeholder="e.g. john@acmecorp.com"
+                  placeholder="e.g. gabriel@outreach.peakconix.site"
                   value={smtpEmail}
                   onChange={e => setSmtpEmail(e.target.value)}
                   className="rounded-lg h-9 border-border/80"
@@ -892,7 +939,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
               <div className="col-span-2 space-y-1">
                 <label className="font-bold text-foreground">SMTP Host*</label>
                 <Input
-                  placeholder="e.g. smtp.mailgun.org"
+                  placeholder="e.g. smtp-relay.brevo.com"
                   value={smtpHost}
                   onChange={e => setSmtpHost(e.target.value)}
                   className="rounded-lg h-9 border-border/80"
@@ -911,16 +958,16 @@ export default function Accounts({ requirePin }: AccountsProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="font-bold text-foreground">SMTP Username*</label>
+                <label className="font-bold text-foreground">SMTP Username / Login*</label>
                 <Input
-                  placeholder="Username"
+                  placeholder="Username / Login email"
                   value={smtpUser}
                   onChange={e => setSmtpUser(e.target.value)}
                   className="rounded-lg h-9 border-border/80"
                 />
               </div>
               <div className="space-y-1">
-                <label className="font-bold text-foreground">SMTP Password*</label>
+                <label className="font-bold text-foreground">SMTP / Relay Password*</label>
                 <div className="relative">
                   <Input
                     type={showSmtpPass ? "text" : "password"}
@@ -950,7 +997,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
                 className="h-4 w-4 rounded border-border/80 text-[#635bff] focus:ring-[#635bff]"
               />
               <label htmlFor="smtp-secure" className="text-xs font-semibold text-foreground cursor-pointer">
-                Use SSL/TLS (Port 465)
+                Use SSL/TLS Encryption (Port 465)
               </label>
             </div>
           </div>
