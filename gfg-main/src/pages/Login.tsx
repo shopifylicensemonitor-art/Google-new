@@ -55,11 +55,21 @@ export default function Login() {
       const redirectUri = `${window.location.origin}/api/auth/callback`;
       const res = await fetch(`${API_BASE}/api/auth/google-url?redirect_uri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to get Google login URL");
+      
+      if (res.ok && data?.url) {
+        window.location.href = data.url;
+        return;
       }
-      if (!data.url) throw new Error("Invalid login response from server");
-      window.location.href = data.url;
+
+      // Direct fallback if client_id is available
+      const clientId = data?.client_id || import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      if (clientId) {
+        const directUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile')}&access_type=offline&prompt=consent`;
+        window.location.href = directUrl;
+        return;
+      }
+
+      throw new Error(data?.error || "Google sign in is currently unavailable. Please sign in with email and password.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Google sign in failed");
       setLoading(false);

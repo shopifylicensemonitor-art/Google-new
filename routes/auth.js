@@ -80,11 +80,22 @@ function validatePassword(password) {
   };
 }
 
+function getGoogleCredentials() {
+  const rawId = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENTID || process.env.VITE_GOOGLE_CLIENT_ID || process.env.CLIENT_ID || process.env.G_CLIENT_ID || '';
+  const rawSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_SECRET || process.env.GOOGLE_CLIENTSECRET || process.env.CLIENT_SECRET || process.env.G_CLIENT_SECRET || '';
+  
+  const clientId = String(rawId).trim().replace(/^["']|["']$/g, '');
+  const clientSecret = String(rawSecret).trim().replace(/^["']|["']$/g, '');
+  
+  return { clientId, clientSecret };
+}
+
 function getLoginOAuth2Client(customRedirectUri) {
+  const { clientId, clientSecret } = getGoogleCredentials();
   const redirectUri = customRedirectUri || process.env.GOOGLE_LOGIN_REDIRECT_URI || (process.env.FRONTEND_ORIGIN ? `${process.env.FRONTEND_ORIGIN}/api/auth/callback` : 'https://send.peakconix.site/api/auth/callback');
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
+    clientId,
+    clientSecret,
     redirectUri
   );
 }
@@ -92,8 +103,12 @@ function getLoginOAuth2Client(customRedirectUri) {
 /** Generate Google OAuth consent URL for admin login. */
 router.get('/google-url', (req, res) => {
   try {
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-      return res.status(400).json({ error: 'Google OAuth is not configured on the server. Please sign in with your email and password.' });
+    const { clientId, clientSecret } = getGoogleCredentials();
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ 
+        error: 'Google OAuth credentials not active in environment. Please check Netlify environment variable scopes or sign in with email/password.',
+        client_id: clientId || null
+      });
     }
     const customRedirect = req.query.redirect_uri || req.query.redirectUri;
     const oauth2 = getLoginOAuth2Client(customRedirect);
@@ -105,7 +120,7 @@ router.get('/google-url', (req, res) => {
         'https://www.googleapis.com/auth/userinfo.profile',
       ],
     });
-    res.json({ url });
+    res.json({ url, client_id: clientId });
   } catch (err) {
     logger.error({ err: err.message }, 'Failed to generate Google login URL');
     res.status(500).json({ error: err.message });
