@@ -1233,6 +1233,71 @@ export function GeneratedEmails({
                 </span>
               </div>
             </div>
+
+            {/* 4. Native Device & Protocol Permissions Prompt */}
+            <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-primary shrink-0" />
+                  <span className="text-xs font-bold text-foreground">Device Permissions &amp; Default App</span>
+                </div>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-primary/40 text-primary font-semibold">
+                  System Prompt
+                </Badge>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Trigger your browser or phone's native permission popup to set Peak Xender as default or grant link-opening permissions.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  let triggered = false;
+
+                  // 1. Request Browser Protocol Handler (mailto)
+                  if (typeof navigator !== 'undefined' && 'registerProtocolHandler' in navigator) {
+                    try {
+                      navigator.registerProtocolHandler('mailto', `${window.location.origin}/send?email=%s`);
+                      triggered = true;
+                      toast({
+                        title: 'Default App Permission Prompted',
+                        description: 'Please click "Allow" in your browser header to set default email handling.'
+                      });
+                    } catch (_) {
+                      // Fallback handled below
+                    }
+                  }
+
+                  // 2. Request Notification Permissions
+                  if (typeof window !== 'undefined' && 'Notification' in window) {
+                    try {
+                      const res = await Notification.requestPermission();
+                      if (res === 'granted') {
+                        triggered = true;
+                        toast({
+                          title: 'Notifications Allowed',
+                          description: 'Delivery updates and campaign alerts are now active.'
+                        });
+                      }
+                    } catch (_) {
+                      // Ignore notification request failure
+                    }
+                  }
+
+                  if (!triggered) {
+                    toast({
+                      title: 'Device Setting Tip',
+                      description: 'On Android: Go to Settings -> Apps -> Default Apps -> Opening Links -> Gmail. On iOS: Settings -> Mail -> Default Mail App.'
+                    });
+                  }
+                }}
+                className="w-full h-8 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary border-primary/30 gap-1.5"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                Prompt System Default Permissions
+              </Button>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
