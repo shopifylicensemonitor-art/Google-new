@@ -260,19 +260,27 @@ export function dispatchEmailClient({
 
   // 3. Target: Gmail Mobile App (Native App Deep-Linking)
   if (clientType === 'gmail_app') {
+    const params = new URLSearchParams();
+    if (finalTo) params.set('to', finalTo);
+    if (subject) params.set('su', subject);
+    if (body) params.set('body', body);
+    if (finalCc) params.set('cc', finalCc);
+    if (finalBcc) params.set('bcc', finalBcc);
+
     if (isIOS) {
-      // iOS Gmail App URL Scheme
-      const params = new URLSearchParams();
-      if (finalTo) params.set('to', finalTo);
-      if (subject) params.set('subject', subject);
-      if (body) params.set('body', body);
-      if (finalCc) params.set('cc', finalCc);
-      if (finalBcc) params.set('bcc', finalBcc);
-      const iosGmailUrl = `googlegmail:///co?${params.toString()}`;
-      
+      // iOS Gmail App URL Scheme: googlegmail:///co?to=...
+      const iosParams = new URLSearchParams();
+      if (finalTo) iosParams.set('to', finalTo);
+      if (subject) iosParams.set('subject', subject);
+      if (body) iosParams.set('body', body);
+      if (finalCc) iosParams.set('cc', finalCc);
+      if (finalBcc) iosParams.set('bcc', finalBcc);
+      const iosGmailUrl = `googlegmail:///co?${iosParams.toString()}`;
+
+      // Try opening native iOS Gmail app
       window.location.href = iosGmailUrl;
-      
-      // Fallback to standard anchor click if app is not installed
+
+      // Resilient fallback: If Gmail app is not installed, fallback to standard mailto
       setTimeout(() => {
         const mailtoUrl = buildMailtoLink({
           recipient: finalTo,
@@ -284,18 +292,13 @@ export function dispatchEmailClient({
           ccRoutingMode: 'normal',
           enableRandom,
         });
-        const a = document.createElement('a');
-        a.href = mailtoUrl;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => document.body.removeChild(a), 100);
-      }, 500);
+        window.location.href = mailtoUrl;
+      }, 600);
       return;
     }
 
     if (isAndroid) {
-      // On Android, directly triggering an anchor element with the formatted mailto ensures the Android Intent chooser or Gmail app opens directly
+      // Android: Construct standard mailto link
       const mailtoUrl = buildMailtoLink({
         recipient: finalTo,
         subject,
@@ -307,32 +310,34 @@ export function dispatchEmailClient({
         enableRandom,
       });
 
-      const a = document.createElement('a');
-      a.href = mailtoUrl;
-      a.target = '_self';
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
+      // Android Intent scheme targeting Gmail package directly
+      const encodedMailtoData = encodeURIComponent(mailtoUrl);
+      const androidGmailIntent = `intent:${encodedMailtoData}#Intent;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.google.android.gm;end`;
+
+      try {
+        // Direct navigation to Android Intent launches Gmail app directly
+        window.location.href = androidGmailIntent;
+      } catch (_) {
+        window.location.href = mailtoUrl;
+      }
+
+      // Fallback: If intent is blocked or unhandled in browser, trigger standard mailto / web
       setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
-      }, 100);
+        try {
+          window.location.href = mailtoUrl;
+        } catch (_) {
+          window.open(`https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`, '_blank');
+        }
+      }, 600);
       return;
     }
 
-    // Fallback on Desktop when Gmail App is selected: open Gmail Web
-    const params = new URLSearchParams();
-    params.set('view', 'cm');
-    params.set('fs', '1');
-    if (finalTo) params.set('to', finalTo);
-    if (subject) params.set('su', subject);
-    if (body) params.set('body', body);
-    if (finalCc) params.set('cc', finalCc);
-    if (finalBcc) params.set('bcc', finalBcc);
-    window.open(`https://mail.google.com/mail/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+    // Fallback on Desktop when Gmail App is selected: open Gmail Web composer
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // 4. Target: Default OS Email Client (Apple Mail, Outlook, Thunderbird, etc.)
+  // 4. Target: Default OS Email Client (Apple Mail, Outlook, Thunderbird, Samsung Mail, etc.)
   const mailtoUrl = buildMailtoLink({
     recipient: finalTo,
     subject,
@@ -344,12 +349,16 @@ export function dispatchEmailClient({
     enableRandom,
   });
 
-  const a = document.createElement('a');
-  a.href = mailtoUrl;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    if (document.body.contains(a)) document.body.removeChild(a);
-  }, 100);
+  try {
+    window.location.href = mailtoUrl;
+  } catch (_) {
+    const a = document.createElement('a');
+    a.href = mailtoUrl;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (document.body.contains(a)) document.body.removeChild(a);
+    }, 100);
+  }
 }
