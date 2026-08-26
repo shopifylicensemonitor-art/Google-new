@@ -10,7 +10,9 @@ import { toast } from '@/hooks/use-toast';
 import { 
   Sparkles, Key, Globe, Cpu, CheckCircle2, AlertTriangle, 
   RefreshCw, Save, BookOpen, Bot, ExternalLink, Eye, EyeOff,
-  Copy, Check, Trash2, ShieldCheck, Zap, Activity, AlertCircle
+  Copy, Check, Trash2, ShieldCheck, Zap, Activity, AlertCircle,
+  ChevronDown, ChevronUp, Sliders, Lock, Search, Filter,
+  Gift, CheckCheck, Compass, Radio
 } from 'lucide-react';
 
 export interface AIProviderPreset {
@@ -20,30 +22,152 @@ export interface AIProviderPreset {
   defaultModel: string;
   getKeyUrl: string;
   badge?: string;
+  isFreeTier?: boolean;
+  freeTierNote?: string;
   description: string;
   recommendedModels?: string[];
+  freeModels?: string[];
 }
 
 const PROVIDERS: AIProviderPreset[] = [
+  {
+    id: 'openrouter',
+    name: 'OpenRouter (Free & Premium)',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'deepseek/deepseek-r1:free',
+    getKeyUrl: 'https://openrouter.ai/keys',
+    badge: '100% Free Models Available',
+    isFreeTier: true,
+    freeTierNote: 'Offers multiple 100% free models with zero credit card required.',
+    description: 'Universal unified router with access to Claude, GPT-4o, Llama 3.3, and free DeepSeek R1.',
+    recommendedModels: [
+      'deepseek/deepseek-r1:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+      'deepseek/deepseek-chat:free',
+      'qwen/qwen-2.5-72b-instruct:free',
+      'meta-llama/llama-3.1-8b-instruct:free',
+      'mistralai/mistral-7b-instruct:free',
+      'openai/gpt-4o-mini',
+      'anthropic/claude-3.5-sonnet'
+    ],
+    freeModels: [
+      'deepseek/deepseek-r1:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+      'deepseek/deepseek-chat:free',
+      'qwen/qwen-2.5-72b-instruct:free',
+      'meta-llama/llama-3.1-8b-instruct:free',
+      'mistralai/mistral-7b-instruct:free'
+    ]
+  },
+  {
+    id: 'groq',
+    name: 'Groq API (Free Developer Tier)',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    getKeyUrl: 'https://console.groq.com/keys',
+    badge: 'Free Tier Available',
+    isFreeTier: true,
+    freeTierNote: 'Generous free rate limits (up to 30 RPM / 14,400 RPD) for developers.',
+    description: 'Ultra-fast sub-second cold email generation powered by Groq LPUs.',
+    recommendedModels: [
+      'llama-3.3-70b-versatile',
+      'deepseek-r1-distill-llama-70b',
+      'llama3-70b-8192',
+      'llama3-8b-8192',
+      'gemma2-9b-it',
+      'mixtral-8x7b-32768'
+    ],
+    freeModels: [
+      'llama-3.3-70b-versatile',
+      'deepseek-r1-distill-llama-70b',
+      'llama3-70b-8192',
+      'llama3-8b-8192',
+      'gemma2-9b-it'
+    ]
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini (Free in AI Studio)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-2.0-flash',
+    getKeyUrl: 'https://aistudio.google.com/apikey',
+    badge: 'Free Tier (15 RPM)',
+    isFreeTier: true,
+    freeTierNote: 'Free on Google AI Studio with up to 15 Requests/Min and 1M tokens/min.',
+    description: 'Next-generation Gemini 2.0 Flash and 1.5 Flash with fast reasoning and long context.',
+    recommendedModels: [
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-2.0-flash-lite-preview-02-05'
+    ],
+    freeModels: [
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash-lite-preview-02-05'
+    ]
+  },
   {
     id: 'nvidia',
     name: 'Nvidia NIM API',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     defaultModel: 'meta/llama-3.3-70b-instruct',
     getKeyUrl: 'https://build.nvidia.com/explore/discover',
-    badge: 'Enterprise',
-    description: 'High-throughput accelerated inference for Llama 3.3 and DeepSeek models.',
-    recommendedModels: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-8b-instruct', 'mistralai/mistral-large-2-instruct']
+    badge: '1000 Free Credits',
+    isFreeTier: true,
+    freeTierNote: 'Includes 1,000 free API trial credits on developer account creation.',
+    description: 'High-throughput accelerated inference for Llama 3.3 and DeepSeek R1 models.',
+    recommendedModels: [
+      'meta/llama-3.3-70b-instruct',
+      'deepseek-ai/deepseek-r1',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'mistralai/mistral-large-2-instruct'
+    ],
+    freeModels: [
+      'meta/llama-3.3-70b-instruct',
+      'deepseek-ai/deepseek-r1'
+    ]
   },
   {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'openai/gpt-4o-mini',
-    getKeyUrl: 'https://openrouter.ai/keys',
-    badge: '200+ Models',
-    description: 'Universal unified router with access to Claude, GPT-4o, Llama 3, and Mistral.',
-    recommendedModels: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat']
+    id: 'custom',
+    name: 'Custom / Local Ollama',
+    baseUrl: 'http://localhost:11434/v1',
+    defaultModel: 'llama3:latest',
+    getKeyUrl: '',
+    badge: '100% Free & Unlimited',
+    isFreeTier: true,
+    freeTierNote: 'Completely free, private, and offline with zero API rate limits.',
+    description: 'Run local Ollama, vLLM, LM Studio, or a private self-hosted model proxy.',
+    recommendedModels: [
+      'llama3:latest',
+      'deepseek-r1:latest',
+      'mistral:latest',
+      'qwen2.5:latest',
+      'phi3:latest'
+    ],
+    freeModels: [
+      'llama3:latest',
+      'deepseek-r1:latest',
+      'mistral:latest',
+      'qwen2.5:latest'
+    ]
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek AI (Direct)',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    getKeyUrl: 'https://platform.deepseek.com/api_keys',
+    badge: 'Ultra Low Cost / Trial',
+    isFreeTier: false,
+    freeTierNote: 'Includes free introductory promotional credits on new account setup.',
+    description: 'Official DeepSeek-V3 and DeepSeek-R1 reasoning models with unmatched cost efficiency.',
+    recommendedModels: [
+      'deepseek-chat',
+      'deepseek-reasoner'
+    ]
   },
   {
     id: 'openai',
@@ -52,38 +176,14 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'gpt-4o-mini',
     getKeyUrl: 'https://platform.openai.com/api-keys',
     badge: 'Industry Standard',
-    description: 'Direct GPT-4o, GPT-4o-mini, and o1 models from OpenAI.',
-    recommendedModels: ['gpt-4o-mini', 'gpt-4o', 'o1-mini', 'gpt-3.5-turbo']
-  },
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-1.5-flash',
-    getKeyUrl: 'https://aistudio.google.com/apikey',
-    badge: 'Multimodal / Fast',
-    description: 'Google Gemini 1.5 Flash and Pro with large context and fast reasoning.',
-    recommendedModels: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
-  },
-  {
-    id: 'groq',
-    name: 'Groq API',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.1-8b-instant',
-    getKeyUrl: 'https://console.groq.com/keys',
-    badge: 'Ultra Fast LPU',
-    description: 'Sub-second real-time email generation powered by Groq LPUs.',
-    recommendedModels: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama-3.3-70b-specdec', 'llama3-70b-8192', 'mixtral-8x7b-32768']
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek AI',
-    baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    getKeyUrl: 'https://platform.deepseek.com/api_keys',
-    badge: 'Deep Reasoning',
-    description: 'Cost-efficient DeepSeek-V3 and DeepSeek-R1 reasoning models.',
-    recommendedModels: ['deepseek-chat', 'deepseek-reasoner']
+    isFreeTier: false,
+    description: 'Direct GPT-4o, GPT-4o-mini, and o1 reasoning models from OpenAI.',
+    recommendedModels: [
+      'gpt-4o-mini',
+      'gpt-4o',
+      'o1-mini',
+      'gpt-3.5-turbo'
+    ]
   },
   {
     id: 'anthropic',
@@ -92,8 +192,12 @@ const PROVIDERS: AIProviderPreset[] = [
     defaultModel: 'anthropic/claude-3.5-sonnet',
     getKeyUrl: 'https://openrouter.ai/keys',
     badge: 'Peak Copywriting',
+    isFreeTier: false,
     description: 'Claude 3.5 Sonnet & Haiku for nuanced, hyper-personalized email outreach.',
-    recommendedModels: ['anthropic/claude-3.5-sonnet', 'anthropic/claude-3-5-haiku']
+    recommendedModels: [
+      'anthropic/claude-3.5-sonnet',
+      'anthropic/claude-3-5-haiku'
+    ]
   },
   {
     id: 'together',
@@ -101,19 +205,14 @@ const PROVIDERS: AIProviderPreset[] = [
     baseUrl: 'https://api.together.xyz/v1',
     defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
     getKeyUrl: 'https://api.together.ai/settings/api-keys',
-    badge: 'Open Source Hub',
+    badge: '$5 Free Trial Credits',
+    isFreeTier: true,
+    freeTierNote: '$5 free trial credit provided on initial account signup.',
     description: 'Fast open-source model inference on dedicated serverless infrastructure.',
-    recommendedModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo']
-  },
-  {
-    id: 'custom',
-    name: 'Custom / Local Ollama',
-    baseUrl: 'http://localhost:11434/v1',
-    defaultModel: 'llama3:latest',
-    getKeyUrl: '',
-    badge: 'Self-Hosted',
-    description: 'Local Ollama, vLLM, LM Studio, or private OpenAI-compatible proxy.',
-    recommendedModels: ['llama3:latest', 'mistral:latest', 'qwen2.5:latest']
+    recommendedModels: [
+      'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'
+    ]
   }
 ];
 
@@ -132,15 +231,18 @@ export default function AISettings() {
   const [validatingAll, setValidatingAll] = useState<boolean>(false);
   const [validationResults, setValidationResults] = useState<Record<string, { valid: boolean; status: string; latencyMs?: number; model?: string; message?: string; error?: string }>>({});
 
-  // Active form editing state
-  const [selectedProvider, setSelectedProvider] = useState<string>('openrouter');
-  const [apiKeyInput, setApiKeyInput] = useState<string>('');
-  const [baseUrlInput, setBaseUrlInput] = useState<string>('https://openrouter.ai/api/v1');
-  const [modelInput, setModelInput] = useState<string>('openai/gpt-4o-mini');
+  // Dynamic Live Synced Models per Provider
+  const [liveModels, setLiveModels] = useState<Record<string, string[]>>({});
+  const [liveFreeModels, setLiveFreeModels] = useState<Record<string, string[]>>({});
+  const [fetchingModels, setFetchingModels] = useState<Record<string, boolean>>({});
 
-  // Key Visibility / Reveal Toggles (per provider and inside form)
-  const [revealedCardKeys, setRevealedCardKeys] = useState<Record<string, boolean>>({});
-  const [showFormKey, setShowFormKey] = useState<boolean>(false);
+  // Collapsible Accordion State: Set of open provider IDs
+  const [openProviderIds, setOpenProviderIds] = useState<Set<string>>(new Set(['openrouter', 'groq']));
+  const [providerFilter, setProviderFilter] = useState<'all' | 'free' | 'saved' | 'active'>('all');
+  const [searchFilter, setSearchFilter] = useState<string>('');
+
+  // Per-provider inline input state
+  const [providerInputs, setProviderInputs] = useState<Record<string, { apiKey: string; baseUrl: string; model: string; isRevealed: boolean }>>({});
   const [copiedProvider, setCopiedProvider] = useState<string | null>(null);
 
   // AI Rules State
@@ -166,6 +268,8 @@ export default function AISettings() {
       ]);
 
       const configMap: Record<string, AIProviderConfig> = {};
+      const inputsMap: Record<string, { apiKey: string; baseUrl: string; model: string; isRevealed: boolean }> = {};
+
       if (configsRes && Array.isArray(configsRes.configs)) {
         configsRes.configs.forEach(c => {
           configMap[c.provider.toLowerCase()] = c;
@@ -173,15 +277,21 @@ export default function AISettings() {
       }
       setSavedConfigs(configMap);
 
-      const activeProv = configsRes.activeProvider || (configsRes.configs?.[0]?.provider) || 'openrouter';
-      setActiveProviderKey(activeProv.toLowerCase());
+      const activeProv = (configsRes.activeProvider || (configsRes.configs?.[0]?.provider) || 'openrouter').toLowerCase();
+      setActiveProviderKey(activeProv);
+      setOpenProviderIds(new Set([activeProv]));
 
-      // Pre-fill form with active provider or first available
-      const activeObj = configMap[activeProv.toLowerCase()] || PROVIDERS.find(p => p.id === activeProv.toLowerCase()) || PROVIDERS[1];
-      setSelectedProvider(activeObj.provider || (activeObj as any).id || 'openrouter');
-      setBaseUrlInput(activeObj.baseUrl || 'https://openrouter.ai/api/v1');
-      setModelInput(activeObj.model || (activeObj as any).defaultModel || 'openai/gpt-4o-mini');
-      setApiKeyInput(activeObj.apiKey || '');
+      // Populate inputs for each provider preset
+      PROVIDERS.forEach(p => {
+        const saved = configMap[p.id];
+        inputsMap[p.id] = {
+          apiKey: saved?.apiKey || '',
+          baseUrl: saved?.baseUrl || p.baseUrl,
+          model: saved?.model || p.defaultModel,
+          isRevealed: false
+        };
+      });
+      setProviderInputs(inputsMap);
 
       setRules({
         knowledge: rulesData.knowledge || '',
@@ -191,7 +301,6 @@ export default function AISettings() {
         objection: rulesData.objection || ''
       });
 
-      // Automatically run health check on load if there are saved keys
       if (Object.keys(configMap).length > 0) {
         runValidationCheck();
       }
@@ -199,6 +308,192 @@ export default function AISettings() {
       toast({ variant: 'destructive', title: 'Error loading AI settings', description: err.message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleProviderOpen = (id: string) => {
+    setOpenProviderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Auto-fetch live models when expanding if API key is present
+        const input = providerInputs[id];
+        if (input?.apiKey && !liveModels[id]) {
+          const preset = PROVIDERS.find(p => p.id === id);
+          if (preset) handleFetchLiveModels(preset, false);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateProviderInput = (id: string, field: 'apiKey' | 'baseUrl' | 'model', value: string) => {
+    setProviderInputs(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleToggleRevealKey = (id: string) => {
+    setProviderInputs(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isRevealed: !prev[id]?.isRevealed
+      }
+    }));
+  };
+
+  const handleCopyKey = (key: string, providerId: string) => {
+    if (!key) return;
+    navigator.clipboard.writeText(key);
+    setCopiedProvider(providerId);
+    toast({ title: 'API Key Copied', description: 'Copied credentials to clipboard.' });
+    setTimeout(() => setCopiedProvider(null), 2000);
+  };
+
+  const handleFetchLiveModels = async (preset: AIProviderPreset, showToast = true) => {
+    const input = providerInputs[preset.id];
+    setFetchingModels(prev => ({ ...prev, [preset.id]: true }));
+    try {
+      const res = await api.fetchAIModels({
+        provider: preset.id,
+        apiKey: input?.apiKey,
+        baseUrl: input?.baseUrl || preset.baseUrl
+      });
+
+      if (res.success && res.models && res.models.length > 0) {
+        setLiveModels(prev => ({ ...prev, [preset.id]: res.models }));
+        if (res.freeModels && res.freeModels.length > 0) {
+          setLiveFreeModels(prev => ({ ...prev, [preset.id]: res.freeModels || [] }));
+        }
+        if (showToast) {
+          toast({
+            title: `Synced ${res.models.length} Models from ${preset.name}!`,
+            description: res.freeModels?.length 
+              ? `Found ${res.freeModels.length} free-tier models ready to use.`
+              : `Loaded real-time model list directly from provider.`
+          });
+        }
+      }
+    } catch (err: any) {
+      if (showToast) {
+        toast({
+          variant: 'destructive',
+          title: 'Model Sync Failed',
+          description: err.message || 'Could not fetch models. Check API key.'
+        });
+      }
+    } finally {
+      setFetchingModels(prev => ({ ...prev, [preset.id]: false }));
+    }
+  };
+
+  const handleSaveProviderConfig = async (preset: AIProviderPreset) => {
+    const input = providerInputs[preset.id];
+    if (!input) return;
+
+    setSaving(true);
+    try {
+      const res = await api.saveAIConfig({
+        provider: preset.id,
+        api_key: input.apiKey.trim(),
+        base_url: input.baseUrl.trim() || preset.baseUrl,
+        model: input.model.trim() || preset.defaultModel,
+        is_active: activeProviderKey === preset.id
+      });
+
+      if (res.success) {
+        toast({
+          title: 'Provider Saved',
+          description: `Configured credentials for ${preset.name}.`
+        });
+        loadData();
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Save Failed', description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSetActive = async (providerId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const res = await api.setActiveAIProvider(providerId);
+      if (res.success) {
+        setActiveProviderKey(providerId.toLowerCase());
+        toast({
+          title: 'Active Engine Switched',
+          description: `AI operations will now execute via ${PROVIDERS.find(p => p.id === providerId)?.name || providerId}.`
+        });
+        loadData();
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Activation Failed', description: err.message });
+    }
+  };
+
+  const handleDeleteProviderKey = async (providerId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Remove saved API key for ${PROVIDERS.find(p => p.id === providerId)?.name}?`)) return;
+
+    try {
+      const res = await api.deleteAIConfig(providerId);
+      if (res.success) {
+        toast({ title: 'Key Removed', description: 'API credentials deleted for this provider.' });
+        loadData();
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Delete Failed', description: err.message });
+    }
+  };
+
+  const handleTestConnection = async (preset: AIProviderPreset) => {
+    const input = providerInputs[preset.id];
+    if (!input) return;
+
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.testAIConnection({
+        provider: preset.id,
+        api_key: input.apiKey.trim(),
+        base_url: input.baseUrl.trim() || preset.baseUrl,
+        model: input.model.trim() || preset.defaultModel
+      });
+
+      setTestResult(res);
+      if (res.success) {
+        toast({
+          title: 'Test Succeeded!',
+          description: `${preset.name} (${input.model}) responded in ${res.latencyMs || 0}ms.`
+        });
+        setValidationResults(prev => ({
+          ...prev,
+          [preset.id]: { valid: true, status: 'valid', latencyMs: res.latencyMs }
+        }));
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Connection Test Failed',
+          description: res.error || res.message || 'The model did not return a valid response. Try clicking one of the supported model pills below.'
+        });
+        setValidationResults(prev => ({
+          ...prev,
+          [preset.id]: { valid: false, status: 'invalid', error: res.error || res.message }
+        }));
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message });
+      toast({ variant: 'destructive', title: 'Test Failed', description: err.message });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -210,753 +505,604 @@ export default function AISettings() {
         setValidationResults(res.results);
       }
     } catch (_) {
-      // Non-fatal background health check
     } finally {
       setValidatingAll(false);
     }
   };
 
-  const handleSelectProviderCard = (preset: AIProviderPreset) => {
-    setSelectedProvider(preset.id);
-    const existing = savedConfigs[preset.id];
-    if (existing) {
-      setBaseUrlInput(existing.baseUrl || preset.baseUrl);
-      setModelInput(existing.model || preset.defaultModel);
-      setApiKeyInput(existing.apiKey || '');
-    } else {
-      setBaseUrlInput(preset.baseUrl);
-      setModelInput(preset.defaultModel);
-      setApiKeyInput('');
-    }
-    setTestResult(null);
-  };
-
-  const handleToggleRevealCardKey = (providerId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setRevealedCardKeys(prev => ({
-      ...prev,
-      [providerId]: !prev[providerId]
-    }));
-  };
-
-  const handleCopyKey = (keyText: string, providerId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!keyText) return;
-    navigator.clipboard.writeText(keyText);
-    setCopiedProvider(providerId);
-    toast({ title: 'API Key Copied', description: 'API Key copied to clipboard.' });
-    setTimeout(() => setCopiedProvider(null), 2000);
-  };
-
-  const handleSetActive = async (providerId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    try {
-      const res = await api.setActiveAIProvider(providerId);
-      if (res.success) {
-        setActiveProviderKey(providerId);
-        toast({ title: 'Active AI Model Updated', description: res.message });
-        loadData();
-      }
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Activation Failed', description: err.message });
-    }
-  };
-
-  const handleDeleteProviderKey = async (providerId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!confirm(`Are you sure you want to delete the saved API key for ${providerId.toUpperCase()}?`)) return;
-    try {
-      const res = await api.deleteAIConfig(providerId);
-      if (res.success) {
-        toast({ title: 'Key Removed', description: res.message });
-        if (selectedProvider === providerId) {
-          setApiKeyInput('');
-        }
-        loadData();
-      }
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Failed to delete key', description: err.message });
-    }
-  };
-
-  const handleSaveConnection = async (e: React.FormEvent, makeActive: boolean = true) => {
-    e.preventDefault();
-    const existing = savedConfigs[selectedProvider];
-
-    if (!apiKeyInput.trim() && (!existing || !existing.hasKey)) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'API Key Required', 
-        description: `Please enter an API key for ${selectedProvider.toUpperCase()} to save.` 
-      });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const res = await api.saveAIConfig({
-        provider: selectedProvider,
-        apiKey: apiKeyInput.trim() || undefined,
-        baseUrl: baseUrlInput.trim(),
-        model: modelInput.trim(),
-        setActive: makeActive
-      });
-      toast({ title: 'AI Configuration Saved', description: res.message });
-      await loadData();
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Save Failed', description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
-    const startTime = Date.now();
-    try {
-      const res = await api.testAIConnection({
-        provider: selectedProvider,
-        apiKey: apiKeyInput.trim() || undefined,
-        baseUrl: baseUrlInput.trim() || undefined,
-        model: modelInput.trim() || undefined
-      });
-      const latencyMs = Date.now() - startTime;
-      if (res.success) {
-        setTestResult({ 
-          success: true, 
-          message: res.response || 'Connection verified successfully!',
-          latencyMs
-        });
-        setValidationResults(prev => ({
-          ...prev,
-          [selectedProvider]: {
-            valid: true,
-            status: 'valid',
-            latencyMs,
-            model: modelInput,
-            message: 'Connection verified & functional'
-          }
-        }));
-        toast({ title: 'AI Connection Verified', description: `Response received in ${latencyMs}ms.` });
-      } else {
-        setTestResult({ success: false, message: res.error || 'Connection failed.' });
-        setValidationResults(prev => ({
-          ...prev,
-          [selectedProvider]: {
-            valid: false,
-            status: 'invalid',
-            model: modelInput,
-            error: res.error || 'Connection failed'
-          }
-        }));
-      }
-    } catch (err: any) {
-      setTestResult({ success: false, message: err.message });
-      setValidationResults(prev => ({
-        ...prev,
-        [selectedProvider]: {
-          valid: false,
-          status: 'invalid',
-          model: modelInput,
-          error: err.message
-        }
-      }));
-      toast({ variant: 'destructive', title: 'Test Failed', description: err.message });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const handleSaveRules = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveRules = async () => {
     setSavingRules(true);
     try {
-      const res = await api.saveAIRules(rules);
-      toast({ title: 'AI Rules Saved', description: res.message });
+      await api.saveAIRules(rules);
+      toast({ title: 'SOP & Prompt Rules Saved', description: 'Your business context and stage prompts have been updated.' });
     } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Failed to Save Rules', description: err.message });
+      toast({ variant: 'destructive', title: 'Save Failed', description: err.message });
     } finally {
       setSavingRules(false);
     }
   };
 
-  const currentPreset = PROVIDERS.find(p => p.id === selectedProvider) || PROVIDERS[0];
-  const currentSavedConfig = savedConfigs[selectedProvider];
-  const currentValidation = validationResults[selectedProvider];
+  // Filtered providers
+  const filteredProviders = PROVIDERS.filter(p => {
+    const saved = savedConfigs[p.id];
+    const hasKey = Boolean(saved && saved.apiKey);
+    const isActive = activeProviderKey === p.id;
 
-  // Calculated Stats
-  const totalConfigured = Object.keys(savedConfigs).length;
-  const validKeysCount = Object.values(validationResults).filter(r => r.valid).length;
-  const invalidKeysCount = Object.values(validationResults).filter(r => !r.valid && r.status === 'invalid').length;
+    if (providerFilter === 'free' && !p.isFreeTier) return false;
+    if (providerFilter === 'saved' && !hasKey) return false;
+    if (providerFilter === 'active' && !isActive) return false;
+
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      const matchesName = p.name.toLowerCase().includes(q);
+      const matchesDesc = p.description.toLowerCase().includes(q);
+      const matchesModel = p.defaultModel.toLowerCase().includes(q);
+      if (!matchesName && !matchesDesc && !matchesModel) return false;
+    }
+
+    return true;
+  });
+
+  const activePreset = PROVIDERS.find(p => p.id === activeProviderKey) || PROVIDERS[0];
+  const activeSaved = savedConfigs[activeProviderKey];
 
   return (
-    <AppShell>
-      <SEO title="AI Settings & Models | Peak Xender" description="Manage multi-provider AI keys, active models, validation health checks, and outreach SOP rules." />
+    <AppShell title="AI & SOP Rules">
+      <SEO
+        title="AI Engine & Prompt Rules - Peak Xender"
+        description="Configure your LLM provider credentials, model selection, custom business context, and cold outreach sequence prompts."
+      />
 
-      <div className="max-w-6xl mx-auto space-y-6 pb-16 px-2 sm:px-4">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 pb-4 border-b border-border/60">
+      <div className="space-y-6 max-w-6xl mx-auto pb-12">
+        {/* Header Strip */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="h-6 w-6 text-[#635bff]" />
-              <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                AI Engine &amp; API Key Hub
-              </h1>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Save, view, and switch between your API keys across multiple platforms (OpenAI, Gemini, Groq, DeepSeek, Nvidia NIM, Ollama) with live health checks.
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <Sparkles className="h-6 w-6 text-[#635bff]" /> AI Engine &amp; SOP Rules
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              Connect external AI platforms (OpenRouter, Groq, Gemini, Nvidia NIM, DeepSeek) with automatic live model discovery and 100% free model presets.
             </p>
           </div>
 
-          <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/40 shrink-0">
+          <div className="flex items-center gap-2 bg-muted/40 p-1 rounded-xl border border-border/60">
             <button
               onClick={() => setActiveTab('connection')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'connection'
-                  ? 'bg-card text-[#635bff] shadow-2xs'
+                  ? 'bg-[#635bff] text-white shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Model Connections &amp; Keys
+              <Cpu className="h-3.5 w-3.5" /> Platform Credentials
             </button>
             <button
               onClick={() => setActiveTab('rules')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'rules'
-                  ? 'bg-card text-[#635bff] shadow-2xs'
+                  ? 'bg-[#635bff] text-white shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Outreach SOPs &amp; Brand
+              <BookOpen className="h-3.5 w-3.5" /> SOP &amp; Stage Rules
             </button>
           </div>
-        </header>
+        </div>
 
-        {loading ? (
-          <div className="p-16 text-center text-muted-foreground text-xs">
-            <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-3 text-[#635bff]" />
-            Loading Multi-Provider AI Configurations...
-          </div>
-        ) : activeTab === 'connection' ? (
-          /* TAB 1: Multi-Provider Matrix & API Key Management */
+        {activeTab === 'connection' ? (
           <div className="space-y-6">
-            {/* Executive Status & Health Check Overview Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Active Engine Card */}
-              <div className="p-4 rounded-xl border border-[#635bff]/40 bg-gradient-to-br from-[#635bff]/10 via-background to-card shadow-2xs space-y-1">
-                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                  <span>Current Active Engine</span>
-                  <Badge className="bg-[#635bff] text-white text-[9px] px-1.5 py-0 font-bold">
-                    ACTIVE
-                  </Badge>
+            {/* Active Engine Hero Card */}
+            <div className="bg-card rounded-2xl border border-[#635bff]/40 p-5 shadow-sm bg-gradient-to-r from-[#635bff]/10 via-card to-card flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="h-11 w-11 rounded-xl bg-[#635bff]/20 text-[#635bff] flex items-center justify-center font-bold shrink-0 mt-0.5">
+                  <Bot className="h-6 w-6 text-[#635bff]" />
                 </div>
-                <div className="text-base font-bold text-foreground truncate">
-                  {PROVIDERS.find(p => p.id === activeProviderKey)?.name || activeProviderKey.toUpperCase()}
-                </div>
-                <div className="text-xs font-mono text-[#635bff] truncate">
-                  {savedConfigs[activeProviderKey]?.model || 'openai/gpt-4o-mini'}
-                </div>
-              </div>
-
-              {/* Configured Platforms Count */}
-              <div className="p-4 rounded-xl border border-border/60 bg-card shadow-2xs space-y-1">
-                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Configured Platforms
-                </div>
-                <div className="text-xl font-bold text-foreground">
-                  {totalConfigured} <span className="text-xs text-muted-foreground font-normal">/ {PROVIDERS.length} platforms saved</span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Switch active models instantly with 1-click
-                </div>
-              </div>
-
-              {/* Health Check & Validation Action */}
-              <div className="p-4 rounded-xl border border-border/60 bg-card shadow-2xs flex flex-col justify-between gap-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <Activity className="h-3.5 w-3.5 text-[#635bff]" /> Key Validation Status
-                  </div>
-                  {invalidKeysCount > 0 && (
-                    <Badge variant="destructive" className="text-[9px] px-1.5 py-0 font-bold">
-                      {invalidKeysCount} Invalid
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Active System Engine:</span>
+                    <span className="font-heading font-black text-sm text-foreground">{activePreset.name}</span>
+                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
+                      ● Active Dispatcher
                     </Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-foreground">
-                    {validKeysCount} Operational
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={runValidationCheck}
-                    disabled={validatingAll}
-                    className="h-7 px-2.5 text-xs font-bold border-[#635bff]/40 text-[#635bff] hover:bg-[#635bff]/10 gap-1.5"
-                  >
-                    {validatingAll ? <RefreshCw className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
-                    Health Check All
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Supported Models & Saved Keys Grid */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-[#635bff]" /> Platform Credentials &amp; Model Selection
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    View saved API keys directly under each model. Click any card to edit, validate, or set as your active system engine.
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Active Model: <strong className="text-foreground">{activeSaved?.model || activePreset.defaultModel}</strong>
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {PROVIDERS.map((preset) => {
+              <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={runValidationCheck}
+                  disabled={validatingAll}
+                  className="text-xs font-bold gap-1.5 border-border/60 h-8"
+                >
+                  <RefreshCw className={`h-3 w-3 ${validatingAll ? 'animate-spin' : ''}`} />
+                  Health Check All
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Free Models Banner */}
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <Gift className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                    Latest Free Tier Models Available
+                  </span>
+                  <p className="text-muted-foreground text-[11px]">
+                    Use <strong>DeepSeek R1 (:free)</strong>, <strong>Llama 3.3 70B (Groq/OpenRouter)</strong>, or <strong>Gemini 2.0 Flash</strong> with zero subscription cost.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setProviderFilter('free')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shrink-0 self-start sm:self-auto"
+              >
+                View 100% Free Models →
+              </button>
+            </div>
+
+            {/* Platform Credentials Minimalist Collapsible Hub */}
+            <div className="space-y-3">
+              {/* Toolbar & Filter Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border/60">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-3 top-2.5" />
+                  <Input
+                    placeholder="Search AI providers or models..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="pl-8 h-8 text-xs bg-background border-border/60"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                  <button
+                    onClick={() => setProviderFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                      providerFilter === 'all' ? 'bg-[#635bff] text-white shadow-2xs' : 'bg-muted/40 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    All ({PROVIDERS.length})
+                  </button>
+                  <button
+                    onClick={() => setProviderFilter('free')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                      providerFilter === 'free' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20'
+                    }`}
+                  >
+                    <Gift className="h-3 w-3" /> Free Tier ({PROVIDERS.filter(p => p.isFreeTier).length})
+                  </button>
+                  <button
+                    onClick={() => setProviderFilter('saved')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                      providerFilter === 'saved' ? 'bg-[#635bff] text-white shadow-2xs' : 'bg-muted/40 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Configured ({Object.values(savedConfigs).filter(c => c.apiKey).length})
+                  </button>
+                  <button
+                    onClick={() => setProviderFilter('active')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                      providerFilter === 'active' ? 'bg-[#635bff] text-white shadow-2xs' : 'bg-muted/40 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Active Only
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible Provider Accordion Cards */}
+              <div className="space-y-2.5">
+                {filteredProviders.map((preset) => {
                   const saved = savedConfigs[preset.id];
-                  const isSelected = selectedProvider === preset.id;
                   const isActive = activeProviderKey === preset.id;
                   const hasKey = saved && Boolean(saved.hasKey && saved.apiKey);
-                  const isRevealed = revealedCardKeys[preset.id] || false;
+                  const isOpen = openProviderIds.has(preset.id);
                   const validation = validationResults[preset.id];
-                  const displayKey = hasKey 
-                    ? (isRevealed ? saved.apiKey : (saved.maskedApiKey || '••••••••••••••••••••')) 
-                    : null;
+                  const input = providerInputs[preset.id] || { apiKey: '', baseUrl: preset.baseUrl, model: preset.defaultModel, isRevealed: false };
+                  const liveList = liveModels[preset.id] || [];
+                  const liveFreeList = liveFreeModels[preset.id] || preset.freeModels || [];
+                  const isSyncing = fetchingModels[preset.id] || false;
 
                   return (
                     <div
                       key={preset.id}
-                      onClick={() => handleSelectProviderCard(preset)}
-                      className={`relative rounded-xl border p-4 transition-all cursor-pointer flex flex-col justify-between gap-3 text-left ${
+                      className={`rounded-xl border transition-all duration-200 overflow-hidden bg-card ${
                         isActive
-                          ? 'border-[#635bff] bg-gradient-to-br from-[#635bff]/10 via-background to-card shadow-sm ring-1 ring-[#635bff]/30'
-                          : isSelected
-                          ? 'border-[#635bff]/60 bg-muted/30 shadow-2xs'
-                          : 'border-border/60 hover:border-border hover:bg-muted/15 bg-card'
+                          ? 'border-[#635bff] shadow-sm ring-1 ring-[#635bff]/30'
+                          : isOpen
+                          ? 'border-border/80 shadow-2xs'
+                          : 'border-border/60 hover:border-border'
                       }`}
                     >
-                      {/* Top Header & Badges */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-sm text-foreground">{preset.name}</span>
-                            {isActive && (
-                              <Badge className="bg-[#635bff] text-white text-[10px] px-1.5 py-0 h-4 font-bold gap-1 shadow-2xs">
-                                <Sparkles className="h-2.5 w-2.5" /> Active
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
-                            {preset.description}
-                          </p>
-                        </div>
-
-                        {preset.badge && (
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0.5 border-[#635bff]/30 text-[#635bff] font-bold shrink-0">
-                            {preset.badge}
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Model String & Key Status */}
-                      <div className="space-y-1.5 bg-background/80 p-2.5 rounded-lg border border-border/40 text-[11px]">
-                        <div className="flex items-center justify-between text-muted-foreground">
-                          <span className="flex items-center gap-1 font-mono text-[10px] truncate max-w-[170px]" title={saved?.model || preset.defaultModel}>
-                            <Cpu className="h-3 w-3 text-[#635bff] shrink-0" /> {saved?.model || preset.defaultModel}
-                          </span>
-
-                          {/* Health status badge */}
-                          {hasKey ? (
-                            validation ? (
-                              validation.valid ? (
-                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" /> Valid {validation.latencyMs ? `(${validation.latencyMs}ms)` : ''}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold text-rose-500 flex items-center gap-1" title={validation.error}>
-                                  <AlertCircle className="h-3 w-3" /> Invalid Key
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                ● Saved
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground">
-                              ○ Not saved
-                            </span>
-                          )}
-                        </div>
-
-                        {/* View Saved Key Under Model */}
-                        <div className="pt-1.5 border-t border-border/30 flex items-center justify-between gap-1.5">
-                          <div className="font-mono text-[11px] text-foreground truncate max-w-[170px]" title={hasKey ? saved.apiKey : 'No key saved'}>
-                            {hasKey ? (
-                              <span className="text-[#635bff] font-medium">{displayKey}</span>
-                            ) : (
-                              <span className="text-muted-foreground/60 italic">No API key saved</span>
-                            )}
+                      {/* Compact Collapsible Header Row */}
+                      <div
+                        onClick={() => toggleProviderOpen(preset.id)}
+                        className="px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-muted/20 select-none"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isActive ? 'bg-[#635bff] text-white font-bold' : 'bg-muted text-muted-foreground border border-border/50'
+                          }`}>
+                            <Cpu className="h-4 w-4" />
                           </div>
 
-                          {hasKey && (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                title={isRevealed ? 'Hide API Key' : 'Reveal API Key'}
-                                onClick={(e) => handleToggleRevealCardKey(preset.id, e)}
-                                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                              >
-                                {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                              </button>
-                              <button
-                                type="button"
-                                title="Copy API Key"
-                                onClick={(e) => handleCopyKey(saved.apiKey, preset.id, e)}
-                                className="p-1 rounded-md text-muted-foreground hover:text-[#635bff] hover:bg-muted/80 transition-colors"
-                              >
-                                {copiedProvider === preset.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                              </button>
-                              <button
-                                type="button"
-                                title="Delete Key"
-                                onClick={(e) => handleDeleteProviderKey(preset.id, e)}
-                                className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-heading font-bold text-sm text-foreground truncate">{preset.name}</span>
+                              {preset.isFreeTier && (
+                                <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] px-1.5 py-0 font-bold">
+                                  FREE TIER
+                                </Badge>
+                              )}
+                              {preset.badge && !preset.isFreeTier && (
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-[#635bff]/30 text-[#635bff] font-bold">
+                                  {preset.badge}
+                                </Badge>
+                              )}
+                              {isActive && (
+                                <Badge className="bg-[#635bff] text-white text-[9px] px-1.5 py-0 h-4 font-bold gap-1 shadow-2xs">
+                                  <Sparkles className="h-2.5 w-2.5" /> Active
+                                </Badge>
+                              )}
                             </div>
-                          )}
+                            <div className="text-[11px] text-muted-foreground font-mono truncate flex items-center gap-2 mt-0.5">
+                              <span>Model: <strong className="text-foreground">{saved?.model || preset.defaultModel}</strong></span>
+                              <span className="text-muted-foreground/40">•</span>
+                              {hasKey ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium">● Key Saved</span>
+                              ) : (
+                                <span className="text-muted-foreground/60 italic">○ Not Configured</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* If validation error exists, show error snippet */}
-                        {validation && !validation.valid && validation.error && (
-                          <div className="text-[10px] text-rose-500 font-mono pt-1 truncate border-t border-rose-500/20" title={validation.error}>
-                            ⚠️ {validation.error}
-                          </div>
-                        )}
-                      </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {hasKey && !isActive && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => handleSetActive(preset.id, e)}
+                              className="h-7 px-2.5 text-[11px] font-bold text-[#635bff] border-[#635bff]/40 hover:bg-[#635bff]/10 gap-1"
+                            >
+                              <Zap className="h-3 w-3" /> Set Active
+                            </Button>
+                          )}
 
-                      {/* Card Footer Actions: Base URL & 1-Click Activate */}
-                      <div className="flex items-center justify-between pt-1 gap-2">
-                        <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[130px]">
-                          {saved?.baseUrl || preset.baseUrl}
-                        </span>
-
-                        {hasKey && !isActive && (
-                          <Button
+                          <button
                             type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={(e) => handleSetActive(preset.id, e)}
-                            className="h-6 px-2 text-[10px] font-bold text-[#635bff] hover:bg-[#635bff]/10 gap-1 ml-auto"
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground"
+                            aria-label={isOpen ? 'Collapse' : 'Expand'}
                           >
-                            <Zap className="h-2.5 w-2.5" /> Use This Key
-                          </Button>
-                        )}
+                            {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Expanded Configuration Form Panel */}
+                      {isOpen && (
+                        <div className="px-5 py-4 border-t border-border/60 bg-muted/10 space-y-4 animate-in fade-in duration-150 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-muted-foreground text-xs leading-relaxed">
+                              {preset.description}
+                            </p>
+                            {preset.freeTierNote && (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md font-medium shrink-0">
+                                🎁 {preset.freeTierNote}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            {/* API Key Input */}
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="flex items-center justify-between">
+                                <label className="font-bold text-foreground flex items-center gap-1">
+                                  <Key className="h-3.5 w-3.5 text-[#635bff]" /> API Key
+                                </label>
+                                {preset.getKeyUrl && (
+                                  <a
+                                    href={preset.getKeyUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] text-[#635bff] hover:underline flex items-center gap-1 font-semibold"
+                                  >
+                                    Get API Key {preset.isFreeTier ? '(Free)' : ''} <ExternalLink className="h-2.5 w-2.5" />
+                                  </a>
+                                )}
+                              </div>
+
+                              <div className="relative flex items-center">
+                                <Input
+                                  type={input.isRevealed ? 'text' : 'password'}
+                                  placeholder={`Enter your ${preset.name} API Key...`}
+                                  value={input.apiKey}
+                                  onChange={(e) => handleUpdateProviderInput(preset.id, 'apiKey', e.target.value)}
+                                  className="pr-24 font-mono text-xs h-9 bg-background"
+                                />
+
+                                <div className="absolute right-1.5 flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleRevealKey(preset.id)}
+                                    className="p-1 text-muted-foreground hover:text-foreground"
+                                    title={input.isRevealed ? 'Hide' : 'Reveal'}
+                                  >
+                                    {input.isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                  </button>
+                                  {input.apiKey && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyKey(input.apiKey, preset.id)}
+                                      className="p-1 text-muted-foreground hover:text-[#635bff]"
+                                      title="Copy Key"
+                                    >
+                                      {copiedProvider === preset.id ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  {hasKey && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteProviderKey(preset.id, e)}
+                                      className="p-1 text-muted-foreground hover:text-destructive"
+                                      title="Delete Key"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Model Selector / Dynamic Model Finder */}
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="flex items-center justify-between">
+                                <label className="font-bold text-foreground flex items-center gap-1">
+                                  <Cpu className="h-3.5 w-3.5 text-[#635bff]" /> Model Identifier String
+                                </label>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleFetchLiveModels(preset, true)}
+                                  disabled={isSyncing}
+                                  className="text-[11px] text-[#635bff] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                                  title="Query provider /models endpoint to discover newly available models"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                                  {isSyncing ? 'Syncing...' : 'Auto-Sync Live Models'}
+                                </button>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <Input
+                                  value={input.model}
+                                  onChange={(e) => handleUpdateProviderInput(preset.id, 'model', e.target.value)}
+                                  className="h-9 font-mono text-xs bg-background flex-1"
+                                  placeholder={preset.defaultModel}
+                                />
+                                
+                                {/* Dropdown from live synced or recommended models */}
+                                <select
+                                  onChange={(e) => {
+                                    if (e.target.value) handleUpdateProviderInput(preset.id, 'model', e.target.value);
+                                  }}
+                                  className="text-xs bg-background border border-border/80 rounded-md px-2 py-1 max-w-[180px] font-mono"
+                                  defaultValue=""
+                                >
+                                  <option value="" disabled>Select Model...</option>
+                                  {liveList.length > 0 ? (
+                                    liveList.slice(0, 50).map(m => (
+                                      <option key={m} value={m}>{m}</option>
+                                    ))
+                                  ) : (
+                                    (preset.recommendedModels || []).map(m => (
+                                      <option key={m} value={m}>{m}</option>
+                                    ))
+                                  )}
+                                </select>
+                              </div>
+
+                              {/* 1-Click Free Model Badges */}
+                              {liveFreeList && liveFreeList.length > 0 && (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-0.5">
+                                    <Gift className="h-2.5 w-2.5" /> Free Models:
+                                  </span>
+                                  {liveFreeList.map(m => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => handleUpdateProviderInput(preset.id, 'model', m)}
+                                      className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
+                                        input.model === m
+                                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/60 font-bold shadow-2xs ring-1 ring-emerald-500/30'
+                                          : 'bg-emerald-500/5 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15 border-emerald-500/30'
+                                      }`}
+                                    >
+                                      ✓ {m}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Other Supported Models */}
+                              {preset.recommendedModels && (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                  <span className="text-[10px] text-muted-foreground font-semibold">Recommended:</span>
+                                  {preset.recommendedModels
+                                    .filter(m => !liveFreeList.includes(m))
+                                    .map(m => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => handleUpdateProviderInput(preset.id, 'model', m)}
+                                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                                          input.model === m
+                                            ? 'bg-[#635bff]/15 text-[#635bff] border-[#635bff]/40 font-bold'
+                                            : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/50'
+                                        }`}
+                                      >
+                                        {m}
+                                      </button>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Base API Endpoint */}
+                            <div className="space-y-1 md:col-span-2">
+                              <label className="font-bold text-foreground flex items-center gap-1">
+                                <Globe className="h-3.5 w-3.5 text-[#635bff]" /> Base URL Endpoint
+                              </label>
+                              <Input
+                                value={input.baseUrl}
+                                onChange={(e) => handleUpdateProviderInput(preset.id, 'baseUrl', e.target.value)}
+                                className="h-9 font-mono text-xs bg-background"
+                                placeholder={preset.baseUrl}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Action Buttons: Save & Test Connection */}
+                          <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleTestConnection(preset)}
+                              disabled={testing || !input.apiKey.trim()}
+                              className="h-8 text-xs font-semibold gap-1.5 border-border/60"
+                            >
+                              <Activity className={`h-3.5 w-3.5 text-[#635bff] ${testing ? 'animate-spin' : ''}`} />
+                              {testing ? 'Validating...' : `Validate ${preset.name}`}
+                            </Button>
+
+                            <div className="flex items-center gap-2">
+                              {!isActive && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => handleSetActive(preset.id, e)}
+                                  disabled={!input.apiKey.trim()}
+                                  className="h-8 text-xs font-bold text-[#635bff] hover:bg-[#635bff]/10 gap-1"
+                                >
+                                  <Zap className="h-3 w-3" /> Set As Active Engine
+                                </Button>
+                              )}
+
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => handleSaveProviderConfig(preset)}
+                                disabled={saving}
+                                className="h-8 px-4 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-1.5 shadow-2xs"
+                              >
+                                <Save className="h-3.5 w-3.5" />
+                                {saving ? 'Saving...' : 'Save Configuration'}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
-
-            {/* Provider Configuration & Editing Form */}
-            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
-                <div>
-                  <h3 className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
-                    <Globe className="h-5 w-5 text-[#635bff]" /> Configure {currentPreset.name}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Save or update your API credentials for this platform. Credentials are preserved independently per model.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {currentPreset.getKeyUrl && (
-                    <a
-                      href={currentPreset.getKeyUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-[#635bff] bg-[#635bff]/10 px-3 py-1.5 rounded-lg hover:bg-[#635bff]/20 flex items-center gap-1.5 transition-colors"
-                    >
-                      Get {currentPreset.name} Key <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <form onSubmit={(e) => handleSaveConnection(e, true)} className="space-y-4">
-                {/* API Key Input */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Key className="h-3.5 w-3.5 text-[#635bff]" /> API Key for {currentPreset.name}
-                    </label>
-                    {currentSavedConfig?.hasKey && (
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3" /> Credential currently saved
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="relative">
-                    <Input
-                      type={showFormKey ? 'text' : 'password'}
-                      placeholder={currentSavedConfig?.hasKey ? 'Enter new key to update or leave current key...' : 'Enter your API key (e.g. sk-...)'}
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      className="font-mono text-xs h-10 bg-background pr-20"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      {apiKeyInput && (
-                        <button
-                          type="button"
-                          onClick={() => handleCopyKey(apiKeyInput, selectedProvider)}
-                          className="p-1.5 text-muted-foreground hover:text-[#635bff] transition-colors rounded"
-                          title="Copy key"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setShowFormKey(!showFormKey)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded"
-                        title={showFormKey ? 'Hide key' : 'Show key'}
-                      >
-                        {showFormKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Base URL */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Globe className="h-3.5 w-3.5 text-[#635bff]" /> Endpoint / Base URL
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="https://api.openai.com/v1"
-                    value={baseUrlInput}
-                    onChange={(e) => setBaseUrlInput(e.target.value)}
-                    className="font-mono text-xs h-10 bg-background"
-                  />
-                </div>
-
-                {/* Model Identifier */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Cpu className="h-3.5 w-3.5 text-[#635bff]" /> Model Identifier String
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="e.g. gpt-4o-mini, llama-3.1-8b-instant, deepseek-chat"
-                    value={modelInput}
-                    onChange={(e) => setModelInput(e.target.value)}
-                    className="font-mono text-xs h-10 bg-background"
-                  />
-                  {currentPreset.recommendedModels && currentPreset.recommendedModels.length > 0 && (
-                    <div className="pt-1">
-                      <span className="text-[10px] text-muted-foreground font-semibold block mb-1">Recommended Models (Click to use):</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {currentPreset.recommendedModels.map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setModelInput(m)}
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-medium transition-all ${
-                              modelInput === m
-                                ? 'bg-[#635bff] text-white font-bold'
-                                : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40'
-                            }`}
-                          >
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Form Buttons */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border/60">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="submit"
-                      disabled={saving}
-                      className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
-                    >
-                      {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      Save &amp; Set Active
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={(e) => handleSaveConnection(e, false)}
-                      disabled={saving}
-                      className="h-9 px-4 text-xs font-bold border-border/60 hover:border-[#635bff] gap-1.5"
-                    >
-                      Save Key (Keep Inactive)
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleTestConnection}
-                      disabled={testing}
-                      className="h-9 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] gap-1.5"
-                    >
-                      {testing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-[#635bff]" />}
-                      Validate {currentPreset.name}
-                    </Button>
-                  </div>
-
-                  {currentSavedConfig?.hasKey && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={(e) => handleDeleteProviderKey(selectedProvider, e)}
-                      className="h-9 px-3 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Clear Key
-                    </Button>
-                  )}
-                </div>
-              </form>
-
-              {/* Test & Validation Feedback Display */}
-              {testResult && (
-                <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 ${
-                  testResult.success 
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-500'
-                }`}>
-                  {testResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold">
-                        {testResult.success ? `Connection Operational (${currentPreset.name})` : 'Connection Test Failed'}
-                      </div>
-                      {testResult.latencyMs && (
-                        <span className="text-[10px] font-mono opacity-80">{testResult.latencyMs}ms latency</span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-[11px] opacity-90 leading-relaxed font-mono whitespace-pre-wrap">
-                      {testResult.message}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         ) : (
-          /* TAB 2: AI Rules & SOP Engine */
-          <div className="space-y-6 max-w-4xl">
-            <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
-              <div className="space-y-1 border-b border-border/60 pb-3">
-                <h3 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-[#635bff]" /> Knowledge Base &amp; Campaign Stage Guidelines
+          /* SOP Directives & Rules Tab */
+          <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-border/60 pb-4">
+              <div>
+                <h3 className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-[#635bff]" /> System SOP &amp; Stage Directives
                 </h3>
-                <p className="text-xs text-muted-foreground">
-                  Train your AI assistant on your offer context, value prop, and stage-by-stage follow-up rules.
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Define your brand tone, offer value props, pain points, and stage-specific copywriting rules.
                 </p>
               </div>
+              <Button
+                onClick={handleSaveRules}
+                disabled={savingRules}
+                className="bg-[#635bff] hover:bg-[#493ee5] text-white text-xs font-bold gap-1.5 shadow-sm"
+              >
+                <Save className="h-4 w-4" />
+                {savingRules ? 'Saving...' : 'Save SOP Rules'}
+              </Button>
+            </div>
 
-              <form onSubmit={handleSaveRules} className="space-y-5">
-                {/* Knowledge Base */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">
-                    1. Brand / Company Knowledge Base
-                  </label>
-                  <Textarea
-                    rows={4}
-                    placeholder="Describe your company, main value proposition, key offer, target audience, and demo URLs..."
-                    value={rules.knowledge || ''}
-                    onChange={(e) => setRules({ ...rules, knowledge: e.target.value })}
-                    className="text-xs leading-relaxed bg-background font-sans"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Injected into all system prompts for context across email generation and replies.
-                  </p>
-                </div>
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-bold text-foreground flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-[#635bff]" /> Company Knowledge &amp; Value Proposition
+                </label>
+                <p className="text-[11px] text-muted-foreground">
+                  Injected into every AI prompt as background reference context.
+                </p>
+                <Textarea
+                  value={rules.knowledge}
+                  onChange={(e) => setRules(prev => ({ ...prev, knowledge: e.target.value }))}
+                  placeholder="e.g. We are Peak Xender, a multi-inbox cold outreach deliverability infrastructure built for B2B founders and high-volume Shopify agencies..."
+                  rows={4}
+                  className="font-mono text-xs bg-background"
+                />
+              </div>
 
-                {/* Initial Outreach */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">
-                    2. Initial Cold Email Guidelines
-                  </label>
+                  <label className="font-bold text-foreground">Step 1: Cold Initial Outreach Directive</label>
                   <Textarea
+                    value={rules.initial}
+                    onChange={(e) => setRules(prev => ({ ...prev, initial: e.target.value }))}
+                    placeholder="Short 2-3 sentences max. Focus on pain point and low friction CTA..."
                     rows={3}
-                    placeholder="e.g. Keep under 100 words, start with personalized observation about {{company_name}}, low-friction CTA."
-                    value={rules.initial || ''}
-                    onChange={(e) => setRules({ ...rules, initial: e.target.value })}
-                    className="text-xs leading-relaxed bg-background"
+                    className="font-mono text-xs bg-background"
                   />
                 </div>
 
-                {/* Follow-up 1 */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">
-                    3. Follow-up #1 Guidelines (Value Add / Angle Shift)
-                  </label>
+                  <label className="font-bold text-foreground">Step 2: Value-Add Follow-up Directive</label>
                   <Textarea
+                    value={rules.followup_1}
+                    onChange={(e) => setRules(prev => ({ ...prev, followup_1: e.target.value }))}
+                    placeholder="Bring a concrete case study or metric. Keep tone natural..."
                     rows={3}
-                    placeholder="e.g. Reference previous email politely, share quick 1-sentence case study or metric, ask if they are the right person."
-                    value={rules.followup_1 || ''}
-                    onChange={(e) => setRules({ ...rules, followup_1: e.target.value })}
-                    className="text-xs leading-relaxed bg-background"
+                    className="font-mono text-xs bg-background"
                   />
                 </div>
 
-                {/* Follow-up 2 (Breakup) */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">
-                    4. Follow-up #2 / Breakup Guidelines
-                  </label>
+                  <label className="font-bold text-foreground">Step 3: Polite Breakup Directive</label>
                   <Textarea
+                    value={rules.followup_2}
+                    onChange={(e) => setRules(prev => ({ ...prev, followup_2: e.target.value }))}
+                    placeholder="Gracefully close the loop without pressure..."
                     rows={3}
-                    placeholder="e.g. Graceful breakup email, let them know you will stop reaching out unless timing improves."
-                    value={rules.followup_2 || ''}
-                    onChange={(e) => setRules({ ...rules, followup_2: e.target.value })}
-                    className="text-xs leading-relaxed bg-background"
+                    className="font-mono text-xs bg-background"
                   />
                 </div>
 
-                {/* Objection Handling */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">
-                    5. Objection Handling &amp; Reply Guidelines
-                  </label>
+                  <label className="font-bold text-foreground">Objection Handling &amp; Reply Directive</label>
                   <Textarea
+                    value={rules.objection}
+                    onChange={(e) => setRules(prev => ({ ...prev, objection: e.target.value }))}
+                    placeholder="When prospect asks for pricing or demo scheduling..."
                     rows={3}
-                    placeholder="e.g. If prospect asks about pricing, state starting price and offer 10-min intro call. If not interested, politely thank them."
-                    value={rules.objection || ''}
-                    onChange={(e) => setRules({ ...rules, objection: e.target.value })}
-                    className="text-xs leading-relaxed bg-background"
+                    className="font-mono text-xs bg-background"
                   />
                 </div>
-
-                <div className="pt-3 border-t border-border/60 flex items-center justify-end">
-                  <Button
-                    type="submit"
-                    disabled={savingRules}
-                    className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
-                  >
-                    {savingRules ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    Save Outreach SOPs
-                  </Button>
-                </div>
-              </form>
+              </div>
             </div>
           </div>
         )}

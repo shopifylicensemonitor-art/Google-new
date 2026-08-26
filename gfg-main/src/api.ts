@@ -708,9 +708,13 @@ export const api = {
   deleteAIConfig: (provider: string) => apiFetch<{ success: boolean; message: string }>(`/api/ai/config/${encodeURIComponent(provider)}`, {
     method: 'DELETE'
   }),
-  testAIConnection: (data?: { provider?: string; apiKey?: string; baseUrl?: string; model?: string }) => apiFetch<{ success: boolean; response?: string; error?: string }>('/api/ai/test', {
+  testAIConnection: (data?: { provider?: string; apiKey?: string; baseUrl?: string; model?: string }) => apiFetch<{ success: boolean; response?: string; error?: string; latencyMs?: number; message?: string }>('/api/ai/test', {
     method: 'POST',
     body: JSON.stringify(data || {})
+  }),
+  fetchAIModels: (data: { provider: string; apiKey?: string; baseUrl?: string }) => apiFetch<{ success: boolean; provider: string; count: number; models: string[]; freeModels?: string[]; error?: string }>('/api/ai/fetch-models', {
+    method: 'POST',
+    body: JSON.stringify(data)
   }),
   validateAllAIKeys: () => apiFetch<{ success: boolean; results: Record<string, { valid: boolean; status: string; latencyMs?: number; model?: string; message?: string; error?: string }> }>('/api/ai/validate-all', {
     method: 'POST'
@@ -810,6 +814,19 @@ export const api = {
     body: JSON.stringify({ custom_tracking_domain: customTrackingDomain })
   }),
   deleteDomain: (id: number) => apiFetch<{ success: boolean; message: string }>(`/api/domains/${id}`, { method: 'DELETE' }),
+  createDomainMailbox: (domainId: number, data: {
+    email_prefix: string;
+    smtp_host?: string;
+    smtp_port?: number;
+    smtp_user?: string;
+    smtp_pass: string;
+    smtp_secure?: boolean;
+    display_name?: string;
+  }) => apiFetch<{ success: boolean; account_id: number; email: string; message: string }>(`/api/domains/${domainId}/create-mailbox`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  getDomainMailboxes: (domainId: number) => apiFetch<{ mailboxes: Account[] }>(`/api/domains/${domainId}/mailboxes`),
 
   // Master Suppression & Do-Not-Contact List
   getSuppressionList: (q?: string, type?: string) => apiFetch<{ items: { id: number; type: string; value: string; reason: string; created_at: string }[] }>(`/api/suppression${q || type ? `?${q ? `q=${encodeURIComponent(q)}&` : ''}${type ? `type=${type}` : ''}` : ''}`),

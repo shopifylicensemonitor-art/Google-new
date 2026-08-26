@@ -14,10 +14,10 @@ const router = express.Router();
 const { getDb } = require('../db');
 const { getWorkerStatus, processNextItem } = require('../scheduler');
 
-/** Get server-side background worker health and status. */
+/** Get server-side background worker health and status (user-scoped). */
 router.get('/worker/status', async (req, res) => {
   try {
-    const status = await getWorkerStatus();
+    const status = await getWorkerStatus(req.userId);
     res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });

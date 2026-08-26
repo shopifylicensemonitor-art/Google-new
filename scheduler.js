@@ -912,17 +912,30 @@ function stopScheduler() {
   logger.info('Email worker stopped');
 }
 
-async function getWorkerStatus() {
+async function getWorkerStatus(userId) {
   try {
     const db = await getDb();
-    const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending'").get();
-    const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue WHERE status = 'pending'").get();
+    let activeCampaignsCount = 0;
+    let pendingQueueCount = 0;
+
+    if (userId) {
+      const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending' AND user_id = ?").get(userId);
+      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.user_id = ?").get(userId);
+      activeCampaignsCount = activeCampaigns ? activeCampaigns.count : 0;
+      pendingQueueCount = pendingQueue ? pendingQueue.count : 0;
+    } else {
+      const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending'").get();
+      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue WHERE status = 'pending'").get();
+      activeCampaignsCount = activeCampaigns ? activeCampaigns.count : 0;
+      pendingQueueCount = pendingQueue ? pendingQueue.count : 0;
+    }
+
     return {
       active: schedulerEnabled,
       interval: '1s (Immediate Real-Time)',
       lastTickAt,
-      activeCampaigns: activeCampaigns ? activeCampaigns.count : 0,
-      pendingQueue: pendingQueue ? pendingQueue.count : 0,
+      activeCampaigns: activeCampaignsCount,
+      pendingQueue: pendingQueueCount,
       mode: 'Immediate Real-Time Dispatch Engine'
     };
   } catch (err) {

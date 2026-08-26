@@ -2,15 +2,17 @@
  * routes/domains.js — Sender Domain & EMSP DNS Management.
  *
  * Provides complete domain sending capabilities, automated 2048-bit RSA DKIM
- * keypair generation, live SPF/DKIM/DMARC/MX/CNAME DNS resolver checks, and
- * branded custom tracking domain verification.
+ * keypair generation, robust multi-tier DNS resolver checks (UDP + DoH),
+ * branded custom tracking domains, and direct domain email mailbox provisioning.
  *
  * Endpoints:
- *   GET    /api/domains           → List user domains
- *   POST   /api/domains           → Register new sender domain & generate DKIM
- *   POST   /api/domains/:id/verify → Run live DNS verification
- *   PUT    /api/domains/:id/tracking → Configure custom tracking domain
- *   DELETE /api/domains/:id       → Delete domain
+ *   GET    /api/domains                      → List user domains
+ *   POST   /api/domains                      → Register new sender domain & generate DKIM
+ *   POST   /api/domains/:id/verify           → Run live multi-resolver DNS verification
+ *   POST   /api/domains/:id/create-mailbox   → Create & verify domain email (SMTP)
+ *   GET    /api/domains/:id/mailboxes        → List mailboxes for a domain
+ *   PUT    /api/domains/:id/tracking         → Configure custom tracking domain
+ *   DELETE /api/domains/:id                  → Delete domain
  */
 
 const express = require('express');
@@ -18,20 +20,134 @@ const router = express.Router();
 const crypto = require('crypto');
 const dns = require('dns');
 const dnsPromises = dns.promises;
+const nodemailer = require('nodemailer');
 const { getDb } = require('../db');
 const logger = require('../logger');
 const { encrypt, decrypt } = require('../crypto');
 
-// Create a custom DNS resolver with Google and Cloudflare nameservers for reliable resolution
+// Public DNS resolver
 const publicResolver = new dns.promises.Resolver();
-publicResolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+try {
+  publicResolver.setServers(['1.1.1.1', '8.8.8.8', '1.0.0.1', '8.8.4.4']);
+} catch (_) {}
 
-/** Helper with timeout to resolve DNS queries without hanging */
+/** Helper with timeout */
 async function resolveWithTimeout(fn, timeoutMs = 4000) {
   return Promise.race([
     fn(),
     new Promise((_, reject) => setTimeout(() => reject(new Error('DNS query timed out')), timeoutMs))
   ]);
+}
+
+/** Fallback to DNS-over-HTTPS (DoH) via Cloudflare/Google */
+async function resolveDohTxt(name) {
+  try {
+    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`, {
+      headers: { Accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.Answer && Array.isArray(data.Answer)) {
+        return data.Answer.map(a => (a.data || '').replace(/^"|"$/g, ''));
+      }
+    }
+  } catch (_) {}
+
+  // Secondary Google DoH
+  try {
+    const res2 = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(name)}&type=TXT`, {
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res2.ok) {
+      const data2 = await res2.json();
+      if (data2.Answer && Array.isArray(data2.Answer)) {
+        return data2.Answer.map(a => (a.data || '').replace(/^"|"$/g, ''));
+      }
+    }
+  } catch (_) {}
+
+  return [];
+}
+
+async function resolveDohMx(name) {
+  try {
+    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=MX`, {
+      headers: { Accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.Answer && Array.isArray(data.Answer)) {
+        return data.Answer.map(a => {
+          const parts = (a.data || '').split(' ');
+          return parts.length > 1 ? parts[1] : parts[0];
+        });
+      }
+    }
+  } catch (_) {}
+  return [];
+}
+
+async function resolveDohCname(name) {
+  try {
+    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=CNAME`, {
+      headers: { Accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.Answer && Array.isArray(data.Answer)) {
+        return data.Answer.map(a => (a.data || '').replace(/\.$/, ''));
+      }
+    }
+  } catch (_) {}
+  return [];
+}
+
+/** Robust TXT lookup across UDP and DoH */
+async function lookupTxtRecords(hostname) {
+  try {
+    const records = await resolveWithTimeout(() => publicResolver.resolveTxt(hostname));
+    return (records || []).map(r => Array.isArray(r) ? r.join('') : String(r));
+  } catch (_) {
+    try {
+      const records2 = await resolveWithTimeout(() => dnsPromises.resolveTxt(hostname));
+      return (records2 || []).map(r => Array.isArray(r) ? r.join('') : String(r));
+    } catch (_) {
+      return await resolveDohTxt(hostname);
+    }
+  }
+}
+
+/** Robust MX lookup across UDP and DoH */
+async function lookupMxRecords(hostname) {
+  try {
+    const records = await resolveWithTimeout(() => publicResolver.resolveMx(hostname));
+    return (records || []).map(r => r.exchange);
+  } catch (_) {
+    try {
+      const records2 = await resolveWithTimeout(() => dnsPromises.resolveMx(hostname));
+      return (records2 || []).map(r => r.exchange);
+    } catch (_) {
+      return await resolveDohMx(hostname);
+    }
+  }
+}
+
+/** Robust CNAME lookup across UDP and DoH */
+async function lookupCnameRecords(hostname) {
+  try {
+    const records = await resolveWithTimeout(() => publicResolver.resolveCname(hostname));
+    return records || [];
+  } catch (_) {
+    try {
+      const records2 = await resolveWithTimeout(() => dnsPromises.resolveCname(hostname));
+      return records2 || [];
+    } catch (_) {
+      return await resolveDohCname(hostname);
+    }
+  }
 }
 
 /** Generate 2048-bit RSA Keypair for DKIM Signing */
@@ -48,7 +164,6 @@ function generateDkimKeypair() {
     },
   });
 
-  // Strip PEM headers to extract pure base64 public key for DNS TXT record
   const cleanPublicKey = publicKey
     .replace(/-----BEGIN PUBLIC KEY-----/g, '')
     .replace(/-----END PUBLIC KEY-----/g, '')
@@ -115,7 +230,7 @@ router.post('/', async (req, res) => {
       .get(domain, req.userId);
 
     if (existing) {
-      return res.status(400).json({ error: `Domain ${domain} is already registered.` });
+      return res.status(400).json({ error: `Domain ${domain} is already registered to your account.` });
     }
 
     // Generate 2048-bit RSA DKIM Keypair
@@ -160,7 +275,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-/** POST /api/domains/:id/verify — Perform live DNS query verification */
+/** POST /api/domains/:id/verify — Perform live multi-tier DNS query verification */
 router.post('/:id/verify', async (req, res) => {
   try {
     const db = await getDb();
@@ -186,9 +301,8 @@ router.post('/:id/verify', async (req, res) => {
 
     // 1. Verify SPF Record
     try {
-      const txtRecords = await resolveWithTimeout(() => publicResolver.resolveTxt(domain).catch(() => dnsPromises.resolveTxt(domain)));
-      const flat = (txtRecords || []).map(r => Array.isArray(r) ? r.join('') : String(r));
-      const spf = flat.find(t => t.toLowerCase().startsWith('v=spf1'));
+      const txtRecords = await lookupTxtRecords(domain);
+      const spf = txtRecords.find(t => t.toLowerCase().startsWith('v=spf1'));
       if (spf) {
         verification.spf.valid = true;
         verification.spf.record = spf;
@@ -203,9 +317,8 @@ router.post('/:id/verify', async (req, res) => {
     // 2. Verify DKIM Record
     try {
       const dkimHost = `${selector}._domainkey.${domain}`;
-      const dkimTxt = await resolveWithTimeout(() => publicResolver.resolveTxt(dkimHost).catch(() => dnsPromises.resolveTxt(dkimHost)));
-      const flatDkim = (dkimTxt || []).map(r => Array.isArray(r) ? r.join('') : String(r));
-      const dkimFound = flatDkim.find(t => t.toLowerCase().startsWith('v=dkim1') || t.includes((domainRow.dkim_public_key || '').slice(0, 30)));
+      const dkimTxt = await lookupTxtRecords(dkimHost);
+      const dkimFound = dkimTxt.find(t => t.toLowerCase().startsWith('v=dkim1') || t.includes((domainRow.dkim_public_key || '').slice(0, 30)));
       if (dkimFound) {
         verification.dkim.valid = true;
         verification.dkim.record = dkimFound;
@@ -220,9 +333,8 @@ router.post('/:id/verify', async (req, res) => {
     // 3. Verify DMARC Record
     try {
       const dmarcHost = `_dmarc.${domain}`;
-      const dmarcTxt = await resolveWithTimeout(() => publicResolver.resolveTxt(dmarcHost).catch(() => dnsPromises.resolveTxt(dmarcHost)));
-      const flatDmarc = (dmarcTxt || []).map(r => Array.isArray(r) ? r.join('') : String(r));
-      const dmarcFound = flatDmarc.find(t => t.toLowerCase().startsWith('v=dmarc1'));
+      const dmarcTxt = await lookupTxtRecords(dmarcHost);
+      const dmarcFound = dmarcTxt.find(t => t.toLowerCase().startsWith('v=dmarc1'));
       if (dmarcFound) {
         verification.dmarc.valid = true;
         verification.dmarc.record = dmarcFound;
@@ -236,10 +348,10 @@ router.post('/:id/verify', async (req, res) => {
 
     // 4. Verify MX Mail Routing
     try {
-      const mxRecords = await resolveWithTimeout(() => publicResolver.resolveMx(domain).catch(() => dnsPromises.resolveMx(domain)));
+      const mxRecords = await lookupMxRecords(domain);
       if (mxRecords && mxRecords.length > 0) {
         verification.mx.valid = true;
-        verification.mx.records = mxRecords.map(r => r.exchange);
+        verification.mx.records = mxRecords;
         verification.mx.message = 'Inbound MX records detected.';
       } else {
         verification.mx.message = 'No MX records found.';
@@ -250,11 +362,13 @@ router.post('/:id/verify', async (req, res) => {
 
     // 5. Verify Custom Tracking CNAME
     try {
-      const cnames = await resolveWithTimeout(() => publicResolver.resolveCname(trackingHost).catch(() => dnsPromises.resolveCname(trackingHost)));
+      const cnames = await lookupCnameRecords(trackingHost);
       if (cnames && cnames.length > 0) {
         verification.tracking.valid = true;
         verification.tracking.target = cnames[0];
         verification.tracking.message = `CNAME resolves to ${cnames[0]}`;
+      } else {
+        verification.tracking.message = 'CNAME record not found.';
       }
     } catch (e) {
       verification.tracking.message = `Tracking CNAME lookup failed: ${e.code || e.message}`;
@@ -286,6 +400,116 @@ router.post('/:id/verify', async (req, res) => {
     });
   } catch (err) {
     logger.error({ err }, 'Error verifying domain DNS');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** POST /api/domains/:id/create-mailbox — Create & connect a domain email mailbox */
+router.post('/:id/create-mailbox', async (req, res) => {
+  const { email_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, display_name } = req.body;
+
+  try {
+    const db = await getDb();
+    const domainRow = await db
+      .prepare('SELECT * FROM domains WHERE id = ? AND user_id = ?')
+      .get(req.params.id, req.userId);
+
+    if (!domainRow) {
+      return res.status(404).json({ error: 'Domain not found.' });
+    }
+
+    const cleanPrefix = (email_prefix || '').trim().toLowerCase().replace(/@.*$/, '');
+    if (!cleanPrefix) {
+      return res.status(400).json({ error: 'Please enter a mailbox name (e.g. outreach or sales).' });
+    }
+
+    const fullEmail = `${cleanPrefix}@${domainRow.domain}`;
+    const host = (smtp_host || `mail.${domainRow.domain}`).trim();
+    const port = parseInt(smtp_port) || 587;
+    const user = (smtp_user || fullEmail).trim();
+    const pass = smtp_pass || '';
+
+    if (!pass) {
+      return res.status(400).json({ error: 'Please provide the SMTP password for this mailbox.' });
+    }
+
+    // Verify SMTP connection
+    const transport = nodemailer.createTransport({
+      host,
+      port,
+      secure: !!smtp_secure,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false }
+    });
+
+    try {
+      await transport.verify();
+    } catch (smtpErr) {
+      return res.status(400).json({
+        error: `SMTP connection verification failed: ${smtpErr.message}. Ensure your mail server credentials and host (${host}:${port}) are correct.`
+      });
+    }
+
+    // Check if mailbox already exists for this user
+    const existing = await db
+      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?) AND user_id = ?')
+      .get(fullEmail, req.userId);
+
+    if (existing) {
+      await db.prepare(`
+        UPDATE accounts
+        SET type = 'smtp', smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
+            smtp_secure = ?, display_name = ?, status = 'active'
+        WHERE id = ? AND user_id = ?
+      `).run(host, port, user, encrypt(pass), smtp_secure ? 1 : 0, display_name || fullEmail, existing.id, req.userId);
+
+      return res.json({
+        success: true,
+        account_id: existing.id,
+        email: fullEmail,
+        message: `Domain mailbox ${fullEmail} updated and verified in sending rotation.`
+      });
+    }
+
+    const insertResult = await db.prepare(`
+      INSERT INTO accounts (user_id, email, type, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, display_name, status)
+      VALUES (?, ?, 'smtp', ?, ?, ?, ?, ?, ?, 'active')
+    `).run(req.userId, fullEmail, host, port, user, encrypt(pass), smtp_secure ? 1 : 0, display_name || fullEmail);
+
+    res.status(201).json({
+      success: true,
+      account_id: insertResult.lastInsertRowid,
+      email: fullEmail,
+      message: `Domain mailbox ${fullEmail} successfully created and verified in sending rotation!`
+    });
+  } catch (err) {
+    logger.error({ err }, 'Error creating domain mailbox');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/domains/:id/mailboxes — List mailboxes created for this domain */
+router.get('/:id/mailboxes', async (req, res) => {
+  try {
+    const db = await getDb();
+    const domainRow = await db
+      .prepare('SELECT domain FROM domains WHERE id = ? AND user_id = ?')
+      .get(req.params.id, req.userId);
+
+    if (!domainRow) {
+      return res.status(404).json({ error: 'Domain not found.' });
+    }
+
+    const mailboxes = await db.prepare(`
+      SELECT id, email, display_name, status, daily_sent, daily_limit, type, created_at
+      FROM accounts
+      WHERE user_id = ? AND LOWER(email) LIKE LOWER(?)
+      ORDER BY id DESC
+    `).all(req.userId, `%@${domainRow.domain}`);
+
+    res.json({ mailboxes: mailboxes || [] });
+  } catch (err) {
+    logger.error({ err }, 'Error fetching domain mailboxes');
     res.status(500).json({ error: err.message });
   }
 });

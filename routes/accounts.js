@@ -163,22 +163,13 @@ function createSmtpTransport(account) {
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
-    const userEmail = (req.user && req.user.email) ? req.user.email.toLowerCase() : '';
-
-    // Claim any accounts matching the user's email address
-    if (userEmail && req.userId) {
-      try {
-        await db.prepare("UPDATE accounts SET user_id = ? WHERE (user_id IS NULL OR user_id != ?) AND LOWER(email) = ?").run(req.userId, req.userId, userEmail);
-      } catch (_) {}
-    }
-
     const accounts = await db.prepare(`
       SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
              type, smtp_host, smtp_port, smtp_secure, created_at, user_id
       FROM accounts
-      WHERE user_id = ? OR LOWER(email) = ?
+      WHERE user_id = ?
       ORDER BY id ASC
-    `).all(req.userId, userEmail);
+    `).all(req.userId);
 
     res.json(accounts || []);
   } catch (err) {

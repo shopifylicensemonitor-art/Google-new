@@ -427,6 +427,97 @@ router.post('/test', async (req, res) => {
   }
 });
 
+/** POST /api/ai/fetch-models — Auto-fetch live models directly from provider API */
+router.post('/fetch-models', async (req, res) => {
+  const { provider, apiKey, baseUrl } = req.body || {};
+  const provKey = String(provider || 'custom').trim().toLowerCase();
+
+  try {
+    let keyToUse = (apiKey || '').trim();
+    let urlToUse = (baseUrl || '').trim();
+
+    // If key not supplied in body, read from DB for current user
+    if (!keyToUse) {
+      const db = await getDb();
+      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND (user_id = ? OR user_id IS NULL) ORDER BY user_id DESC LIMIT 1').get(provKey, req.userId);
+      if (row && row.api_key_encrypted) {
+        keyToUse = decryptKey(row.api_key_encrypted);
+        if (!urlToUse) urlToUse = row.base_url;
+      }
+    }
+
+    if (!keyToUse && provKey !== 'custom') {
+      return res.status(400).json({ error: 'Please enter or save an API key to fetch live models from this provider.' });
+    }
+
+    let cleanBaseUrl = urlToUse ? urlToUse.replace(/\/+$/, '') : '';
+    if (!cleanBaseUrl) {
+      if (provKey === 'groq') cleanBaseUrl = 'https://api.groq.com/openai/v1';
+      else if (provKey === 'openrouter') cleanBaseUrl = 'https://openrouter.ai/api/v1';
+      else if (provKey === 'openai') cleanBaseUrl = 'https://api.openai.com/v1';
+      else if (provKey === 'gemini') cleanBaseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
+      else if (provKey === 'nvidia') cleanBaseUrl = 'https://integrate.api.nvidia.com/v1';
+      else if (provKey === 'deepseek') cleanBaseUrl = 'https://api.deepseek.com/v1';
+      else if (provKey === 'together') cleanBaseUrl = 'https://api.together.xyz/v1';
+      else cleanBaseUrl = 'https://openrouter.ai/api/v1';
+    }
+
+    let modelsUrl = cleanBaseUrl;
+    if (modelsUrl.endsWith('/chat/completions')) {
+      modelsUrl = modelsUrl.replace(/\/chat\/completions$/, '/models');
+    } else if (!modelsUrl.endsWith('/models')) {
+      modelsUrl = `${modelsUrl}/models`;
+    }
+
+    const headers = {
+      'Accept': 'application/json',
+      ...(keyToUse ? { 'Authorization': `Bearer ${keyToUse}` } : {}),
+      ...(provKey === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+    };
+
+    const resp = await fetch(modelsUrl, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(6000)
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Provider returned HTTP ${resp.status}: ${errText.slice(0, 150)}`);
+    }
+
+    const data = await resp.json();
+    let modelList = [];
+
+    if (Array.isArray(data.data)) {
+      modelList = data.data.map(m => m.id || m.name).filter(Boolean);
+    } else if (Array.isArray(data.models)) {
+      modelList = data.models.map(m => m.id || m.name).filter(Boolean);
+    } else if (Array.isArray(data)) {
+      modelList = data.map(m => (typeof m === 'string' ? m : (m.id || m.name))).filter(Boolean);
+    }
+
+    // Filter free models (matching ':free', free tiers, etc.)
+    const freeModels = modelList.filter(id => {
+      const lower = id.toLowerCase();
+      return lower.includes(':free') || lower.includes('-free') || lower.includes('free-') ||
+        (provKey === 'groq' && (lower.includes('llama-3.3-70b') || lower.includes('llama3-70b') || lower.includes('llama3-8b') || lower.includes('deepseek-r1') || lower.includes('gemma2'))) ||
+        (provKey === 'gemini' && lower.includes('flash'));
+    });
+
+    res.json({
+      success: true,
+      provider: provKey,
+      count: modelList.length,
+      models: modelList,
+      freeModels: freeModels.length > 0 ? freeModels : undefined
+    });
+  } catch (err) {
+    logger.warn({ err: err.message, provider: provKey }, 'Failed to fetch live models from provider');
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 /** POST /api/ai/validate-all — Health check and validate all saved AI API keys against their endpoints */
 router.post('/validate-all', async (req, res) => {
   try {
