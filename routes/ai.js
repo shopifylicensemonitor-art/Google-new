@@ -248,34 +248,37 @@ router.get('/config', async (req, res) => {
 
 /** POST /api/ai/config — Save/update AI provider config for current user */
 router.post('/config', async (req, res) => {
-  const { provider, apiKey, baseUrl, model, setActive = true } = req.body;
-  const provKey = (provider || 'custom').trim().toLowerCase();
+  const rawKey = req.body.apiKey || req.body.api_key;
+  const rawUrl = req.body.baseUrl || req.body.base_url;
+  const rawModel = req.body.model;
+  const rawActive = req.body.setActive !== undefined ? req.body.setActive : (req.body.is_active !== undefined ? req.body.is_active : true);
+  const provKey = (req.body.provider || 'custom').trim().toLowerCase();
   const uid = req.userId;
 
   try {
     const db = await getDb();
-    const cleanBaseUrl = (baseUrl || '').trim().replace(/\/+$/, '') || 'https://openrouter.ai/api/v1';
-    const cleanModel = (model || '').trim() || 'openai/gpt-4o-mini';
+    const cleanBaseUrl = (rawUrl || '').trim().replace(/\/+$/, '') || 'https://openrouter.ai/api/v1';
+    const cleanModel = (rawModel || '').trim() || 'openai/gpt-4o-mini';
 
-    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provKey, uid);
+    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND (user_id = ? OR user_id IS NULL) ORDER BY user_id DESC LIMIT 1').get(provKey, uid);
 
     let encKey = '';
-    if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
-      encKey = encryptKey(apiKey.trim());
+    if (rawKey && typeof rawKey === 'string' && rawKey.trim().length > 0) {
+      encKey = encryptKey(rawKey.trim());
     } else if (existing && existing.api_key_encrypted) {
       encKey = existing.api_key_encrypted;
     } else {
       return res.status(400).json({ error: `API Key is required for provider ${provKey}.` });
     }
 
-    if (setActive) {
+    if (rawActive) {
       // Set all other providers for this user to inactive
       await db.prepare('UPDATE ai_config SET is_active = 0 WHERE user_id = ?').run(uid);
     }
 
-    const isActiveVal = setActive ? 1 : (existing ? (existing.is_active || 0) : 0);
+    const isActiveVal = rawActive ? 1 : (existing ? (existing.is_active || 0) : 0);
 
-    if (existing) {
+    if (existing && existing.user_id === uid) {
       await db.prepare('UPDATE ai_config SET api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?')
         .run(encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id, uid);
     } else {
@@ -335,10 +338,14 @@ router.delete('/config/:provider', async (req, res) => {
 
 /** POST /api/ai/test — Test a specific AI connection or the active connection */
 router.post('/test', async (req, res) => {
-  const { provider, apiKey, baseUrl, model } = req.body || {};
+  const apiKey = (req.body.apiKey || req.body.api_key || '').trim();
+  const baseUrl = (req.body.baseUrl || req.body.base_url || '').trim();
+  const model = (req.body.model || '').trim();
+  const provider = (req.body.provider || '').trim().toLowerCase();
+
   try {
     // If specific parameters provided, test with them directly
-    if (apiKey && apiKey.trim().length > 0) {
+    if (apiKey && apiKey.length > 0) {
       const cleanBaseUrl = (baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
       let endpointUrl = cleanBaseUrl;
       if (!endpointUrl.endsWith('/v1') && !endpointUrl.includes('/v1/') && !endpointUrl.endsWith('/chat/completions')) {
@@ -350,7 +357,7 @@ router.post('/test', async (req, res) => {
 
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Authorization': `Bearer ${apiKey}`,
         ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
       };
 
@@ -358,7 +365,7 @@ router.post('/test', async (req, res) => {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: model || 'openai/gpt-4o-mini',
+          model: model || (provider === 'groq' ? 'llama-3.3-70b-versatile' : 'openai/gpt-4o-mini'),
           messages: [{ role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }],
           temperature: 0.7,
           max_tokens: 50
@@ -378,10 +385,10 @@ router.post('/test', async (req, res) => {
     // Otherwise test using provider from DB or default active AI
     if (provider) {
       const db = await getDb();
-      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provider.toLowerCase(), req.userId) || await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id IS NULL').get(provider.toLowerCase());
+      const row = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND (user_id = ? OR user_id IS NULL) ORDER BY user_id DESC LIMIT 1').get(provider.toLowerCase(), req.userId);
       if (row && row.api_key_encrypted) {
         const decryptedKey = decryptKey(row.api_key_encrypted);
-        const cleanBaseUrl = (row.base_url || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+        const cleanBaseUrl = (row.base_url || baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
         let endpointUrl = cleanBaseUrl;
         if (!endpointUrl.endsWith('/v1') && !endpointUrl.includes('/v1/') && !endpointUrl.endsWith('/chat/completions')) {
           endpointUrl = `${endpointUrl}/v1`;
@@ -400,7 +407,7 @@ router.post('/test', async (req, res) => {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            model: row.model || 'openai/gpt-4o-mini',
+            model: model || row.model || (provider === 'groq' ? 'llama-3.3-70b-versatile' : 'openai/gpt-4o-mini'),
             messages: [{ role: 'user', content: 'Say "Peak Xender AI connection test successful!"' }],
             temperature: 0.7,
             max_tokens: 50
@@ -429,12 +436,13 @@ router.post('/test', async (req, res) => {
 
 /** POST /api/ai/fetch-models — Auto-fetch live models directly from provider API */
 router.post('/fetch-models', async (req, res) => {
-  const { provider, apiKey, baseUrl } = req.body || {};
-  const provKey = String(provider || 'custom').trim().toLowerCase();
+  const rawKey = req.body.apiKey || req.body.api_key;
+  const rawUrl = req.body.baseUrl || req.body.base_url;
+  const provKey = String(req.body.provider || 'custom').trim().toLowerCase();
 
   try {
-    let keyToUse = (apiKey || '').trim();
-    let urlToUse = (baseUrl || '').trim();
+    let keyToUse = (rawKey || '').trim();
+    let urlToUse = (rawUrl || '').trim();
 
     // If key not supplied in body, read from DB for current user
     if (!keyToUse) {

@@ -398,14 +398,29 @@ export default function AISettings() {
     const input = providerInputs[preset.id];
     if (!input) return;
 
+    const hasSaved = Boolean(savedConfigs[preset.id]?.hasKey);
+    const enteredKey = input.apiKey.trim();
+
+    if (!enteredKey && !hasSaved) {
+      toast({
+        variant: 'destructive',
+        title: 'API Key Required',
+        description: `Please enter an API Key for ${preset.name} before saving.`
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await api.saveAIConfig({
         provider: preset.id,
-        api_key: input.apiKey.trim(),
+        apiKey: enteredKey,
+        api_key: enteredKey,
+        baseUrl: input.baseUrl.trim() || preset.baseUrl,
         base_url: input.baseUrl.trim() || preset.baseUrl,
         model: input.model.trim() || preset.defaultModel,
-        is_active: activeProviderKey === preset.id
+        is_active: activeProviderKey === preset.id,
+        setActive: activeProviderKey === preset.id
       });
 
       if (res.success) {
@@ -458,12 +473,26 @@ export default function AISettings() {
     const input = providerInputs[preset.id];
     if (!input) return;
 
+    const hasSaved = Boolean(savedConfigs[preset.id]?.hasKey);
+    const enteredKey = input.apiKey.trim();
+
+    if (!enteredKey && !hasSaved) {
+      toast({
+        variant: 'destructive',
+        title: 'API Key Required',
+        description: `Please enter an API Key for ${preset.name} before running connection test.`
+      });
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
     try {
       const res = await api.testAIConnection({
         provider: preset.id,
-        api_key: input.apiKey.trim(),
+        apiKey: enteredKey,
+        api_key: enteredKey,
+        baseUrl: input.baseUrl.trim() || preset.baseUrl,
         base_url: input.baseUrl.trim() || preset.baseUrl,
         model: input.model.trim() || preset.defaultModel
       });
@@ -472,7 +501,7 @@ export default function AISettings() {
       if (res.success) {
         toast({
           title: 'Test Succeeded!',
-          description: `${preset.name} (${input.model}) responded in ${res.latencyMs || 0}ms.`
+          description: `${preset.name} (${input.model || preset.defaultModel}) responded in ${res.latencyMs || 0}ms.`
         });
         setValidationResults(prev => ({
           ...prev,
@@ -481,17 +510,24 @@ export default function AISettings() {
       } else {
         toast({
           variant: 'destructive',
-          title: 'Connection Test Failed',
-          description: res.error || res.message || 'The model did not return a valid response. Try clicking one of the supported model pills below.'
+          title: 'Test Failed',
+          description: res.error || 'Connection test failed. Check key or model name.'
         });
         setValidationResults(prev => ({
           ...prev,
-          [preset.id]: { valid: false, status: 'invalid', error: res.error || res.message }
+          [preset.id]: { valid: false, status: 'invalid', error: res.error }
         }));
       }
     } catch (err: any) {
-      setTestResult({ success: false, message: err.message });
-      toast({ variant: 'destructive', title: 'Test Failed', description: err.message });
+      toast({
+        variant: 'destructive',
+        title: 'Test Failed',
+        description: err.message
+      });
+      setValidationResults(prev => ({
+        ...prev,
+        [preset.id]: { valid: false, status: 'invalid', error: err.message }
+      }));
     } finally {
       setTesting(false);
     }
