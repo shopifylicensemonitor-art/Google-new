@@ -440,7 +440,7 @@ async function processNextItem() {
     JOIN campaigns c ON q.campaign_id = c.id
     WHERE q.status = 'pending'
       AND c.status = 'sending'
-      AND q.scheduled_at <= ?
+      AND (q.scheduled_at <= ? OR q.scheduled_at <= datetime('now') OR q.scheduled_at IS NULL)
     ORDER BY q.scheduled_at ASC
     LIMIT ?
   `).all(nowIso, BATCH_SIZE);
