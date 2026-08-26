@@ -306,116 +306,9 @@ async function sendEmail(account, to, subject, bodyHtml, campaignId = 0) {
 // Background Contact List Sync
 // ---------------------------------------------------------------------------
 
-/**
- * Background Synchronization Service:
- * Automatically maps contact list entries to active campaign send queues.
- * If new contacts are added to a list while a campaign is sending/paused,
- * this function automatically maps them into the queue.
- */
-async function syncContactListsToActiveCampaigns(db) {
-  try {
-    const activeCampaigns = await db.prepare(`
-      SELECT c.id, c.contact_list, c.user_id, c.status
-      FROM campaigns c
-      WHERE c.status IN ('sending') AND c.contact_list IS NOT NULL AND c.contact_list != ''
-    `).all();
-
-    if (!activeCampaigns || activeCampaigns.length === 0) return { syncedCampaigns: 0, newlyQueuedContacts: 0 };
-
-    let totalNewlyQueued = 0;
-    let syncedCampaignsCount = 0;
-
-    for (const campaign of activeCampaigns) {
-      // Check if campaign already has queue items populated
-      const existingQueueRows = await db.prepare(`
-        SELECT COUNT(*) as count
-        FROM queue
-        WHERE campaign_id = ?
-      `).get(campaign.id);
-
-      const queueCount = Number(existingQueueRows?.count || 0);
-      if (queueCount > 0) {
-        // Queue is already populated, do not block the worker with redundant list scans
-        continue;
-      }
-
-      let contacts = [];
-      if (campaign.user_id) {
-        contacts = await db.prepare(`
-          SELECT email, fields
-          FROM contacts
-          WHERE list_name = ? AND user_id = ?
-          LIMIT 500
-        `).all(campaign.contact_list, campaign.user_id);
-      } else {
-        contacts = await db.prepare(`
-          SELECT email, fields
-          FROM contacts
-          WHERE list_name = ?
-          LIMIT 500
-        `).all(campaign.contact_list);
-      }
-
-      if (!contacts || contacts.length === 0) continue;
-      const missingContacts = contacts.filter(c => c.email);
-
-      if (missingContacts.length > 0) {
-        let accounts = [];
-        if (campaign.user_id) {
-          accounts = await db.prepare(`
-            SELECT id FROM accounts WHERE status = 'active' AND user_id = ?
-          `).all(campaign.user_id);
-        } else {
-          accounts = await db.prepare(`
-            SELECT id FROM accounts WHERE status = 'active'
-          `).all();
-        }
-
-        let accountIdx = 0;
-        for (const contact of missingContacts) {
-          const assignedAccountId = accounts.length > 0 ? accounts[accountIdx % accounts.length].id : null;
-          accountIdx++;
-
-          const fieldsJson = typeof contact.fields === 'string'
-            ? contact.fields
-            : JSON.stringify(contact.fields || {});
-
-          await db.prepare(`
-            INSERT INTO queue (campaign_id, recipient_email, account_id, fields, status, scheduled_at, user_id)
-            VALUES (?, ?, ?, ?, 'pending', datetime('now'), ?)
-          `).run(campaign.id, contact.email, assignedAccountId, fieldsJson, campaign.user_id || null);
-        }
-
-        totalNewlyQueued += missingContacts.length;
-        syncedCampaignsCount++;
-
-        const totalRows = await db.prepare(`
-          SELECT COUNT(*) as count FROM queue WHERE campaign_id = ?
-        `).all(campaign.id);
-        const totalCount = totalRows[0]?.count || 0;
-
-        await db.prepare(`
-          UPDATE campaigns SET total_contacts = ? WHERE id = ?
-        `).run(totalCount, campaign.id);
-
-        logger.info(
-          { campaignId: campaign.id, listName: campaign.contact_list, newlyQueued: missingContacts.length },
-          'Background sync mapped contact list entries into active campaign queue'
-        );
-      }
-    }
-
-    return { syncedCampaigns: syncedCampaignsCount, newlyQueuedContacts: totalNewlyQueued };
-  } catch (err) {
-    logger.error({ err }, 'Error during background contact list sync');
-    return { syncedCampaigns: 0, newlyQueuedContacts: 0, error: err.message };
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Process one queue item
+// Process one queue item — strictly enforces campaign rules (status, volume)
 // ---------------------------------------------------------------------------
-
 async function processNextItem() {
   try {
     let db;
@@ -426,23 +319,21 @@ async function processNextItem() {
       return { processedCount: 0 };
     }
 
-  // Synchronize contact list changes to active campaign queues on worker tick
-  await syncContactListsToActiveCampaigns(db);
-
-  const BATCH_SIZE = parseInt(process.env.SCHEDULER_BATCH_SIZE, 10) || 10;
+  const BATCH_SIZE = parseInt(process.env.SCHEDULER_BATCH_SIZE, 10) || 5;
   const nowIso = new Date().toISOString();
 
-  // Find the next pending items whose scheduled time has passed
+  // Find the next pending items whose scheduled time has strictly passed
   const items = await db.prepare(`
     SELECT q.*, c.status as campaign_status,
            c.subject as c_subject, c.body_html as c_body_html,
            c.start_time, c.end_time, c.ignore_window,
-           c.content_variations, c.content_mode
+           c.content_variations, c.content_mode,
+           c.sent_count as c_sent_count, c.total_contacts as c_total_contacts
     FROM queue q
     JOIN campaigns c ON q.campaign_id = c.id
     WHERE q.status = 'pending'
       AND c.status = 'sending'
-      AND (q.scheduled_at <= ? OR q.scheduled_at <= datetime('now') OR q.scheduled_at IS NULL)
+      AND (q.scheduled_at <= ? OR q.scheduled_at <= datetime('now'))
     ORDER BY q.scheduled_at ASC
     LIMIT ?
   `).all(nowIso, BATCH_SIZE);
@@ -468,6 +359,20 @@ async function processNextItem() {
 
   async function processGroup(_accountIdKey, groupItems) {
     for (const item of groupItems) {
+      // 1. Strict Campaign Status & Target Limit Verification
+      const currentCampaign = await db.prepare('SELECT id, status, sent_count, total_contacts FROM campaigns WHERE id = ?').get(item.campaign_id);
+      if (!currentCampaign || currentCampaign.status !== 'sending') {
+        // Campaign was paused, completed, or deleted by user — skip sending!
+        continue;
+      }
+
+      if (currentCampaign.total_contacts > 0 && (currentCampaign.sent_count || 0) >= currentCampaign.total_contacts) {
+        // Target volume reached: complete campaign and stop sending further
+        await db.prepare("UPDATE campaigns SET status = 'completed' WHERE id = ?").run(item.campaign_id);
+        await db.prepare("DELETE FROM queue WHERE campaign_id = ? AND status = 'pending'").run(item.campaign_id);
+        continue;
+      }
+
       // Check sending window
       if (!isWithinSendingWindow(item)) {
         continue; // Outside allowed hours, skip this one
@@ -921,30 +826,32 @@ async function getWorkerStatus(userId) {
     let pendingQueueCount = 0;
 
     if (userId) {
-      const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending' AND user_id = ?").get(userId);
-      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.user_id = ?").get(userId);
-      activeCampaignsCount = activeCampaigns ? activeCampaigns.count : 0;
-      pendingQueueCount = pendingQueue ? pendingQueue.count : 0;
+      const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending' AND (user_id = ? OR user_id IS NULL)").get(userId);
+      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.status = 'sending' AND (c.user_id = ? OR c.user_id IS NULL)").get(userId);
+      activeCampaignsCount = activeCampaigns ? Number(activeCampaigns.count) : 0;
+      pendingQueueCount = pendingQueue ? Number(pendingQueue.count) : 0;
     } else {
       const activeCampaigns = await db.prepare("SELECT COUNT(*) as count FROM campaigns WHERE status = 'sending'").get();
-      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue WHERE status = 'pending'").get();
-      activeCampaignsCount = activeCampaigns ? activeCampaigns.count : 0;
-      pendingQueueCount = pendingQueue ? pendingQueue.count : 0;
+      const pendingQueue = await db.prepare("SELECT COUNT(*) as count FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.status = 'sending'").get();
+      activeCampaignsCount = activeCampaigns ? Number(activeCampaigns.count) : 0;
+      pendingQueueCount = pendingQueue ? Number(pendingQueue.count) : 0;
     }
 
     return {
       active: schedulerEnabled,
-      interval: '1s (Immediate Real-Time)',
+      interval: '15s Schedule Interval',
       lastTickAt,
       activeCampaigns: activeCampaignsCount,
       pendingQueue: pendingQueueCount,
-      mode: 'Immediate Real-Time Dispatch Engine'
+      mode: 'Enforced Schedule Rules & Timeframe Engine'
     };
   } catch (err) {
     return {
       active: schedulerEnabled,
-      interval: '1s (Immediate Real-Time)',
+      interval: '15s Schedule Interval',
       lastTickAt,
+      activeCampaigns: 0,
+      pendingQueue: 0,
       error: err.message
     };
   }
@@ -959,7 +866,6 @@ module.exports = {
   isWithinSendingWindow,
   completeCampaignIfNoActiveQueue,
   stopScheduler,
-  syncContactListsToActiveCampaigns,
   getWorkerStatus
 };
 

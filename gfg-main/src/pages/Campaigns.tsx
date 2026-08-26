@@ -341,16 +341,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     loadData();
     // Poll progress updates every 10s (or 60s in battery saver mode)
     const intervalMs = batterySaver ? 60000 : 10000;
-    const interval = setInterval(() => {
-      loadData();
-      // If there are sending campaigns, trigger a worker delivery tick to drive serverless sending
-      setCampaigns(prev => {
-        if (prev && prev.some(c => c.status === 'sending')) {
-          api.triggerWorker().catch(() => {});
-        }
-        return prev;
-      });
-    }, intervalMs);
+    const interval = setInterval(loadData, intervalMs);
     return () => clearInterval(interval);
   }, [batterySaver]);
 
@@ -970,16 +961,6 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                   {workerStatus ? `${workerStatus.pendingQueue} emails` : 'Syncing...'}
                 </span>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTriggerWorker}
-                disabled={triggeringWorker}
-                className="h-8 gap-1.5 rounded-xl border-[#635bff]/30 hover:bg-[#635bff]/10 text-xs font-bold text-[#635bff]"
-              >
-                <RotateCw className={`h-3.5 w-3.5 ${triggeringWorker ? 'animate-spin' : ''}`} />
-                <span>Dispatch Now</span>
-              </Button>
             </div>
           </div>
 
@@ -2868,16 +2849,6 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                           )}
                           {c.status === 'sending' && (
                             <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleRetry(c.id)}
-                                className="h-8 gap-1 rounded-lg text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 border-primary/40 shadow-2xs"
-                                title="Instantly trigger immediate email dispatch batch"
-                              >
-                                <Zap className="h-3.5 w-3.5 text-primary" />
-                                <span>Dispatch Now</span>
-                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
