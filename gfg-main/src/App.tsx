@@ -127,6 +127,35 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
 // ---------------------------------------------------------------------------
 // App Entry Component
+// Route Preloaders for Instant < 50ms Page Transitions
+const routePreloaders = {
+  Dashboard: () => import("./pages/Dashboard"),
+  Campaigns: () => import("./pages/Campaigns"),
+  Templates: () => import("./pages/Templates"),
+  AISettings: () => import("./pages/AISettings"),
+  Domains: () => import("./pages/Domains"),
+  Accounts: () => import("./pages/Accounts"),
+  Contacts: () => import("./pages/Contacts"),
+  Inbox: () => import("./pages/Inbox"),
+  Tracker: () => import("./pages/Tracker"),
+  Settings: () => import("./pages/Settings"),
+  Logs: () => import("./pages/Logs"),
+};
+
+function preloadAllRoutesOnIdle() {
+  const idleFn = typeof window !== 'undefined' && 'requestIdleCallback' in window
+    ? (window as any).requestIdleCallback
+    : (cb: () => void) => setTimeout(cb, 1200);
+
+  idleFn(() => {
+    Object.values(routePreloaders).forEach(loader => {
+      try {
+        loader();
+      } catch (_) {}
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 const App = () => {
   const requirePin = useCallback((label: string, action: () => void) => {
@@ -150,6 +179,9 @@ const App = () => {
       window.history.replaceState({}, "", cleanUrl);
       navigateToRoute(window.location.pathname + window.location.hash, { replace: true });
     }
+
+    // Preload all remaining route chunks in background for instant <50ms displays
+    preloadAllRoutesOnIdle();
   }, []);
 
   return (

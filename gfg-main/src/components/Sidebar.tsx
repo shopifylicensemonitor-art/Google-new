@@ -117,20 +117,47 @@ export const Sidebar = memo(function Sidebar({ isOpen, onClose, collapsed, onTog
   );
 
   return (
-    <aside
-      className={`hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-sidebar border-r border-sidebar-border z-40 transition-all duration-300 ${
-        collapsed ? 'w-[68px]' : 'w-64'
-      }`}
-    >
-      {sidebarContent}
-      {/* Collapse Toggle */}
-      <button
-        onClick={onToggleCollapse}
-        className="absolute -right-3 top-7 h-6 w-6 rounded-full border border-sidebar-border bg-sidebar flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors z-50 shadow-sm"
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+    <>
+      {/* Mobile & Tablet Slide-Over Drawer with Backdrop */}
+      {isOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          {/* Backdrop Blur */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+            onClick={onClose}
+          />
+
+          {/* Drawer Panel */}
+          <aside className="relative flex-1 flex flex-col max-w-[280px] w-full bg-sidebar border-r border-sidebar-border shadow-2xl animate-in slide-in-from-left duration-200 z-50">
+            {/* Close Button on Mobile Drawer */}
+            <button
+              onClick={onClose}
+              className="absolute right-3 top-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+
+      {/* Desktop Persistent Docked Sidebar */}
+      <aside
+        className={`hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-sidebar border-r border-sidebar-border z-40 transition-all duration-300 ${
+          collapsed ? 'w-[68px]' : 'w-64'
+        }`}
       >
-        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
-      </button>
-    </aside>
+        {sidebarContent}
+        {/* Collapse Toggle */}
+        <button
+          onClick={onToggleCollapse}
+          className="absolute -right-3 top-7 h-6 w-6 rounded-full border border-sidebar-border bg-sidebar flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors z-50 shadow-sm"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
+      </aside>
+    </>
   );
 });

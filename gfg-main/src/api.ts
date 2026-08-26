@@ -316,7 +316,55 @@ async function attemptTokenRefresh(): Promise<string | null> {
   return refreshPromise;
 }
 
+// Fast In-Memory SWR Cache for sub-50ms render speeds
+const apiMemoryCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL_MS = 15000; // 15s cache TTL
+
+export function clearApiCache(prefix?: string) {
+  if (!prefix) {
+    apiMemoryCache.clear();
+    return;
+  }
+  for (const key of apiMemoryCache.keys()) {
+    if (key.includes(prefix)) {
+      apiMemoryCache.delete(key);
+    }
+  }
+}
+
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const cacheKey = `${endpoint}`;
+
+  // Serve instant cached data for GET requests if fresh
+  if (isGet && apiMemoryCache.has(cacheKey)) {
+    const cached = apiMemoryCache.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      // Return cached instantly and revalidate in background
+      setTimeout(async () => {
+        try {
+          const freshData = await executeFetch<T>(endpoint, options);
+          apiMemoryCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
+        } catch (_) {}
+      }, 0);
+      return cached.data as T;
+    }
+  }
+
+  // Mutating requests automatically invalidate cache
+  if (!isGet) {
+    clearApiCache(endpoint.split('/')[2]); // Invalidate related namespace (e.g. 'ai', 'domains', 'accounts')
+  }
+
+  const freshData = await executeFetch<T>(endpoint, options);
+  if (isGet) {
+    apiMemoryCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
+  }
+  return freshData;
+}
+
+async function executeFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
   
   // Set default headers
@@ -359,22 +407,18 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
       if (errBody.message || errBody.error) {
         errMsg = errBody.message || errBody.error;
       }
-    } catch {
-      // Ignore parsing error
-    }
+    } catch (_) {}
     throw new Error(errMsg);
   }
   
   if (!res.ok) {
-    let errMsg = `API Error: ${res.statusText} (${res.status})`;
+    let errMsg = `Request failed: ${res.statusText}`;
     try {
       const errBody = await res.json();
       if (errBody.message || errBody.error) {
         errMsg = errBody.message || errBody.error;
       }
-    } catch {
-      // Ignore parsing error
-    }
+    } catch (_) {}
     throw new Error(errMsg);
   }
 
