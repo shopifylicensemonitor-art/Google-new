@@ -92,8 +92,10 @@ export default function Inbox() {
       api.getInboxCounts().then(c => setCounts(c)).catch(() => {});
 
       if (data.length > 0) {
-        if (!keepSelected || !selectedMsg || !data.some(m => m.id === selectedMsg.id)) {
-          setSelectedMsg(data[0]);
+        if (keepSelected && selectedMsg && data.some(m => m.id === selectedMsg.id)) {
+          // Keep current selected thread active
+          const updated = data.find(m => m.id === selectedMsg.id);
+          if (updated) setSelectedMsg(updated);
         }
       } else {
         setSelectedMsg(null);
@@ -202,6 +204,21 @@ export default function Inbox() {
       api.getInboxCounts().then(c => setCounts(c)).catch(() => {});
     } catch (_) {}
   };
+
+  // Keyboard shortcut listener (Escape to collapse thread back to inbox)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+      if (e.key === 'Escape' && selectedMsg) {
+        setSelectedMsg(null);
+        setShowMobileDetail(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedMsg]);
 
   // Multi-select actions
   const handleSelectAll = () => {
@@ -820,266 +837,298 @@ export default function Inbox() {
           </nav>
 
           {/* ========================================================================= */}
-          {/* COLUMN 2: Conversation Stream / Dense Message List (320px - 340px) */}
+          {/* VIEW A: Full-Width Gmail Message List (Visible when selectedMsg === null) */}
           {/* ========================================================================= */}
-          <section 
-            aria-label="Conversation list"
-            className={`w-full md:w-[320px] lg:w-[340px] shrink-0 border-r border-border/70 bg-card flex flex-col h-full z-10 ${showMobileDetail ? 'hidden md:flex' : 'flex'}`}
-          >
-            
-            {/* List Top Toolbar: Select All & Bulk Actions */}
-            <div className="h-10 px-3 bg-muted/40 border-b border-border/50 flex items-center justify-between text-xs shrink-0">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  aria-label={selectedIds.size > 0 && selectedIds.size === filteredMessages.length ? "Deselect all conversations" : "Select all conversations"}
-                  className="min-h-[28px] min-w-[28px] flex items-center justify-center hover:bg-muted rounded text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  {selectedIds.size > 0 && selectedIds.size === filteredMessages.length ? (
-                    <CheckSquare className="h-4 w-4 text-primary" aria-hidden="true" />
-                  ) : (
-                    <Square className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </button>
+          {!selectedMsg && (
+            <section 
+              aria-label="Conversation list"
+              className="flex-1 w-full bg-card flex flex-col h-full z-10 overflow-hidden"
+            >
+              {/* List Top Toolbar: Select All & Bulk Actions */}
+              <div className="h-12 px-4 bg-muted/40 border-b border-border/50 flex items-center justify-between text-xs shrink-0 gap-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    aria-label={selectedIds.size > 0 && selectedIds.size === filteredMessages.length ? "Deselect all conversations" : "Select all conversations"}
+                    className="min-h-[30px] min-w-[30px] flex items-center justify-center hover:bg-muted rounded-md text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
+                  >
+                    {selectedIds.size > 0 && selectedIds.size === filteredMessages.length ? (
+                      <CheckSquare className="h-4 w-4 text-primary" aria-hidden="true" />
+                    ) : (
+                      <Square className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
 
-                {selectedIds.size > 0 ? (
-                  <div className="flex items-center gap-1.5" role="toolbar" aria-label="Bulk actions">
-                    <span className="font-bold text-foreground text-[11px] mr-1">
-                      {selectedIds.size} selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleBulkAction('mark_read')}
-                      aria-label="Mark selected as read"
-                      className="min-h-[28px] min-w-[28px] flex items-center justify-center hover:bg-muted rounded text-foreground/80 focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleBulkAction('star')}
-                      aria-label="Star selected conversations"
-                      className="min-h-[28px] min-w-[28px] flex items-center justify-center hover:bg-muted rounded text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500"
-                    >
-                      <Star className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleBulkAction('delete')}
-                      aria-label="Delete selected conversations"
-                      className="min-h-[28px] min-w-[28px] flex items-center justify-center hover:bg-rose-500/10 rounded text-rose-600 dark:text-rose-400 focus-visible:ring-2 focus-visible:ring-rose-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-foreground/75 font-semibold">
-                    {filteredMessages.length} conversations
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 text-[10px] text-foreground/70 font-mono font-bold">
-                {activeSegment.toUpperCase()}
-              </div>
-            </div>
-
-            {/* Message Rows */}
-            <div className="flex-1 overflow-y-auto divide-y divide-border/40" role="feed" aria-label="Prospect message feed">
-              <PullToRefresh onRefresh={async () => { await handleSync(); loadMessages(true); }}>
-                {loading ? (
-                  <div className="p-3 space-y-2">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
-                      <div key={i} className="p-3 space-y-2 rounded-lg border border-border/40 bg-card">
-                        <div className="flex items-center justify-between">
-                          <Skeleton className="h-3.5 w-32 rounded" />
-                          <Skeleton className="h-3 w-10 rounded" />
-                        </div>
-                        <Skeleton className="h-3 w-48 rounded" />
-                        <Skeleton className="h-2.5 w-full rounded" />
-                      </div>
-                    ))}
-                  </div>
-                ) : filteredMessages.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-foreground/70 flex flex-col items-center justify-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-muted/70 flex items-center justify-center text-foreground/50">
-                      <Mail className="h-6 w-6" aria-hidden="true" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground text-sm">No conversations found</p>
-                      <p className="text-xs text-foreground/70 mt-0.5 max-w-[200px]">
-                        Sync mailboxes or choose another folder/account filter.
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSync}
-                      disabled={syncing}
-                      className="gap-2 mt-1 text-xs shadow-2xs font-semibold"
-                    >
-                      <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                      Sync Mailboxes
-                    </Button>
-                  </div>
-                ) : (
-                  filteredMessages.map((msg) => {
-                    const isSelected = selectedMsg?.id === msg.id;
-                    const isChecked = selectedIds.has(msg.id);
-                    return (
-                      <SwipeableListItem
-                        key={msg.id}
-                        onSwipeLeft={() => handleDeleteMsg(msg.id)}
-                        onSwipeRight={() => handleToggleStar(msg)}
-                        leftLabel="Delete"
-                        rightLabel="Star"
+                  {selectedIds.size > 0 ? (
+                    <div className="flex items-center gap-2" role="toolbar" aria-label="Bulk actions">
+                      <span className="font-bold text-foreground text-xs mr-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">
+                        {selectedIds.size} selected
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkAction('mark_read')}
+                        aria-label="Mark selected as read"
+                        title="Mark as read"
+                        className="min-h-[28px] px-2 flex items-center gap-1.5 hover:bg-muted rounded text-foreground/80 focus-visible:ring-2 focus-visible:ring-primary text-xs font-medium"
                       >
-                        <div
-                          role="article"
-                          tabIndex={0}
-                          aria-selected={isSelected}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelectedMsg(msg); setShowMobileDetail(true); } }}
-                          onClick={() => { setSelectedMsg(msg); setShowMobileDetail(true); }}
-                          className={`p-3 cursor-pointer transition-all relative select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                            isSelected
-                              ? 'bg-primary/10 border-l-4 border-l-primary'
-                              : !msg.is_read
-                              ? 'bg-primary/5 hover:bg-primary/10'
-                              : 'hover:bg-muted/50'
-                          }`}
-                        >
-                          {/* Unread Accent Dot */}
-                          {!msg.is_read && (
-                            <div className="absolute top-3.5 right-3 w-2 h-2 rounded-full bg-primary" aria-label="Unread message" />
-                          )}
+                        <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline">Mark read</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkAction('star')}
+                        aria-label="Star selected conversations"
+                        title="Star selected"
+                        className="min-h-[28px] px-2 flex items-center gap-1.5 hover:bg-muted rounded text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500 text-xs font-medium"
+                      >
+                        <Star className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline">Star</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkAction('delete')}
+                        aria-label="Delete selected conversations"
+                        title="Delete selected"
+                        className="min-h-[28px] px-2 flex items-center gap-1.5 hover:bg-rose-500/10 rounded text-rose-600 dark:text-rose-400 focus-visible:ring-2 focus-visible:ring-rose-500 text-xs font-medium"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline">Delete</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className="h-8 px-2.5 text-xs gap-1.5 font-medium text-foreground/80 hover:text-foreground"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                        <span className="hidden sm:inline">Refresh</span>
+                      </Button>
+                      <span className="text-xs text-foreground/60 font-medium border-l border-border/60 pl-3">
+                        {filteredMessages.length} conversation{filteredMessages.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-                          {/* Row Top: Selection + Star + Sender + Time */}
-                          <div className="flex items-center justify-between mb-1 gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-foreground/60 font-mono font-bold bg-muted px-2 py-0.5 rounded uppercase tracking-wider">
+                    {activeSegment.replace('campaign:', '📂 ')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Gmail Message Rows (Full Width) */}
+              <div className="flex-1 overflow-y-auto divide-y divide-border/30" role="feed" aria-label="Prospect message feed">
+                <PullToRefresh onRefresh={async () => { await handleSync(); loadMessages(true); }}>
+                  {loading ? (
+                    <div className="p-4 space-y-3">
+                      {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                        <div key={i} className="p-3.5 flex items-center justify-between gap-4 rounded-lg border border-border/40 bg-card">
+                          <div className="flex items-center gap-3 w-1/4">
+                            <Skeleton className="h-4 w-4 rounded" />
+                            <Skeleton className="h-4 w-4 rounded" />
+                            <Skeleton className="h-4 w-32 rounded" />
+                          </div>
+                          <Skeleton className="h-4 flex-1 rounded" />
+                          <Skeleton className="h-4 w-20 rounded" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : filteredMessages.length === 0 ? (
+                    <div className="py-16 text-center text-xs text-foreground/70 flex flex-col items-center justify-center gap-3">
+                      <div className="w-14 h-14 rounded-full bg-muted/80 flex items-center justify-center text-foreground/50">
+                        <Mail className="h-7 w-7" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-foreground text-sm">No conversations in {activeSegment}</p>
+                        <p className="text-xs text-foreground/70 mt-1 max-w-sm">
+                          Sync mailboxes to fetch fresh replies or switch folders from the sidebar.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className="gap-2 mt-2 text-xs shadow-2xs font-semibold"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                        Sync Active Mailboxes
+                      </Button>
+                    </div>
+                  ) : (
+                    filteredMessages.map((msg) => {
+                      const isChecked = selectedIds.has(msg.id);
+                      return (
+                        <SwipeableListItem
+                          key={msg.id}
+                          onSwipeLeft={() => handleDeleteMsg(msg.id)}
+                          onSwipeRight={() => handleToggleStar(msg)}
+                          leftLabel="Delete"
+                          rightLabel="Star"
+                        >
+                          <div
+                            role="article"
+                            tabIndex={0}
+                            aria-selected={false}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelectedMsg(msg); setShowMobileDetail(true); } }}
+                            onClick={() => { setSelectedMsg(msg); setShowMobileDetail(true); }}
+                            className={`group px-4 py-3 cursor-pointer transition-all flex items-center gap-3 sm:gap-4 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                              !msg.is_read
+                                ? 'bg-primary/5 hover:bg-primary/10 font-semibold'
+                                : 'bg-card hover:bg-muted/60 text-foreground/90'
+                            }`}
+                          >
+                            {/* Checkbox & Star (Left column) */}
+                            <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleSelectId(msg.id, e)}
                                 aria-label={isChecked ? `Deselect ${msg.sender_email}` : `Select ${msg.sender_email}`}
-                                className="text-foreground/70 hover:text-foreground shrink-0 min-h-[24px] min-w-[24px] flex items-center justify-center focus-visible:ring-2 focus-visible:ring-primary rounded"
+                                className="text-foreground/60 hover:text-foreground shrink-0 min-h-[26px] min-w-[26px] flex items-center justify-center focus-visible:ring-2 focus-visible:ring-primary rounded"
                               >
-                                {isChecked ? <CheckSquare className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> : <Square className="h-3.5 w-3.5" aria-hidden="true" />}
+                                {isChecked ? <CheckSquare className="h-4 w-4 text-primary" aria-hidden="true" /> : <Square className="h-4 w-4" aria-hidden="true" />}
                               </button>
 
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleStar(msg, e)}
                                 aria-label={msg.is_starred ? `Unstar message from ${msg.sender_email}` : `Star message from ${msg.sender_email}`}
-                                className="text-foreground/60 hover:text-amber-500 shrink-0 min-h-[24px] min-w-[24px] flex items-center justify-center focus-visible:ring-2 focus-visible:ring-amber-500 rounded"
+                                className="text-foreground/50 hover:text-amber-500 shrink-0 min-h-[26px] min-w-[26px] flex items-center justify-center focus-visible:ring-2 focus-visible:ring-amber-500 rounded"
                               >
-                                <Star className={`h-3.5 w-3.5 ${msg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} aria-hidden="true" />
+                                <Star className={`h-4 w-4 ${msg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} aria-hidden="true" />
                               </button>
+                            </div>
 
+                            {/* Sender / Prospect Column (Fixed width like Gmail) */}
+                            <div className="w-40 sm:w-56 shrink-0 truncate flex items-center gap-1.5">
+                              {!msg.is_read && (
+                                <span className="w-2 h-2 rounded-full bg-primary shrink-0" aria-label="Unread" />
+                              )}
                               <span className={`text-xs truncate ${!msg.is_read ? 'font-bold text-foreground' : 'font-medium text-foreground/90'}`}>
                                 {msg.sender_email}
                               </span>
                             </div>
 
-                            <span className="text-[10px] text-foreground/70 shrink-0 font-mono font-medium">
-                              {formatRelativeTime(msg.created_at)}
-                            </span>
-                          </div>
-
-                          {/* Subject */}
-                          <p className={`text-xs truncate mb-1 pr-4 ${!msg.is_read ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
-                            {msg.subject || '(No subject)'}
-                          </p>
-
-                          {/* Snippet */}
-                          <p className="text-[11px] text-foreground/70 line-clamp-1 mb-2 leading-normal">
-                            {msg.body_text || msg.body_html?.replace(/<[^>]*>?/gm, '') || 'No preview text'}
-                          </p>
-
-                          {/* Row Bottom: Sentiment Badge + Campaign Tag */}
-                          <div className="flex items-center justify-between pt-0.5">
-                            {getSentimentBadge(msg.sentiment)}
-                            {msg.contact_list && (
-                              <span className="text-[10px] text-foreground/70 font-mono font-medium bg-muted px-1.5 py-0.5 rounded truncate max-w-[130px] border border-border/50">
-                                {msg.contact_list}
+                            {/* Subject & Snippet Column (Takes remaining space) */}
+                            <div className="flex-1 min-w-0 flex items-center gap-2 truncate text-xs">
+                              <span className={`truncate shrink-0 max-w-[280px] sm:max-w-md ${!msg.is_read ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>
+                                {msg.subject || '(No subject)'}
                               </span>
-                            )}
+                              <span className="text-foreground/50 hidden md:inline truncate font-normal">
+                                — {msg.body_text || msg.body_html?.replace(/<[^>]*>?/gm, '') || 'No preview text'}
+                              </span>
+                            </div>
+
+                            {/* Sentiment Badge & Campaign Tag */}
+                            <div className="hidden lg:flex items-center gap-2 shrink-0">
+                              {getSentimentBadge(msg.sentiment)}
+                              {msg.contact_list && (
+                                <span className="text-[10px] text-foreground/70 font-mono font-medium bg-muted px-2 py-0.5 rounded truncate max-w-[120px] border border-border/40">
+                                  {msg.contact_list}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Date Column (Far right) */}
+                            <div className="shrink-0 text-right min-w-[70px]">
+                              <span className="text-[11px] text-foreground/60 font-mono font-medium whitespace-nowrap">
+                                {formatRelativeTime(msg.created_at)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </SwipeableListItem>
-                    );
-                  })
-                )}
-              </PullToRefresh>
-            </div>
-          </section>
+                        </SwipeableListItem>
+                      );
+                    })
+                  )}
+                </PullToRefresh>
+              </div>
+            </section>
+          )}
 
           {/* ========================================================================= */}
-          {/* COLUMN 3: Thread & Received Conversation View + Composer (flex-1) */}
+          {/* VIEW B: Full-Width Gmail Thread View (Visible when selectedMsg !== null) */}
           {/* ========================================================================= */}
-          <section 
-            aria-label="Conversation message thread"
-            className={`flex-1 flex flex-col bg-background h-full overflow-hidden ${!showMobileDetail ? 'hidden md:flex' : 'flex'}`}
-          >
-            {selectedMsg ? (
-              <>
-                {/* Thread Header Bar */}
-                <div className="h-14 px-4 bg-card border-b border-border/70 flex items-center justify-between shrink-0 gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowMobileDetail(false)}
-                      aria-label="Back to conversation list"
-                      className="md:hidden min-h-[32px] min-w-[32px] flex items-center justify-center text-foreground hover:bg-muted rounded-lg focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <div className="min-w-0">
-                      <h2 className="font-heading text-sm font-bold text-foreground truncate flex items-center gap-2">
-                        {selectedMsg.subject || 'Re: Outreach Prospect Inquiry'}
-                        {getSentimentBadge(selectedMsg.sentiment)}
-                      </h2>
-                      <p className="text-[11px] text-foreground/70 truncate">
-                        Prospect: <span className="font-semibold text-foreground">{selectedMsg.sender_email}</span>
-                        {selectedMsg.account_email && (
-                          <span> · Via <span className="font-mono text-primary font-semibold">{selectedMsg.account_email}</span></span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+          {selectedMsg && (
+            <section 
+              aria-label="Conversation message thread"
+              className="flex-1 w-full flex flex-col bg-background h-full overflow-hidden z-10"
+            >
+              {/* Sticky Gmail Top Toolbar */}
+              <div className="h-14 px-4 bg-card border-b border-border/70 flex items-center justify-between shrink-0 gap-3 shadow-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* Gmail Back Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedMsg(null);
+                      setShowMobileDetail(false);
+                    }}
+                    aria-label="Back to inbox list"
+                    className="h-9 px-3 gap-1.5 text-xs font-semibold hover:bg-muted border-border/70 shadow-2xs"
+                  >
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                    <span>Back to Inbox</span>
+                    <kbd className="hidden sm:inline-block font-mono text-[9px] bg-muted px-1.5 py-0.5 rounded border border-border/60 text-muted-foreground ml-1">Esc</kbd>
+                  </Button>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowDossier(!showDossier)}
-                      aria-label="Toggle prospect lead profile"
-                      className={`min-h-[32px] px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                        showDossier
-                          ? 'bg-primary text-primary-foreground border-primary shadow-xs'
-                          : 'bg-background hover:bg-muted text-foreground/80 border-border/70'
-                      }`}
-                      title="View Prospect Intelligence & Contact Details"
-                    >
-                      <User className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span className="hidden sm:inline">Lead Info</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStar(selectedMsg)}
-                      aria-label={selectedMsg.is_starred ? "Unstar active conversation" : "Star active conversation"}
-                      className="min-h-[32px] min-w-[32px] flex items-center justify-center text-foreground/70 hover:text-amber-500 rounded-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                    >
-                      <Star className={`h-4 w-4 ${selectedMsg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteMsg(selectedMsg.id)}
-                      aria-label="Delete active conversation"
-                      className="min-h-[32px] min-w-[32px] flex items-center justify-center text-foreground/70 hover:text-rose-600 rounded-lg hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                  <div className="h-5 w-px bg-border/60 mx-1 hidden sm:block" />
+
+                  <div className="min-w-0">
+                    <h2 className="font-heading text-sm font-bold text-foreground truncate flex items-center gap-2">
+                      {selectedMsg.subject || 'Re: Outreach Prospect Inquiry'}
+                      {getSentimentBadge(selectedMsg.sentiment)}
+                    </h2>
+                    <p className="text-[11px] text-foreground/70 truncate hidden sm:block">
+                      Lead: <span className="font-semibold text-foreground">{selectedMsg.sender_email}</span>
+                      {selectedMsg.account_email && (
+                        <span> · Received on <span className="font-mono text-primary font-semibold">{selectedMsg.account_email}</span></span>
+                      )}
+                    </p>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowDossier(!showDossier)}
+                    aria-label="Toggle prospect lead profile"
+                    className={`h-8 px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                      showDossier
+                        ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                        : 'bg-background hover:bg-muted text-foreground/80 border-border/70'
+                    }`}
+                    title="View Prospect Intelligence & Contact Details"
+                  >
+                    <User className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="hidden sm:inline">Lead Info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStar(selectedMsg)}
+                    aria-label={selectedMsg.is_starred ? "Unstar active conversation" : "Star active conversation"}
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-amber-500 rounded-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    title={selectedMsg.is_starred ? "Unstar" : "Star"}
+                  >
+                    <Star className={`h-4 w-4 ${selectedMsg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMsg(selectedMsg.id)}
+                    aria-label="Delete active conversation"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-rose-600 rounded-lg hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    title="Delete message"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
 
                 {/* Conversation Stream */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4" role="log" aria-label="Message history">
