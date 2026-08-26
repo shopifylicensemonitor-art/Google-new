@@ -395,6 +395,8 @@ async function syncAccountInbox(account, db, uid) {
       newMessages: accountNewCount,
       lastSync: new Date().toISOString(),
     };
+  }
+
   // Handle SMTP / Custom Domain accounts without native IMAP
   return {
     account: account.email,
