@@ -163,13 +163,22 @@ function createSmtpTransport(account) {
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
+    const userEmail = (req.user && req.user.email) ? req.user.email.toLowerCase() : '';
+
+    // Claim any accounts matching the user's email address
+    if (userEmail && req.userId) {
+      try {
+        await db.prepare("UPDATE accounts SET user_id = ? WHERE (user_id IS NULL OR user_id != ?) AND LOWER(email) = ?").run(req.userId, req.userId, userEmail);
+      } catch (_) {}
+    }
+
     const accounts = await db.prepare(`
       SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
              type, smtp_host, smtp_port, smtp_secure, created_at, user_id
       FROM accounts
-      WHERE user_id = ?
+      WHERE user_id = ? OR LOWER(email) = ?
       ORDER BY id ASC
-    `).all(req.userId);
+    `).all(req.userId, userEmail);
 
     res.json(accounts || []);
   } catch (err) {
@@ -216,9 +225,26 @@ router.get('/callback', async (req, res) => {
     const email = data.email;
 
     const db = await getDb();
-    const ownerId = await readOwnerState(req.query.state);
+    let ownerId = null;
+    try {
+      ownerId = await readOwnerState(req.query.state);
+    } catch (_) {
+      ownerId = null;
+    }
+
+    if (!ownerId) {
+      // Find matching user by email
+      const userRow = await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
+      if (userRow) {
+        ownerId = userRow.id;
+      } else {
+        const firstUser = await db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
+        if (firstUser) ownerId = firstUser.id;
+      }
+    }
+
     const existing = await db
-      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?) AND user_id = ?')
+      .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?) AND (user_id = ? OR user_id IS NULL)')
       .get(email, ownerId);
 
     if (existing) {

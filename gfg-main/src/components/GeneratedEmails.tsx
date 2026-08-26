@@ -1,12 +1,19 @@
 import { useMemo, memo, CSSProperties, useState, useEffect, useCallback } from 'react';
-import { Send, RefreshCw, Mail, Download, ArrowUpAZ, ArrowDownZA, Globe, Building2, List, Layers, Copy } from 'lucide-react';
+import { Send, RefreshCw, Mail, Download, ArrowUpAZ, ArrowDownZA, Globe, Building2, List, Layers, Copy, Smartphone, Monitor, Settings2, Check, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { EmailEntry } from '@/hooks/useEmailList';
 import { List as VList } from 'react-window';
 import { toast } from '@/hooks/use-toast';
 import { PUBLIC_PROVIDERS } from '@/lib/publicProviders';
-import { buildMailtoLink } from '@/lib/randomizeMailto';
+import { buildMailtoLink, dispatchEmailClient, EmailClientType } from '@/lib/randomizeMailto';
 import { resolveProspectUrl } from '@/lib/resolveProspectUrl';
 
 export type FilterType = 'all' | 'sent' | 'pending';
@@ -51,6 +58,7 @@ interface RowProps {
   enableRandomization: boolean;
   isOverLimit: boolean;
   actionMode?: 'email' | 'url';
+  emailClient: EmailClientType;
 }
 
 // Helper to highlight search matches in email text
@@ -73,7 +81,7 @@ function HighlightedEmail({ email, query }: { email: string; query: string }) {
 
 const Row = memo(
   ({ index, style, ariaAttributes, ...props }: { index: number; style: CSSProperties; ariaAttributes: { "aria-posinset": number; "aria-setsize": number; role: "listitem" } } & RowProps) => {
-    const { entries, subject, body, onSendClick, userName, sentStatus, searchQuery, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit, actionMode = 'email' } = props;
+    const { entries, subject, body, onSendClick, userName, sentStatus, searchQuery, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit, actionMode = 'email', emailClient = 'default' } = props;
     const entry = entries[index];
     if (!entry) return <></>;
 
@@ -111,7 +119,18 @@ const Row = memo(
         });
         return;
       }
-      window.location.href = mailtoLink;
+      
+      dispatchEmailClient({
+        recipient: entry.email,
+        subject: processedSubject,
+        body: processedBody,
+        cc,
+        bcc,
+        myInboxTo,
+        ccRoutingMode,
+        enableRandom: enableRandomization,
+        clientType: emailClient,
+      });
       onSendClick(entry.email);
     };
 
@@ -283,6 +302,10 @@ export function GeneratedEmails({
 }: GeneratedEmailsProps) {
   const [actionMode, setActionMode] = useState<'email' | 'url'>('email');
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [emailClient, setEmailClient] = useState<EmailClientType>(() => {
+    return (localStorage.getItem('peakx-email-client') as EmailClientType) || 'default';
+  });
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
   const [isOpeningBccBatches, setIsOpeningBccBatches] = useState(false);
   const [bccBatchQueue, setBccBatchQueue] = useState<EmailEntry[][]>([]);
   const [bccBatchTotal, setBccBatchTotal] = useState(0);
@@ -295,6 +318,10 @@ export function GeneratedEmails({
   const goal = parseInt(goalInput, 10);
   const validGoal = !isNaN(goal) && goal > 0;
   const isOverLimit = validGoal && dailyCount >= goal;
+
+  useEffect(() => {
+    localStorage.setItem('peakx-email-client', emailClient);
+  }, [emailClient]);
 
   const triggerEmail = useCallback((entry: EmailEntry) => {
     if (isOverLimit) {
@@ -339,7 +366,7 @@ export function GeneratedEmails({
     processedSubject = processedSubject.replace(/\{\{(\w+)\}\}/g, (_, key) => resolveVar(key));
     processedBody = processedBody.replace(/\{\{(\w+)\}\}/g, (_, key) => resolveVar(key));
 
-    const link = buildMailtoLink({
+    dispatchEmailClient({
       recipient: entry.email,
       subject: processedSubject,
       body: processedBody,
@@ -348,11 +375,10 @@ export function GeneratedEmails({
       myInboxTo,
       ccRoutingMode,
       enableRandom: enableRandomization,
+      clientType: emailClient,
     });
-
-    window.open(link, '_blank');
     onSendClick(entry.email);
-  }, [subject, body, userName, onSendClick, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit]);
+  }, [subject, body, userName, onSendClick, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, emailClient, isOverLimit]);
 
   useEffect(() => {
     if (batchQueue.length > 0 && isOpeningBatch) {
@@ -434,7 +460,7 @@ export function GeneratedEmails({
       .replace(/\{\{pain_point\}\}/g, 'outreach')
       .replace(/\{\{(\w+)\}\}/g, '');
 
-    const link = buildMailtoLink({
+    dispatchEmailClient({
       recipient,
       subject: processedSubject,
       body: processedBody,
@@ -443,13 +469,12 @@ export function GeneratedEmails({
       myInboxTo: '',
       ccRoutingMode,
       enableRandom: enableRandomization,
+      clientType: emailClient,
     });
-
-    window.open(link, '_blank');
     
     const emailsInBatch = batch.map(e => e.email);
     onSendBatchClick(emailsInBatch);
-  }, [subject, body, userName, onSendBatchClick, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit]);
+  }, [subject, body, userName, onSendBatchClick, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, emailClient, isOverLimit]);
 
   useEffect(() => {
     if (bccBatchQueue.length > 0 && isOpeningBccBatches) {
@@ -598,7 +623,8 @@ export function GeneratedEmails({
     enableRandomization,
     isOverLimit,
     actionMode,
-  }), [filteredEmails, subject, body, onSendClick, userName, sentStatus, searchQuery, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit, actionMode]);
+    emailClient,
+  }), [filteredEmails, subject, body, onSendClick, userName, sentStatus, searchQuery, cc, bcc, myInboxTo, ccRoutingMode, enableRandomization, isOverLimit, actionMode, emailClient]);
 
   const filters: { key: FilterType; label: string }[] = [
     { key: 'all', label: 'All' },
@@ -720,6 +746,21 @@ export function GeneratedEmails({
                 <span>Open Store URLs</span>
               </Button>
             </div>
+
+            {/* Send Configuration Quick Setup Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] px-2 rounded-md font-bold flex items-center gap-1 border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary shadow-xs"
+              onClick={() => setIsConfigDialogOpen(true)}
+              title="Configure Send Client, Target App & Delivery Mode"
+            >
+              <Settings2 className="h-3 w-3 text-primary" />
+              <span>
+                {emailClient === 'gmail_app' ? '📱 Gmail App' : emailClient === 'gmail_web' ? '🌐 Gmail Web' : '📬 Default Mail'}
+              </span>
+            </Button>
+
             {isOpeningBatch && batchTotal > 0 && (
               <Badge variant="outline" className="text-[10px] animate-pulse border-primary/30 text-primary">
                 Sending {batchSent}/{batchTotal}...
@@ -1021,6 +1062,189 @@ export function GeneratedEmails({
           )}
         </div>
       )}
+
+      {/* Send Setup & Configuration Modal */}
+      <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Settings2 className="h-5 w-5 text-primary" />
+              Manual Send & Client Setup
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Choose how and where outreach emails are opened from your device.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* 1. Target Email Client / App */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                <span>Target Email App / Composer</span>
+                <span className="text-[10px] text-muted-foreground font-normal">Active Choice</span>
+              </label>
+
+              <div className="grid grid-cols-1 gap-2">
+                {/* Gmail Mobile App (Native Deep Link) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailClient('gmail_app');
+                    toast({ title: 'Gmail App Selected', description: 'Emails will open directly inside the Gmail mobile app.' });
+                  }}
+                  className={`p-3 rounded-xl border text-left flex items-start justify-between transition-all ${
+                    emailClient === 'gmail_app'
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Smartphone className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>📱 Gmail Mobile App</span>
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+                          Recommended for Phones
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                        Direct native deep link (`googlegmail://` / Intent). Fixes mobile browsers blocking popup windows.
+                      </p>
+                    </div>
+                  </div>
+                  {emailClient === 'gmail_app' && <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />}
+                </button>
+
+                {/* Gmail Web Browser Composer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailClient('gmail_web');
+                    toast({ title: 'Gmail Web Selected', description: 'Emails will open in a new mail.google.com browser tab.' });
+                  }}
+                  className={`p-3 rounded-xl border text-left flex items-start justify-between transition-all ${
+                    emailClient === 'gmail_web'
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Monitor className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>🌐 Gmail Web Composer</span>
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 text-blue-400 border-blue-500/30 bg-blue-500/10">
+                          Desktop Browser
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                        Opens Gmail composer in a new browser tab (`mail.google.com/mail/?view=cm`).
+                      </p>
+                    </div>
+                  </div>
+                  {emailClient === 'gmail_web' && <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />}
+                </button>
+
+                {/* Default OS Mail Client (Mailto) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailClient('default');
+                    toast({ title: 'Default Client Selected', description: 'Emails will use standard mailto: links.' });
+                  }}
+                  className={`p-3 rounded-xl border text-left flex items-start justify-between transition-all ${
+                    emailClient === 'default'
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Mail className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-foreground">
+                        📬 Default Email App (Mailto)
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                        Standard OS protocol for Apple Mail, Outlook, Samsung Mail, or Thunderbird.
+                      </p>
+                    </div>
+                  </div>
+                  {emailClient === 'default' && <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Delivery Mode: Individual vs BCC Batches */}
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              <label className="text-xs font-bold text-foreground">Delivery Mode</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchMode(false)}
+                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    !isBatchMode
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-bold text-foreground">🎯 Individual Mode</span>
+                    {!isBatchMode && <Check className="h-3.5 w-3.5 text-primary" />}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Send 1-by-1 with personal merge tags ({'{name}'}, {'{store}'}).
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsBatchMode(true)}
+                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    isBatchMode
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-bold text-foreground">📦 BCC Batches</span>
+                    {isBatchMode && <Check className="h-3.5 w-3.5 text-primary" />}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Groups {bccBatchSize} leads into BCC for high-speed sending.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            {/* 3. CC / BCC Configuration Summary */}
+            <div className="p-3 rounded-xl bg-muted/30 border border-border/40 text-[11px] space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Configured CC:</span>
+                <span className="text-foreground font-semibold truncate max-w-[180px]">{cc || 'None'}</span>
+              </div>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Configured BCC:</span>
+                <span className="text-foreground font-semibold truncate max-w-[180px]">{bcc || 'None'}</span>
+              </div>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Routing Mode:</span>
+                <span className="text-primary font-semibold">
+                  {ccRoutingMode === 'reroute' ? '🛡️ Reroute CC to BCC' : '✉️ Standard CC'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              className="w-full text-xs font-bold"
+              onClick={() => setIsConfigDialogOpen(false)}
+            >
+              Done & Save Setup
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

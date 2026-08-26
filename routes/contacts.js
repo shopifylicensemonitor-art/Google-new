@@ -47,12 +47,11 @@ router.get('/lists', async (req, res) => {
   }
 });
 
-/** Retrieve configuration state for a device/IP scoped by user. */
+/** Retrieve configuration state for a device/IP strictly scoped by current user. */
 router.get('/state/retrieve', async (req, res) => {
   try {
     const db = await getDb();
     const deviceId = req.query.device_id || '';
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
     const uid = req.userId;
 
     let row;
@@ -60,14 +59,10 @@ router.get('/state/retrieve', async (req, res) => {
       row = await db.prepare('SELECT state_data FROM device_states WHERE device_id = ? AND user_id = ?').get(deviceId, uid);
     }
     if (!row) {
-      row = await db.prepare('SELECT state_data FROM device_states WHERE ip_address = ? AND user_id = ? ORDER BY updated_at DESC').get(ip, uid);
-    }
-    // Fallback for legacy state without user_id if not found
-    if (!row && deviceId) {
-      row = await db.prepare('SELECT state_data FROM device_states WHERE device_id = ? AND user_id IS NULL').get(deviceId);
+      row = await db.prepare('SELECT state_data FROM device_states WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1').get(uid);
     }
 
-    if (row) {
+    if (row && row.state_data) {
       res.json(JSON.parse(row.state_data));
     } else {
       res.json(null);

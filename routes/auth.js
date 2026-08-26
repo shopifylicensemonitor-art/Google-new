@@ -394,57 +394,6 @@ router.post('/pin-login', async (req, res) => {
   }
 });
 
-/** PHASE 4: Refresh token endpoint — exchange refresh token for new access token */
-router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    return res.status(400).json({ error: 'Refresh token is required.' });
-  }
-
-  try {
-    const db = await getDb();
-
-    // Find the refresh token in database
-    const tokenRecord = await db.prepare(
-      'SELECT * FROM refresh_tokens WHERE token = ? AND revoked = false'
-    ).get(refreshToken);
-
-    if (!tokenRecord) {
-      return res.status(401).json({ error: 'Invalid or revoked refresh token.' });
-    }
-
-    // Check if token has expired
-    const expiresAt = new Date(tokenRecord.expires_at);
-    if (expiresAt < new Date()) {
-      return res.status(401).json({ error: 'Refresh token has expired.' });
-    }
-
-    // Get user details
-    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(tokenRecord.user_id);
-    if (!user) {
-      return res.status(401).json({ error: 'User not found.' });
-    }
-
-    // Issue new access token
-    const newAccessToken = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRY }
-    );
-
-    res.json({
-      success: true,
-      token: newAccessToken,
-      message: 'Token refreshed successfully.',
-      user: { id: user.id, email: user.email, name: user.name, role: user.role }
-    });
-  } catch (err) {
-    logger.error({ err }, 'Token refresh error');
-    res.status(500).json({ error: 'Token refresh failed. Please try again.' });
-  }
-});
-
 /** PHASE 5: Forgot password endpoint — generate reset token and send email */
 router.post('/forgot-password', emailLimiter, async (req, res) => {
   const { email } = req.body;
@@ -806,8 +755,14 @@ router.post('/change-password', async (req, res) => {
     const decoded = verifyToken(token);
     const { currentPassword, newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    // Validate password strength using shared validation (same rules as signup)
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        error: 'Password does not meet strength requirements.',
+        requirements: passwordValidation.errors,
+        strength: 'weak'
+      });
     }
 
     const db = await getDb();

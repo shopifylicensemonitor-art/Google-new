@@ -471,13 +471,30 @@ async function processNextItem() {
         continue; // Outside allowed hours, skip this one
       }
 
-      // Get the assigned sender account
-      const account = await db.prepare('SELECT * FROM accounts WHERE id = ?').get(item.account_id);
+      // Get the assigned sender account with dynamic fallback for campaign/user
+      let account = null;
+      if (item.account_id) {
+        account = await db.prepare('SELECT * FROM accounts WHERE id = ?').get(item.account_id);
+      }
+      if (!account || account.status !== 'active') {
+        if (item.user_id) {
+          account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id ASC LIMIT 1").get(item.user_id);
+        }
+        if (!account) {
+          account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+        }
+        if (account) {
+          try {
+            await db.prepare('UPDATE queue SET account_id = ? WHERE id = ?').run(account.id, item.id);
+          } catch (_) {}
+        }
+      }
+
       if (!account || account.status !== 'active') {
         // Mark as failed — no valid account
-        await db.prepare("UPDATE queue SET status = 'failed', error = 'Account inactive or missing' WHERE id = ?").run(item.id);
+        await db.prepare("UPDATE queue SET status = 'failed', error = 'No active sender accounts available' WHERE id = ?").run(item.id);
         await db.prepare('UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = ?').run(item.campaign_id);
-        await logEvent(db, item.campaign_id, item.account_id, item.recipient_email, 'failed', 'Account inactive or missing', item.id);
+        await logEvent(db, item.campaign_id, item.account_id, item.recipient_email, 'failed', 'No active sender accounts available', item.id);
         continue;
       }
 
