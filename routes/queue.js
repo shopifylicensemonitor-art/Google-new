@@ -27,8 +27,8 @@ router.get('/worker/status', async (req, res) => {
 /** Trigger immediate dispatch tick manually. */
 router.post('/worker/trigger', async (req, res) => {
   try {
-    processNextItem().catch(() => {});
-    res.json({ success: true, message: 'Worker dispatch tick triggered manually.' });
+    const result = await processNextItem();
+    res.json({ success: true, message: 'Worker dispatch tick completed.', processedCount: result?.processedCount || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

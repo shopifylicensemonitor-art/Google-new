@@ -815,7 +815,7 @@ router.post('/:id/launch', async (req, res) => {
     let processingStarted = true;
     let processingError = null;
     try {
-      triggerImmediateDispatch().catch(err => logger.error({ err }, 'Error in immediate launch dispatch'));
+      await processNextItem();
     } catch (processErr) {
       processingStarted = false;
       processingError = processErr && processErr.message ? processErr.message : String(processErr);

@@ -339,9 +339,18 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
 
   useEffect(() => {
     loadData();
-    // Poll progress updates every 10s (or 60s in battery saver mode) for active campaigns
+    // Poll progress updates every 10s (or 60s in battery saver mode)
     const intervalMs = batterySaver ? 60000 : 10000;
-    const interval = setInterval(loadData, intervalMs);
+    const interval = setInterval(() => {
+      loadData();
+      // If there are sending campaigns, trigger a worker delivery tick to drive serverless sending
+      setCampaigns(prev => {
+        if (prev && prev.some(c => c.status === 'sending')) {
+          api.triggerWorker().catch(() => {});
+        }
+        return prev;
+      });
+    }, intervalMs);
     return () => clearInterval(interval);
   }, [batterySaver]);
 
@@ -2859,6 +2868,16 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                           )}
                           {c.status === 'sending' && (
                             <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRetry(c.id)}
+                                className="h-8 gap-1 rounded-lg text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 border-primary/40 shadow-2xs"
+                                title="Instantly trigger immediate email dispatch batch"
+                              >
+                                <Zap className="h-3.5 w-3.5 text-primary" />
+                                <span>Dispatch Now</span>
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"

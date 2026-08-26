@@ -317,7 +317,7 @@ async function syncContactListsToActiveCampaigns(db) {
     const activeCampaigns = await db.prepare(`
       SELECT c.id, c.contact_list, c.user_id, c.status
       FROM campaigns c
-      WHERE c.status IN ('sending', 'paused') AND c.contact_list IS NOT NULL AND c.contact_list != ''
+      WHERE c.status IN ('sending') AND c.contact_list IS NOT NULL AND c.contact_list != ''
     `).all();
 
     if (!activeCampaigns || activeCampaigns.length === 0) return { syncedCampaigns: 0, newlyQueuedContacts: 0 };
@@ -326,36 +326,38 @@ async function syncContactListsToActiveCampaigns(db) {
     let syncedCampaignsCount = 0;
 
     for (const campaign of activeCampaigns) {
+      // Check if campaign already has queue items populated
+      const existingQueueRows = await db.prepare(`
+        SELECT COUNT(*) as count
+        FROM queue
+        WHERE campaign_id = ?
+      `).get(campaign.id);
+
+      const queueCount = Number(existingQueueRows?.count || 0);
+      if (queueCount > 0) {
+        // Queue is already populated, do not block the worker with redundant list scans
+        continue;
+      }
+
       let contacts = [];
       if (campaign.user_id) {
         contacts = await db.prepare(`
           SELECT email, fields
           FROM contacts
           WHERE list_name = ? AND user_id = ?
+          LIMIT 500
         `).all(campaign.contact_list, campaign.user_id);
       } else {
         contacts = await db.prepare(`
           SELECT email, fields
           FROM contacts
           WHERE list_name = ?
+          LIMIT 500
         `).all(campaign.contact_list);
       }
 
       if (!contacts || contacts.length === 0) continue;
-
-      const existingQueueRows = await db.prepare(`
-        SELECT recipient_email
-        FROM queue
-        WHERE campaign_id = ?
-      `).all(campaign.id);
-
-      const existingEmailsSet = new Set(
-        existingQueueRows.map(r => (r.recipient_email || '').toLowerCase())
-      );
-
-      const missingContacts = contacts.filter(
-        c => c.email && !existingEmailsSet.has(c.email.toLowerCase())
-      );
+      const missingContacts = contacts.filter(c => c.email);
 
       if (missingContacts.length > 0) {
         let accounts = [];
