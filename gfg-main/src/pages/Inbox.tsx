@@ -1363,19 +1363,8 @@ export default function Inbox() {
                     </div>
                   </div>
                 )}
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-foreground/70">
-                <div className="w-14 h-14 rounded-2xl bg-muted/70 flex items-center justify-center mb-3">
-                  <Mail className="h-7 w-7 opacity-50 text-foreground" aria-hidden="true" />
-                </div>
-                <p className="text-sm font-bold text-foreground">Select a Prospect Conversation</p>
-                <p className="text-xs mt-1 max-w-xs text-foreground/70">
-                  Choose a received reply from the list to inspect lead intelligence and respond.
-                </p>
-              </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {/* ========================================================================= */}
           {/* ON-DEMAND PROSPECT LEAD DOSSIER (Slide-Over Drawer) */}
