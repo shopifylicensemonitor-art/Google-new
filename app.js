@@ -195,8 +195,8 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     d.setDate(d.getDate() - days);
     const startDate = d.toISOString();
     const logs = await db.prepare(
-      "SELECT l.status, l.created_at FROM logs l JOIN campaigns c ON l.campaign_id = c.id WHERE c.user_id = ? AND l.created_at >= ?"
-    ).all(uid, startDate);
+      "SELECT l.status, l.created_at FROM logs l LEFT JOIN campaigns c ON l.campaign_id = c.id WHERE (l.user_id = ? OR c.user_id = ?) AND l.created_at >= ?"
+    ).all(uid, uid, startDate);
 
     // Group logs by day
     const chartData = {};
@@ -217,13 +217,13 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
 
     // Fetch recent logs
     const recent_logs = await db.prepare(`
-      SELECT l.*, c.name as campaign_name
+      SELECT l.*, COALESCE(c.name, 'Deleted Campaign') as campaign_name
       FROM logs l
       LEFT JOIN campaigns c ON l.campaign_id = c.id
-      WHERE c.user_id = ?
+      WHERE l.user_id = ? OR c.user_id = ?
       ORDER BY l.created_at DESC
       LIMIT 10
-    `).all(uid);
+    `).all(uid, uid);
 
     res.json({ stats, campaigns, queue, chartData: Object.values(chartData), recent_logs });
   } catch (err) {

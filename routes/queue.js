@@ -49,10 +49,10 @@ router.get('/logs/recent', async (req, res) => {
         l.queue_id,
         (SELECT id FROM queue WHERE campaign_id = l.campaign_id AND recipient_email = l.recipient_email LIMIT 1)
       )
-      WHERE c.user_id = ? OR a.user_id = ?
+      WHERE l.user_id = ? OR c.user_id = ? OR a.user_id = ?
       ORDER BY l.created_at DESC
       LIMIT ?
-    `).all(req.userId, req.userId, limit);
+    `).all(req.userId, req.userId, req.userId, limit);
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: err.message });
