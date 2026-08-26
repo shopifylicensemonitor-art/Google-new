@@ -107,6 +107,12 @@ export default function Login() {
         if (!res.ok) {
           throw new Error(data?.error || "Account creation failed.");
         }
+        if (data.token) {
+          localStorage.setItem("auth_token", data.token);
+          if (data.refreshToken) localStorage.setItem("refresh_token", data.refreshToken);
+          navigate("/dashboard");
+          return;
+        }
         navigate(`/verify-email?email=${encodeURIComponent(trimmedEmail)}`);
         return;
       } else {
