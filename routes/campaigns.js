@@ -316,9 +316,7 @@ router.put('/:id', async (req, res) => {
     const db = await getDb();
     const campaign = await getOwnedCampaign(db, req.params.id, req.userId, 'status');
     if (!campaign) return res.status(404).json({ error: 'Campaign not found.' });
-    if (campaign.status === 'sending') {
-      return res.status(400).json({ error: 'Cannot edit a campaign while it is sending. Pause it first.' });
-    }
+    
     const fields = req.body;
     const allowed = [
       'name', 'subject', 'body_html', 'body_plain', 'contact_list',
@@ -343,7 +341,7 @@ router.put('/:id', async (req, res) => {
 
     if (fields.contact_list) {
       const countRow = await db.prepare(
-        'SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?'
+        'SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND (user_id = ? OR user_id IS NULL)'
       ).get(fields.contact_list, req.userId);
       updates.push('total_contacts = ?');
       values.push(countRow ? countRow.total : 0);
@@ -354,6 +352,17 @@ router.put('/:id', async (req, res) => {
       if (updates.length > 0) {
         values.push(req.params.id);
         await txDb.prepare(`UPDATE campaigns SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      }
+
+      // If account_ids updated, update all pending queue items to the new active sender accounts
+      if (fields.account_ids) {
+        try {
+          const rawAccs = typeof fields.account_ids === 'string' ? JSON.parse(fields.account_ids) : fields.account_ids;
+          if (Array.isArray(rawAccs) && rawAccs.length > 0) {
+            const firstAcc = rawAccs[0];
+            await txDb.prepare("UPDATE queue SET account_id = ? WHERE campaign_id = ? AND status = 'pending'").run(firstAcc, req.params.id);
+          }
+        } catch (_) {}
       }
 
       if (!fields.subject && !fields.body_html && !fields.body_plain) {
