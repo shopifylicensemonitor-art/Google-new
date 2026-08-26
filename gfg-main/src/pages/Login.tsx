@@ -52,9 +52,12 @@ export default function Login() {
     setError(null);
     setShowGoogleHint(false);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/google-url`);
-      if (!res.ok) throw new Error("Failed to get Google login URL");
+      const redirectUri = `${window.location.origin}/api/auth/callback`;
+      const res = await fetch(`${API_BASE}/api/auth/google-url?redirect_uri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to get Google login URL");
+      }
       if (!data.url) throw new Error("Invalid login response from server");
       window.location.href = data.url;
     } catch (err: unknown) {

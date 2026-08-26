@@ -80,19 +80,23 @@ function validatePassword(password) {
   };
 }
 
-function getLoginOAuth2Client() {
+function getLoginOAuth2Client(customRedirectUri) {
+  const redirectUri = customRedirectUri || process.env.GOOGLE_LOGIN_REDIRECT_URI || (process.env.FRONTEND_ORIGIN ? `${process.env.FRONTEND_ORIGIN}/api/auth/callback` : 'https://send.peakconix.site/api/auth/callback');
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    // Login callback is a DIFFERENT redirect URI from the accounts one
-    process.env.GOOGLE_LOGIN_REDIRECT_URI || 'http://localhost:3000/api/auth/callback'
+    redirectUri
   );
 }
 
 /** Generate Google OAuth consent URL for admin login. */
-router.get('/google-url', (_req, res) => {
+router.get('/google-url', (req, res) => {
   try {
-    const oauth2 = getLoginOAuth2Client();
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(400).json({ error: 'Google OAuth is not configured on the server. Please sign in with your email and password.' });
+    }
+    const customRedirect = req.query.redirect_uri || req.query.redirectUri;
+    const oauth2 = getLoginOAuth2Client(customRedirect);
     const url = oauth2.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
@@ -103,6 +107,7 @@ router.get('/google-url', (_req, res) => {
     });
     res.json({ url });
   } catch (err) {
+    logger.error({ err: err.message }, 'Failed to generate Google login URL');
     res.status(500).json({ error: err.message });
   }
 });
