@@ -190,9 +190,6 @@ async function syncAccountInbox(account, db, uid) {
       accessToken = await ensureFreshToken(account);
     } catch (tokenErr) {
       logger.warn({ err: tokenErr, accountId: account.id }, `Token refresh failed for ${account.email}`);
-      try {
-        await db.prepare("UPDATE accounts SET status = 'reconnect_required' WHERE id = ?").run(account.id);
-      } catch (_) {}
       return {
         account: account.email,
         status: 'error',
