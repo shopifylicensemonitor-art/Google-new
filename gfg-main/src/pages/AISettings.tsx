@@ -242,7 +242,7 @@ export default function AISettings() {
   const [searchFilter, setSearchFilter] = useState<string>('');
 
   // Per-provider inline input state
-  const [providerInputs, setProviderInputs] = useState<Record<string, { apiKey: string; baseUrl: string; model: string; isRevealed: boolean }>>({});
+  const [providerInputs, setProviderInputs] = useState<Record<string, { name?: string; priority?: number; apiKey: string; baseUrl: string; model: string; isRevealed: boolean }>>({});
   const [copiedProvider, setCopiedProvider] = useState<string | null>(null);
 
   // AI Rules State
@@ -268,7 +268,7 @@ export default function AISettings() {
       ]);
 
       const configMap: Record<string, AIProviderConfig> = {};
-      const inputsMap: Record<string, { apiKey: string; baseUrl: string; model: string; isRevealed: boolean }> = {};
+      const inputsMap: Record<string, { name?: string; priority?: number; apiKey: string; baseUrl: string; model: string; isRevealed: boolean }> = {};
 
       if (configsRes && Array.isArray(configsRes.configs)) {
         configsRes.configs.forEach(c => {
@@ -285,6 +285,8 @@ export default function AISettings() {
       PROVIDERS.forEach(p => {
         const saved = configMap[p.id];
         inputsMap[p.id] = {
+          name: saved?.name || p.name,
+          priority: saved?.priority || 1,
           apiKey: saved?.apiKey || '',
           baseUrl: saved?.baseUrl || p.baseUrl,
           model: saved?.model || p.defaultModel,
@@ -414,6 +416,8 @@ export default function AISettings() {
     try {
       const res = await api.saveAIConfig({
         provider: preset.id,
+        name: input.name?.trim() || preset.name,
+        priority: input.priority || 1,
         apiKey: enteredKey,
         api_key: enteredKey,
         baseUrl: input.baseUrl.trim() || preset.baseUrl,
@@ -838,6 +842,36 @@ export default function AISettings() {
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            {/* Key Label / Friendly Name & Priority */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:col-span-2">
+                              <div className="sm:col-span-2 space-y-1">
+                                <label className="font-bold text-foreground flex items-center gap-1 text-[11px]">
+                                  <Tag className="h-3 w-3 text-[#635bff]" /> Key Name / Label (e.g. My Free Key, Fast Backup)
+                                </label>
+                                <Input
+                                  placeholder={`e.g. ${preset.name} - Primary Key`}
+                                  value={input.name || ''}
+                                  onChange={(e) => handleUpdateProviderInput(preset.id, 'name', e.target.value)}
+                                  className="text-xs h-8 bg-background font-medium"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="font-bold text-foreground flex items-center gap-1 text-[11px]">
+                                  <Sliders className="h-3 w-3 text-[#635bff]" /> Priority Order
+                                </label>
+                                <select
+                                  value={input.priority || 1}
+                                  onChange={(e) => handleUpdateProviderInput(preset.id, 'priority', parseInt(e.target.value, 10))}
+                                  className="w-full text-xs h-8 bg-background border border-border/80 rounded-md px-2 font-medium"
+                                >
+                                  <option value={1}>1 - Primary (Preferred)</option>
+                                  <option value={2}>2 - Failover Backup</option>
+                                  <option value={3}>3 - Second Backup</option>
+                                  <option value={4}>4 - Emergency Fallback</option>
+                                </select>
+                              </div>
+                            </div>
+
                             {/* API Key Input */}
                             <div className="space-y-1 md:col-span-2">
                               <div className="flex items-center justify-between">

@@ -493,6 +493,28 @@ router.get('/', async (req, res) => {
       params.push(parseInt(account_id, 10));
     }
 
+    // If sent folder requested, return sent queue records formatted as inbox items
+    if (sentiment === 'sent' || req.query.folder === 'sent') {
+      const sentRows = await db.prepare(`
+        SELECT q.id, q.recipient_email as sender_email, a.email as recipient_email,
+               COALESCE(q.final_subject, c.subject, 'Outreach Email') as subject,
+               COALESCE(q.final_body, c.body_html, '') as body_html,
+               COALESCE(q.final_body, c.body_plain, '') as body_text,
+               'sent' as sentiment, 1 as is_read, 0 as is_starred,
+               COALESCE(q.sent_at, q.scheduled_at, datetime('now')) as created_at,
+               q.account_id, a.email as account_email, a.display_name as account_display_name,
+               c.name as campaign_name, c.contact_list
+        FROM queue q
+        JOIN campaigns c ON q.campaign_id = c.id
+        LEFT JOIN accounts a ON q.account_id = a.id
+        WHERE q.status = 'sent' AND (q.user_id = ? OR c.user_id = ?)
+        ORDER BY q.sent_at DESC, q.id DESC
+        LIMIT ?
+      `).all(uid, uid, limit);
+
+      return res.json(sentRows);
+    }
+
     if (sentiment && sentiment !== 'all') {
       conditions.push('m.sentiment = ?');
       params.push(sentiment);

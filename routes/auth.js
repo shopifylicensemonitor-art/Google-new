@@ -36,8 +36,32 @@ const emailLimiter = rateLimit({
   message: { error: 'Too many requests. Please wait a few minutes before trying again.' }
 });
 
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+
 function verifyToken(token) {
   return verifyJwtToken(token);
+}
+
+function hashPassword(password) {
+  if (!password) return '';
+  return bcrypt.hashSync(String(password), 10);
+}
+
+async function verifyPassword(password, hash) {
+  if (!password || !hash) return false;
+  try {
+    if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
+      return await bcrypt.compare(String(password), String(hash));
+    }
+    // Fallback for legacy plain or SHA-256 hashes
+    const sha = crypto.createHash('sha256').update(String(password)).digest('hex');
+    if (sha === hash || password === hash) return true;
+    return false;
+  } catch (err) {
+    logger.error({ err: err.message }, 'Password verification failed');
+    return false;
+  }
 }
 
 /**
@@ -1019,4 +1043,9 @@ router.post('/logout', (_req, res) => {
   res.json({ success: true, message: 'Token cleared on client.' });
 });
 
+router.hashPassword = hashPassword;
+router.verifyPassword = verifyPassword;
+
 module.exports = router;
+
+

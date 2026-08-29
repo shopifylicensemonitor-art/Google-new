@@ -20,6 +20,45 @@ import {
   CornerDownRight, Zap, ListFilter
 } from 'lucide-react';
 
+function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
+  const [viewRaw, setViewRaw] = useState(false);
+  const hasHtml = Boolean(html && html.trim().length > 0 && /<[a-z][\s\S]*>/i.test(html));
+
+  if (!hasHtml) {
+    return (
+      <div className="text-foreground text-xs leading-relaxed whitespace-pre-wrap selection:bg-primary/20 font-sans break-words overflow-hidden">
+        {text || html || 'No message content available.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 w-full">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setViewRaw(!viewRaw)}
+          className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded bg-muted/60 hover:bg-muted"
+        >
+          {viewRaw ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+          <span>{viewRaw ? 'Formatted View' : 'Plain Text'}</span>
+        </button>
+      </div>
+
+      {viewRaw ? (
+        <pre className="text-[11px] font-mono bg-muted/40 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-words text-foreground/90 border border-border/50">
+          {text || html?.replace(/<[^>]*>?/gm, ' ') || ''}
+        </pre>
+      ) : (
+        <div 
+          className="email-content-viewer w-full text-foreground text-xs leading-normal max-w-full overflow-x-auto selection:bg-primary/20 [&_table]:w-full [&_table]:border-collapse [&_img]:max-w-full [&_img]:h-auto [&_p]:my-1.5 [&_a]:text-primary [&_a]:underline"
+          dangerouslySetInnerHTML={{ __html: html || text || '' }}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function Inbox() {
   // Main Data States
   const [messages, setMessages] = useState<InboxMessage[]>([]);
@@ -28,30 +67,36 @@ export default function Inbox() {
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
 
-  // Selected State
-  const [selectedMsg, setSelectedMsg] = useState<InboxMessage | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [activeSegment, setActiveSegment] = useState<string>('primary'); // 'primary', 'hot_lead', 'question', 'starred', 'unsubscribe', 'all', 'campaign:...'
+  // Filters & Selection
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+  const [activeSegment, setActiveSegment] = useState<'primary' | 'hot_lead' | 'question' | 'starred' | 'unsubscribe' | 'all' | 'sent'>('primary');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  // Thread Data State
-  const [threadLoading, setThreadLoading] = useState<boolean>(false);
+  const [selectedMsg, setSelectedMsg] = useState<InboxMessage | null>(null);
   const [threadMessages, setThreadMessages] = useState<InboxMessage[]>([]);
   const [outboundHistory, setOutboundHistory] = useState<any[]>([]);
+  const [threadLoading, setThreadLoading] = useState<boolean>(false);
 
-  // Reply Composer State
-  const [isComposerOpen, setIsComposerOpen] = useState<boolean>(false);
+  // Composer & Actions
   const [replyText, setReplyText] = useState<string>('');
+  const [replySubject, setReplySubject] = useState<string>('');
   const [sendingReply, setSendingReply] = useState<boolean>(false);
-  const [draftingAI, setDraftingAI] = useState<boolean>(false);
+  const [isComposerOpen, setIsComposerOpen] = useState<boolean>(false);
+  const [selectedBulkIds, setSelectedBulkIds] = useState<number[]>([]);
+  const [bulkMode, setBulkMode] = useState<boolean>(false);
 
-  // Layout & UI
+  // AI Assistant States
+  const [aiGenerating, setAiGenerating] = useState<boolean>(false);
+  const [aiAnalysis, setAiAnalysis] = useState<{ sentiment: string; summary: string; action: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
+  // Responsive / View States
   const [showMobileDetail, setShowMobileDetail] = useState<boolean>(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState<boolean>(false);
   const [showDossier, setShowDossier] = useState<boolean>(false);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState<boolean>(false);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [draftingAI, setDraftingAI] = useState<boolean>(false);
 
   // Load Accounts & Counts
   const loadInitialData = async () => {
@@ -75,6 +120,8 @@ export default function Inbox() {
       }
       if (activeSegment === 'starred') {
         params.starred = true;
+      } else if (activeSegment === 'sent') {
+        params.sentiment = 'sent';
       } else if (activeSegment === 'hot_lead' || activeSegment === 'question' || activeSegment === 'unsubscribe') {
         params.sentiment = activeSegment;
       } else if (activeSegment === 'primary') {
@@ -775,6 +822,24 @@ export default function Inbox() {
                 )}
               </button>
 
+              {/* Sent Outreach */}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSegment === 'sent'}
+                onClick={() => { setActiveSegment('sent'); setShowMobileSidebar(false); }}
+                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  activeSegment === 'sent' 
+                    ? 'bg-primary text-primary-foreground font-bold shadow-xs' 
+                    : 'text-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Send className={`h-4 w-4 ${activeSegment === 'sent' ? 'text-primary-foreground' : 'text-primary'}`} aria-hidden="true" />
+                  <span>Sent Outreach</span>
+                </div>
+              </button>
+
               {/* All Mail */}
               <button
                 type="button"
@@ -1159,10 +1224,7 @@ export default function Inbox() {
                               <span className="font-mono font-medium">{new Date(outbound.sent_at || outbound.scheduled_at || Date.now()).toLocaleDateString()}</span>
                             </div>
                             <p className="font-semibold text-foreground text-xs">{outbound.final_subject || selectedMsg.subject}</p>
-                            <div 
-                              className="text-foreground/90 text-xs leading-relaxed max-h-48 overflow-y-auto"
-                              dangerouslySetInnerHTML={{ __html: outbound.final_body || '<p>Outreach message sent to prospect.</p>' }}
-                            />
+                            <HtmlEmailViewer html={outbound.final_body} text={outbound.final_body} />
                           </div>
                         </div>
                       ))}
@@ -1217,10 +1279,7 @@ export default function Inbox() {
                                 </span>
                               </div>
 
-                              <div 
-                                className="text-foreground text-xs leading-relaxed whitespace-pre-wrap selection:bg-primary/20"
-                                dangerouslySetInnerHTML={{ __html: msg.body_html || msg.body_text || 'Empty body text.' }}
-                              />
+                              <HtmlEmailViewer html={msg.body_html} text={msg.body_text} />
 
                               {/* Prospect URL if available */}
                               {selectedMsg.store_url && (

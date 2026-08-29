@@ -153,43 +153,6 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     const db = await getDb();
     const uid = req.userId;
 
-    const accountsRow = await db.prepare("SELECT SUM(daily_sent) as today_sent, COUNT(*) as total FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41))").get(uid) || { today_sent: 0, total: 0 };
-    const queueRow = await db.prepare("SELECT COUNT(*) as pending FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND c.user_id = ?").get(uid) || { pending: 0 };
-    const campaignsRow = await db.prepare("SELECT COUNT(*) as active FROM campaigns WHERE status = 'sending' AND user_id = ?").get(uid) || { active: 0 };
-    const failedRow = await db.prepare("SELECT SUM(failed_count) as failed FROM campaigns WHERE user_id = ?").get(uid) || { failed: 0 };
-    const trackingRow = await db.prepare("SELECT COALESCE(SUM(q.opens_count), 0) as opens, COALESCE(SUM(q.clicks_count), 0) as clicks FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE c.user_id = ?").get(uid) || { opens: 0, clicks: 0 };
-
-    const stats = {
-      today_sent: accountsRow.today_sent || 0,
-      active_accounts: accountsRow.total || 0,
-      pending: queueRow.pending || 0,
-      active_campaigns: campaignsRow.active || 0,
-      failed: failedRow.failed || 0,
-      opens: trackingRow.opens || 0,
-      clicks: trackingRow.clicks || 0,
-    };
-
-    
-    const campaigns = await db.prepare(`
-      SELECT c.*,
-             COALESCE((SELECT SUM(opens_count) FROM queue WHERE campaign_id = c.id), 0) as total_opens,
-             COALESCE((SELECT SUM(clicks_count) FROM queue WHERE campaign_id = c.id), 0) as total_clicks
-      FROM campaigns c
-      WHERE c.user_id = ?
-      ORDER BY c.id DESC
-      LIMIT 5
-    `).all(uid);
-
-    const queue = await db.prepare(`
-      SELECT q.*, c.name as campaign_name, a.email as account_email
-      FROM queue q
-      JOIN campaigns c ON q.campaign_id = c.id
-      LEFT JOIN accounts a ON q.account_id = a.id
-      WHERE c.user_id = ?
-      ORDER BY q.id DESC
-      LIMIT 10
-    `).all(uid);
-
     const hoursParam = req.query.hours ? parseInt(req.query.hours, 10) : null;
     const daysParam = req.query.days ? parseInt(req.query.days, 10) : null;
 
@@ -204,9 +167,53 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
     }
     const startDate = d.toISOString();
 
-    const logs = await db.prepare(
-      "SELECT l.status, l.created_at FROM logs l LEFT JOIN campaigns c ON l.campaign_id = c.id WHERE (l.user_id = ? OR c.user_id = ?) AND l.created_at >= ?"
-    ).all(uid, uid, startDate);
+    // Execute all dashboard queries in parallel for high-performance sub-second response
+    const [accountsRow, queueRow, campaignsRow, failedRow, trackingRow, campaigns, queue, logs, recent_logs] = await Promise.all([
+      db.prepare("SELECT COALESCE(SUM(daily_sent), 0) as today_sent, COUNT(*) as total FROM accounts WHERE status = 'active' AND user_id = ?").get(uid) || { today_sent: 0, total: 0 },
+      db.prepare("SELECT COUNT(*) as pending FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.status = 'pending' AND (q.user_id = ? OR c.user_id = ?)").get(uid, uid) || { pending: 0 },
+      db.prepare("SELECT COUNT(*) as active FROM campaigns WHERE status = 'sending' AND user_id = ?").get(uid) || { active: 0 },
+      db.prepare("SELECT COALESCE(SUM(failed_count), 0) as failed FROM campaigns WHERE user_id = ?").get(uid) || { failed: 0 },
+      db.prepare("SELECT COALESCE(SUM(q.opens_count), 0) as opens, COALESCE(SUM(q.clicks_count), 0) as clicks FROM queue q JOIN campaigns c ON q.campaign_id = c.id WHERE q.user_id = ? OR c.user_id = ?").get(uid, uid) || { opens: 0, clicks: 0 },
+      db.prepare(`
+        SELECT c.*,
+               COALESCE((SELECT SUM(opens_count) FROM queue WHERE campaign_id = c.id), 0) as total_opens,
+               COALESCE((SELECT SUM(clicks_count) FROM queue WHERE campaign_id = c.id), 0) as total_clicks
+        FROM campaigns c
+        WHERE c.user_id = ?
+        ORDER BY c.id DESC
+        LIMIT 5
+      `).all(uid),
+      db.prepare(`
+        SELECT q.*, c.name as campaign_name, a.email as account_email
+        FROM queue q
+        JOIN campaigns c ON q.campaign_id = c.id
+        LEFT JOIN accounts a ON q.account_id = a.id
+        WHERE q.user_id = ? OR c.user_id = ?
+        ORDER BY q.id DESC
+        LIMIT 10
+      `).all(uid, uid),
+      db.prepare(
+        "SELECT l.status, l.created_at FROM logs l LEFT JOIN campaigns c ON l.campaign_id = c.id WHERE (l.user_id = ? OR c.user_id = ?) AND l.created_at >= ?"
+      ).all(uid, uid, startDate),
+      db.prepare(`
+        SELECT l.*, COALESCE(c.name, 'Direct Campaign') as campaign_name
+        FROM logs l
+        LEFT JOIN campaigns c ON l.campaign_id = c.id
+        WHERE l.user_id = ? OR c.user_id = ?
+        ORDER BY l.created_at DESC
+        LIMIT 10
+      `).all(uid, uid)
+    ]);
+
+    const stats = {
+      today_sent: parseInt(accountsRow?.today_sent || 0, 10),
+      active_accounts: parseInt(accountsRow?.total || 0, 10),
+      pending: parseInt(queueRow?.pending || 0, 10),
+      active_campaigns: parseInt(campaignsRow?.active || 0, 10),
+      failed: parseInt(failedRow?.failed || 0, 10),
+      opens: parseInt(trackingRow?.opens || 0, 10),
+      clicks: parseInt(trackingRow?.clicks || 0, 10),
+    };
 
     // Group logs by hour or day
     const chartData = {};
@@ -219,7 +226,7 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
         chartData[isoKey] = { date: isoKey, label: displayLabel, sent: 0, failed: 0, opened: 0 };
       }
 
-      logs.forEach(log => {
+      (logs || []).forEach(log => {
         const logDate = new Date(log.created_at);
         const isoKey = logDate.toISOString().slice(0, 13) + ':00';
         if (chartData[isoKey]) {
@@ -236,7 +243,7 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
         chartData[label] = { date: label, label, sent: 0, failed: 0, opened: 0 };
       }
 
-      logs.forEach(log => {
+      (logs || []).forEach(log => {
         const day = new Date(log.created_at).toISOString().split('T')[0];
         if (chartData[day]) {
           if (log.status === 'sent') chartData[day].sent++;
@@ -246,23 +253,13 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       });
     }
 
-    // Fetch recent logs
-    const recent_logs = await db.prepare(`
-      SELECT l.*, COALESCE(c.name, 'Deleted Campaign') as campaign_name
-      FROM logs l
-      LEFT JOIN campaigns c ON l.campaign_id = c.id
-      WHERE l.user_id = ? OR c.user_id = ?
-      ORDER BY l.created_at DESC
-      LIMIT 10
-    `).all(uid, uid);
-
     res.json({
       stats,
-      campaigns,
-      queue,
+      campaigns: campaigns || [],
+      queue: queue || [],
       chartData: Object.values(chartData),
       timeframe: { isHourly, span: timeSpan },
-      recent_logs
+      recent_logs: recent_logs || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
