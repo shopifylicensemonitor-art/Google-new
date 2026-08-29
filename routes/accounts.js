@@ -730,7 +730,8 @@ router.put('/:id', async (req, res) => {
     }
 
     params.push(account.id);
-    await db.prepare(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    params.push(req.userId);
+    await db.prepare(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...params);
     res.json({ success: true, message: 'Account configuration saved.' });
   } catch (err) {
     res.status(500).json({ error: err.message });

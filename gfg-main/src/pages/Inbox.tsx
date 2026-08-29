@@ -20,6 +20,15 @@ import {
   CornerDownRight, Zap, ListFilter
 } from 'lucide-react';
 
+function sanitizeEmailHtml(rawHtml: string): string {
+  if (!rawHtml) return '';
+  return rawHtml
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/on\w+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, '')
+    .replace(/javascript\s*:/gi, 'blocked:');
+}
+
 function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
   const [viewRaw, setViewRaw] = useState(false);
   const hasHtml = Boolean(html && html.trim().length > 0 && /<[a-z][\s\S]*>/i.test(html));
@@ -31,6 +40,8 @@ function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
       </div>
     );
   }
+
+  const safeHtml = React.useMemo(() => sanitizeEmailHtml(html || text || ''), [html, text]);
 
   return (
     <div className="space-y-1.5 w-full">
@@ -52,7 +63,7 @@ function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
       ) : (
         <div 
           className="email-content-viewer w-full text-foreground text-xs leading-normal max-w-full overflow-x-auto selection:bg-primary/20 [&_table]:w-full [&_table]:border-collapse [&_img]:max-w-full [&_img]:h-auto [&_p]:my-1.5 [&_a]:text-primary [&_a]:underline"
-          dangerouslySetInnerHTML={{ __html: html || text || '' }}
+          dangerouslySetInnerHTML={{ __html: safeHtml }}
         />
       )}
     </div>
@@ -97,6 +108,21 @@ export default function Inbox() {
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [draftingAI, setDraftingAI] = useState<boolean>(false);
+
+  // Client-side filtering — declared at top to avoid Temporal Dead Zone (TDZ)
+  const filteredMessages = useMemo(() => {
+    return messages.filter(m => {
+      if (activeSegment === 'hot_lead' && m.sentiment !== 'hot_lead') return false;
+      if (activeSegment === 'question' && m.sentiment !== 'question') return false;
+      if (activeSegment === 'unsubscribe' && m.sentiment !== 'unsubscribe') return false;
+      if (activeSegment === 'starred' && !m.is_starred) return false;
+      if (activeSegment.startsWith('campaign:')) {
+        const campaignName = activeSegment.replace('campaign:', '');
+        if (m.contact_list !== campaignName) return false;
+      }
+      return true;
+    });
+  }, [messages, activeSegment]);
 
   // Load Accounts & Counts
   const loadInitialData = async () => {
@@ -252,105 +278,7 @@ export default function Inbox() {
     } catch (_) {}
   };
 
-  // Keyboard shortcut listener (J, K, X, E, S, R, Esc, Enter)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if user is typing in an input/textarea
-      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName);
-      
-      // Ctrl+Enter or Cmd+Enter to send reply from composer
-      if (isInput && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        if (isComposerOpen && replyText.trim() && !sendingReply) {
-          e.preventDefault();
-          handleSendReply();
-        }
-        return;
-      }
 
-      if (isInput) return;
-
-      if (e.key === 'Escape') {
-        if (isComposerOpen) {
-          setIsComposerOpen(false);
-        } else if (selectedMsg) {
-          setSelectedMsg(null);
-          setShowMobileDetail(false);
-        }
-        return;
-      }
-
-      if (e.key === 'r' || e.key === 'R') {
-        if (selectedMsg && !isComposerOpen) {
-          e.preventDefault();
-          setIsComposerOpen(true);
-          setTimeout(() => replyTextareaRef.current?.focus(), 50);
-        }
-        return;
-      }
-
-      if (e.key === 's' || e.key === 'S') {
-        if (selectedMsg) {
-          e.preventDefault();
-          handleToggleStar(selectedMsg);
-        }
-        return;
-      }
-
-      if (e.key === 'e' || e.key === 'E') {
-        if (selectedMsg) {
-          e.preventDefault();
-          handleBulkAction('mark_read');
-          toast({ title: 'Conversation Archived' });
-          setSelectedMsg(null);
-        }
-        return;
-      }
-
-      // J / Down (Next conversation)
-      if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
-        if (!selectedMsg && filteredMessages.length > 0) {
-          e.preventDefault();
-          setSelectedMsg(filteredMessages[0]);
-        } else if (selectedMsg) {
-          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
-          if (currentIndex >= 0 && currentIndex < filteredMessages.length - 1) {
-            e.preventDefault();
-            setSelectedMsg(filteredMessages[currentIndex + 1]);
-          }
-        }
-        return;
-      }
-
-      // K / Up (Previous conversation)
-      if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
-        if (selectedMsg) {
-          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
-          if (currentIndex > 0) {
-            e.preventDefault();
-            setSelectedMsg(filteredMessages[currentIndex - 1]);
-          }
-        }
-        return;
-      }
-
-      // X (Toggle selection)
-      if (e.key === 'x' || e.key === 'X') {
-        if (selectedMsg) {
-          e.preventDefault();
-          setSelectedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(selectedMsg.id)) next.delete(selectedMsg.id);
-            else next.add(selectedMsg.id);
-            return next;
-          });
-        }
-        return;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMsg, isComposerOpen, replyText, sendingReply, filteredMessages]);
 
   // Multi-select actions
   const handleSelectAll = () => {
@@ -457,62 +385,104 @@ export default function Inbox() {
     }
   };
 
-  // Keyboard Shortcuts (j/k to navigate, s to star, e to delete, r to reply, esc to close composer)
+  // Keyboard Shortcuts (J/K navigate, S star, E archive, X select, R reply, Esc close, Ctrl+Enter send)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isComposerOpen) {
-        setIsComposerOpen(false);
+      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName);
+
+      // Ctrl+Enter or Cmd+Enter to send reply when in composer
+      if (isInput && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (isComposerOpen && replyText.trim() && !sendingReply) {
+          e.preventDefault();
+          handleSendReply();
+        }
         return;
       }
 
-      // Don't trigger other navigation shortcuts when typing in input or textarea
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      if (isInput) return;
 
-      if (e.key === 'j' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (!selectedMsg || filteredMessages.length === 0) return;
-        const idx = filteredMessages.findIndex(m => m.id === selectedMsg.id);
-        if (idx < filteredMessages.length - 1) {
-          setSelectedMsg(filteredMessages[idx + 1]);
+      if (e.key === 'Escape') {
+        if (isComposerOpen) {
+          setIsComposerOpen(false);
+        } else if (selectedMsg) {
+          setSelectedMsg(null);
+          setShowMobileDetail(false);
         }
-      } else if (e.key === 'k' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (!selectedMsg || filteredMessages.length === 0) return;
-        const idx = filteredMessages.findIndex(m => m.id === selectedMsg.id);
-        if (idx > 0) {
-          setSelectedMsg(filteredMessages[idx - 1]);
+        return;
+      }
+
+      if (e.key === 'r' || e.key === 'R') {
+        if (selectedMsg && !isComposerOpen) {
+          e.preventDefault();
+          setIsComposerOpen(true);
+          setTimeout(() => replyTextareaRef.current?.focus(), 50);
         }
-      } else if (e.key === 's' && selectedMsg) {
-        e.preventDefault();
-        handleToggleStar(selectedMsg);
-      } else if (e.key === 'e' && selectedMsg) {
-        e.preventDefault();
-        handleDeleteMsg(selectedMsg.id);
-      } else if (e.key === 'r') {
-        e.preventDefault();
-        setIsComposerOpen(true);
-        setTimeout(() => replyTextareaRef.current?.focus(), 50);
+        return;
+      }
+
+      if (e.key === 's' || e.key === 'S') {
+        if (selectedMsg) {
+          e.preventDefault();
+          handleToggleStar(selectedMsg);
+        }
+        return;
+      }
+
+      if (e.key === 'e' || e.key === 'E') {
+        if (selectedMsg) {
+          e.preventDefault();
+          handleBulkAction('mark_read');
+          toast({ title: 'Conversation Archived' });
+          setSelectedMsg(null);
+        }
+        return;
+      }
+
+      // J / Down (Next conversation)
+      if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
+        if (!selectedMsg && filteredMessages.length > 0) {
+          e.preventDefault();
+          setSelectedMsg(filteredMessages[0]);
+        } else if (selectedMsg) {
+          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
+          if (currentIndex >= 0 && currentIndex < filteredMessages.length - 1) {
+            e.preventDefault();
+            setSelectedMsg(filteredMessages[currentIndex + 1]);
+          }
+        }
+        return;
+      }
+
+      // K / Up (Previous conversation)
+      if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
+        if (selectedMsg) {
+          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
+          if (currentIndex > 0) {
+            e.preventDefault();
+            setSelectedMsg(filteredMessages[currentIndex - 1]);
+          }
+        }
+        return;
+      }
+
+      // X (Toggle selection)
+      if (e.key === 'x' || e.key === 'X') {
+        if (selectedMsg) {
+          e.preventDefault();
+          setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(selectedMsg.id)) next.delete(selectedMsg.id);
+            else next.add(selectedMsg.id);
+            return next;
+          });
+        }
+        return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMsg, messages, isComposerOpen]);
-
-  // Client-side filtering
-  const filteredMessages = useMemo(() => {
-    return messages.filter(m => {
-      if (activeSegment === 'hot_lead' && m.sentiment !== 'hot_lead') return false;
-      if (activeSegment === 'question' && m.sentiment !== 'question') return false;
-      if (activeSegment === 'unsubscribe' && m.sentiment !== 'unsubscribe') return false;
-      if (activeSegment === 'starred' && !m.is_starred) return false;
-      if (activeSegment.startsWith('campaign:')) {
-        const campaignName = activeSegment.replace('campaign:', '');
-        if (m.contact_list !== campaignName) return false;
-      }
-      return true;
-    });
-  }, [messages, activeSegment]);
+  }, [selectedMsg, isComposerOpen, replyText, sendingReply, filteredMessages]);
 
   const getInitials = (email: string) => {
     try {

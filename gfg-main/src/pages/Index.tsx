@@ -136,15 +136,23 @@ const Index = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMapperOpen, setIsMapperOpen] = useState(false);
   const [parsedCSV, setParsedCSV] = useState<ParsedCSV>(() => {
-    const stored = localStorage.getItem('peakx-parsed-csv');
-    return stored ? JSON.parse(stored) : { headers: [], rows: [] };
+    try {
+      const stored = localStorage.getItem('peakx-parsed-csv');
+      return stored ? JSON.parse(stored) : { headers: [], rows: [] };
+    } catch {
+      return { headers: [], rows: [] };
+    }
   });
   const [uploadedFileName, setUploadedFileName] = useState(() => {
     return localStorage.getItem('peakx-uploaded-filename') || '';
   });
   const [csvMappings, setCsvMappings] = useState<Record<string, string>>(() => {
-    const stored = localStorage.getItem('peakx-csv-mappings');
-    return stored ? JSON.parse(stored) : {};
+    try {
+      const stored = localStorage.getItem('peakx-csv-mappings');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
   });
   const [showConfetti, setShowConfetti] = useState(false);
   const [reachedMilestoneInfo, setReachedMilestoneInfo] = useState<{ emoji: string; title: string; desc: string; value: number } | null>(null);

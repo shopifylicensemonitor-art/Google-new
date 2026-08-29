@@ -351,7 +351,8 @@ router.put('/:id', async (req, res) => {
     const updateBoth = db.transaction(async (txDb) => {
       if (updates.length > 0) {
         values.push(req.params.id);
-        await txDb.prepare(`UPDATE campaigns SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        values.push(req.userId);
+        await txDb.prepare(`UPDATE campaigns SET ${updates.join(', ')} WHERE id = ? AND (user_id = ? OR user_id IS NULL)`).run(...values);
       }
 
       // If account_ids updated, update all pending queue items to the new active sender accounts
