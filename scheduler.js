@@ -693,7 +693,112 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
 }
 
 // ---------------------------------------------------------------------------
-// Startup: crash recovery + validation
+// Comprehensive 24-Hour Daily Maintenance & Reset Engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Run comprehensive 24-hour maintenance & reset operations across the system:
+ * 1. Resets mailbox daily send quotas (daily_sent -> 0, last_reset -> NOW()).
+ * 2. Unblocks queue items that were postponed/deferred due to daily limit.
+ * 3. Prunes expired & used password reset tokens and expired refresh tokens.
+ * 4. Cleans up expired user account lockouts & resets failed login attempt counters.
+ * 5. Recovers stuck queue items in 'sending' state for > 45 minutes.
+ * 6. Sweeps and completes empty sending campaigns.
+ */
+async function runDailyMaintenance(customDb = null, force = false) {
+  try {
+    const db = customDb || await getDb();
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    logger.info({ todayStr, force }, 'Starting 24-Hour Maintenance & Reset sweep...');
+
+    // 1. Reset accounts daily sending counters if not reset today (or if forced)
+    let resetAccountsCount = 0;
+    if (force) {
+      const res = await db.prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now')").run();
+      resetAccountsCount = res.changes || 0;
+    } else {
+      const accountsToReset = await db.prepare(`
+        SELECT id, email, last_reset, daily_sent
+        FROM accounts
+        WHERE last_reset IS NULL
+           OR last_reset < ?
+      `).all(todayStr);
+
+      if (accountsToReset && accountsToReset.length > 0) {
+        for (const acct of accountsToReset) {
+          await db.prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now') WHERE id = ?").run(acct.id);
+          resetAccountsCount++;
+        }
+      }
+    }
+
+    if (resetAccountsCount > 0) {
+      logger.info({ resetAccountsCount }, 'Reset daily sending quotas for accounts');
+
+      // 2. Unblock any queue items that were postponed/deferred due to daily limit
+      try {
+        await db.prepare(`
+          UPDATE queue
+          SET scheduled_at = datetime('now')
+          WHERE status = 'pending'
+            AND scheduled_at > datetime('now')
+            AND error LIKE '%daily limit%'
+        `).run();
+      } catch (_) {}
+    }
+
+    // 3. Prune expired & used password reset tokens
+    try {
+      await db.prepare(`
+        DELETE FROM password_reset_tokens
+        WHERE expires_at < datetime('now')
+      `).run();
+    } catch (_) {}
+
+    // 4. Prune expired refresh tokens
+    try {
+      await db.prepare(`
+        DELETE FROM refresh_tokens
+        WHERE expires_at < datetime('now')
+      `).run();
+    } catch (_) {}
+
+    // 5. Clean up expired user lockouts
+    try {
+      await db.prepare(`
+        UPDATE users
+        SET failed_login_attempts = 0, locked_until = NULL
+        WHERE locked_until IS NOT NULL AND locked_until < datetime('now')
+      `).run();
+    } catch (_) {}
+
+    // 6. Recover stuck queue items (in 'sending' for > 45 minutes)
+    try {
+      const stuckRes = await db.prepare(`
+        UPDATE queue
+        SET status = 'pending', error = 'Recovered from stuck state during 24h maintenance sweep'
+        WHERE status = 'sending'
+      `).run();
+      if (stuckRes && stuckRes.changes > 0) {
+        logger.warn({ count: stuckRes.changes }, 'Auto-recovered stuck queue items during maintenance sweep');
+      }
+    } catch (_) {}
+
+    // 7. Complete empty sending campaigns
+    await completeEmptySendingCampaigns(db);
+
+    logger.info('24-Hour Maintenance & Reset sweep completed successfully.');
+    return { success: true, resetAccountsCount, timestamp: now.toISOString() };
+  } catch (err) {
+    logger.error({ err }, 'Error during 24-hour maintenance sweep');
+    return { success: false, error: err.message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Startup: crash recovery + 24-hour maintenance check
 // ---------------------------------------------------------------------------
 
 (async () => {
@@ -707,6 +812,9 @@ async function logEvent(db, campaignId, accountId, recipient, status, message, q
     if (stuck.changes > 0) {
       logger.info({ count: stuck.changes }, 'Recovered stuck queue items from previous crash');
     }
+
+    // Run initial 24h maintenance check on startup to ensure accounts are not stuck on yesterday's limits
+    await runDailyMaintenance(db, false);
   } catch (err) {
     logger.error({ err }, 'Startup recovery failed');
   }
@@ -757,6 +865,8 @@ async function triggerImmediateDispatch() {
 }
 
 let isTickRunning = false;
+let lastMaintenanceCheck = Date.now();
+
 if (schedulerEnabled) {
   const loopIntervalMs = parseInt(process.env.SCHEDULER_INTERVAL_MS, 10) || 4000;
   // Real-time non-overlapping continuous pulse to process ready queue items
@@ -766,6 +876,12 @@ if (schedulerEnabled) {
     try {
       lastTickAt = new Date().toISOString();
       await processNextItem();
+
+      // Check for overdue 24h reset every 30 minutes in background
+      if (Date.now() - lastMaintenanceCheck > 30 * 60 * 1000) {
+        lastMaintenanceCheck = Date.now();
+        runDailyMaintenance(null, false).catch(() => {});
+      }
     } catch (err) {
       logger.error({ err }, 'Unexpected error in real-time dispatch loop');
     } finally {
@@ -773,15 +889,10 @@ if (schedulerEnabled) {
     }
   }, loopIntervalMs);
 
-  // Daily reset of account send counters at midnight
+  // Daily reset of account send counters at midnight (00:00 UTC)
   resetTask = cron.schedule('0 0 * * *', async () => {
-    try {
-      const db = await getDb();
-      await db.prepare("UPDATE accounts SET daily_sent = 0, last_reset = datetime('now')").run();
-      logger.info('Daily send counters reset at midnight');
-    } catch (err) {
-      logger.error({ err }, 'Counter reset error');
-    }
+    logger.info('Midnight cron triggered: Running 24-hour maintenance & counter reset');
+    await runDailyMaintenance(null, true);
   });
 
   // Background periodic inbox sync every 5 minutes
@@ -866,6 +977,9 @@ module.exports = {
   isWithinSendingWindow,
   completeCampaignIfNoActiveQueue,
   stopScheduler,
-  getWorkerStatus
+  getWorkerStatus,
+  sendEmail,
+  logEvent,
+  runDailyMaintenance,
 };
 

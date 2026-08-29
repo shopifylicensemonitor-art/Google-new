@@ -196,7 +196,7 @@ router.post('/auth-url', (req, res) => {
       access_type: 'offline',
       prompt: 'consent',
       // Carry the owning user through the OAuth round-trip (the callback is public).
-      state: signOwnerState(req.userId || 2),
+      state: signOwnerState(req.userId || req.user?.id || 1),
       scope: [
         'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/gmail.send',
@@ -233,15 +233,15 @@ router.get('/callback', async (req, res) => {
       ownerId = null;
     }
 
-    if (!ownerId || ownerId === 41) {
+    if (!ownerId) {
       // Find matching user by email
       const userRow = await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
-      if (userRow && userRow.id !== 41) {
+      if (userRow) {
         ownerId = userRow.id;
       } else {
-        const adminUser = await db.prepare("SELECT id FROM users WHERE role = 'admin' OR id IN (1, 2, 3) ORDER BY id ASC LIMIT 1").get();
+        const adminUser = await db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1").get();
         if (adminUser) ownerId = adminUser.id;
-        else ownerId = 2;
+        else ownerId = 1;
       }
     }
 

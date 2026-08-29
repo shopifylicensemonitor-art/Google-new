@@ -252,20 +252,105 @@ export default function Inbox() {
     } catch (_) {}
   };
 
-  // Keyboard shortcut listener (Escape to collapse thread back to inbox)
+  // Keyboard shortcut listener (J, K, X, E, S, R, Esc, Enter)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+      // Check if user is typing in an input/textarea
+      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName);
+      
+      // Ctrl+Enter or Cmd+Enter to send reply from composer
+      if (isInput && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (isComposerOpen && replyText.trim() && !sendingReply) {
+          e.preventDefault();
+          handleSendReply();
+        }
         return;
       }
-      if (e.key === 'Escape' && selectedMsg) {
-        setSelectedMsg(null);
-        setShowMobileDetail(false);
+
+      if (isInput) return;
+
+      if (e.key === 'Escape') {
+        if (isComposerOpen) {
+          setIsComposerOpen(false);
+        } else if (selectedMsg) {
+          setSelectedMsg(null);
+          setShowMobileDetail(false);
+        }
+        return;
+      }
+
+      if (e.key === 'r' || e.key === 'R') {
+        if (selectedMsg && !isComposerOpen) {
+          e.preventDefault();
+          setIsComposerOpen(true);
+          setTimeout(() => replyTextareaRef.current?.focus(), 50);
+        }
+        return;
+      }
+
+      if (e.key === 's' || e.key === 'S') {
+        if (selectedMsg) {
+          e.preventDefault();
+          handleToggleStar(selectedMsg);
+        }
+        return;
+      }
+
+      if (e.key === 'e' || e.key === 'E') {
+        if (selectedMsg) {
+          e.preventDefault();
+          handleBulkAction('mark_read');
+          toast({ title: 'Conversation Archived' });
+          setSelectedMsg(null);
+        }
+        return;
+      }
+
+      // J / Down (Next conversation)
+      if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
+        if (!selectedMsg && filteredMessages.length > 0) {
+          e.preventDefault();
+          setSelectedMsg(filteredMessages[0]);
+        } else if (selectedMsg) {
+          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
+          if (currentIndex >= 0 && currentIndex < filteredMessages.length - 1) {
+            e.preventDefault();
+            setSelectedMsg(filteredMessages[currentIndex + 1]);
+          }
+        }
+        return;
+      }
+
+      // K / Up (Previous conversation)
+      if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
+        if (selectedMsg) {
+          const currentIndex = filteredMessages.findIndex(m => m.id === selectedMsg.id);
+          if (currentIndex > 0) {
+            e.preventDefault();
+            setSelectedMsg(filteredMessages[currentIndex - 1]);
+          }
+        }
+        return;
+      }
+
+      // X (Toggle selection)
+      if (e.key === 'x' || e.key === 'X') {
+        if (selectedMsg) {
+          e.preventDefault();
+          setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(selectedMsg.id)) next.delete(selectedMsg.id);
+            else next.add(selectedMsg.id);
+            return next;
+          });
+        }
+        return;
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMsg]);
+  }, [selectedMsg, isComposerOpen, replyText, sendingReply, filteredMessages]);
 
   // Multi-select actions
   const handleSelectAll = () => {
@@ -987,6 +1072,102 @@ export default function Inbox() {
                 </div>
               </div>
 
+              {/* Gmail Category Tab Bar (Primary, Interested, Questions, Starred, Sent) */}
+              <div className="flex items-center border-b border-border/60 bg-card px-2 overflow-x-auto text-xs shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('primary')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'primary'
+                      ? 'border-[#635bff] text-[#635bff]'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <InboxIcon className="h-4 w-4" />
+                  <span>Primary</span>
+                  {counts && counts.unread > 0 && (
+                    <span className="text-[10px] bg-[#635bff] text-white px-1.5 py-0.2 rounded-full font-bold">
+                      {counts.unread}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('hot_lead')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'hot_lead'
+                      ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Flame className="h-4 w-4 text-emerald-500" />
+                  <span>Interested / Leads</span>
+                  {counts && counts.interested > 0 && (
+                    <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.2 rounded-full font-bold">
+                      {counts.interested}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('question')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'question'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-bold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <HelpCircle className="h-4 w-4 text-blue-500" />
+                  <span>Questions</span>
+                  {counts && counts.questions > 0 && (
+                    <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.2 rounded-full font-bold">
+                      {counts.questions}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('starred')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'starred'
+                      ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+                  <span>Starred</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('sent')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'sent'
+                      ? 'border-[#635bff] text-[#635bff] font-bold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Send className="h-4 w-4 text-primary" />
+                  <span>Sent Outreach</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSegment('unsubscribe')}
+                  className={`flex items-center gap-2 px-4 py-2.5 font-semibold transition-all border-b-2 whitespace-nowrap ${
+                    activeSegment === 'unsubscribe'
+                      ? 'border-rose-500 text-rose-600 font-bold'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <ShieldAlert className="h-4 w-4 text-rose-500" />
+                  <span>Opt-Outs</span>
+                </button>
+              </div>
+
               {/* Gmail Message Rows (Full Width) */}
               <div className="flex-1 overflow-y-auto divide-y divide-border/30" role="feed" aria-label="Prospect message feed">
                 <PullToRefresh onRefresh={async () => { await handleSync(); loadMessages(true); }}>
@@ -1117,311 +1298,448 @@ export default function Inbox() {
           )}
 
           {/* ========================================================================= */}
-          {/* VIEW B: Full-Width Gmail Thread View (Visible when selectedMsg !== null) */}
+          {/* VIEW B: Authentic Gmail Thread View (Visible when selectedMsg !== null)   */}
           {/* ========================================================================= */}
           {selectedMsg && (
             <section 
               aria-label="Conversation message thread"
               className="flex-1 w-full flex flex-col bg-background h-full overflow-hidden z-10"
             >
-              {/* Sticky Gmail Top Toolbar */}
-              <div className="h-14 px-4 bg-card border-b border-border/70 flex items-center justify-between shrink-0 gap-3 shadow-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  {/* Gmail Back Button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
+              {/* Sticky Gmail Top Action Toolbar */}
+              <div className="h-12 px-3 sm:px-4 bg-card border-b border-border/70 flex items-center justify-between shrink-0 gap-2 shadow-2xs">
+                {/* Left Action Buttons */}
+                <div className="flex items-center gap-1 min-w-0">
+                  {/* Back to Inbox */}
+                  <button
+                    type="button"
                     onClick={() => {
                       setSelectedMsg(null);
                       setShowMobileDetail(false);
                     }}
-                    aria-label="Back to inbox list"
-                    className="h-9 px-3 gap-1.5 text-xs font-semibold hover:bg-muted border-border/70 shadow-2xs"
+                    aria-label="Back to inbox"
+                    title="Back to inbox (Esc)"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                    <span>Back to Inbox</span>
-                    <kbd className="hidden sm:inline-block font-mono text-[9px] bg-muted px-1.5 py-0.5 rounded border border-border/60 text-muted-foreground ml-1">Esc</kbd>
-                  </Button>
+                  </button>
 
-                  <div className="h-5 w-px bg-border/60 mx-1 hidden sm:block" />
+                  <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
 
-                  <div className="min-w-0">
-                    <h2 className="font-heading text-sm font-bold text-foreground truncate flex items-center gap-2">
-                      {selectedMsg.subject || 'Re: Outreach Prospect Inquiry'}
-                      {getSentimentBadge(selectedMsg.sentiment)}
-                    </h2>
-                    <p className="text-[11px] text-foreground/70 truncate hidden sm:block">
-                      Lead: <span className="font-semibold text-foreground">{selectedMsg.sender_email}</span>
-                      {selectedMsg.account_email && (
-                        <span> · Received on <span className="font-mono text-primary font-semibold">{selectedMsg.account_email}</span></span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Archive */}
                   <button
                     type="button"
-                    onClick={() => setShowDossier(!showDossier)}
-                    aria-label="Toggle prospect lead profile"
-                    className={`h-8 px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      showDossier
-                        ? 'bg-primary text-primary-foreground border-primary shadow-xs'
-                        : 'bg-background hover:bg-muted text-foreground/80 border-border/70'
-                    }`}
-                    title="View Prospect Intelligence & Contact Details"
+                    onClick={() => {
+                      handleBulkAction('mark_read');
+                      toast({ title: 'Conversation Archived' });
+                      setSelectedMsg(null);
+                    }}
+                    title="Archive"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted rounded-full transition-colors"
                   >
-                    <User className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Lead Info</span>
+                    <Folder className="h-4 w-4" />
                   </button>
+
+                  {/* Report Spam / Opt Out */}
                   <button
                     type="button"
-                    onClick={() => handleToggleStar(selectedMsg)}
-                    aria-label={selectedMsg.is_starred ? "Unstar active conversation" : "Star active conversation"}
-                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-amber-500 rounded-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                    title={selectedMsg.is_starred ? "Unstar" : "Star"}
+                    onClick={() => {
+                      handleBulkAction('unsubscribe');
+                      toast({ title: 'Marked as Opt-Out / Spam' });
+                    }}
+                    title="Report Spam / Opt Out"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-rose-500 hover:bg-rose-500/10 rounded-full transition-colors"
                   >
-                    <Star className={`h-4 w-4 ${selectedMsg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} aria-hidden="true" />
+                    <ShieldAlert className="h-4 w-4" />
                   </button>
+
+                  {/* Delete */}
                   <button
                     type="button"
                     onClick={() => handleDeleteMsg(selectedMsg.id)}
-                    aria-label="Delete active conversation"
-                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-rose-600 rounded-lg hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                     title="Delete message"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-rose-600 hover:bg-rose-500/10 rounded-full transition-colors"
                   >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+
+                  <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
+
+                  {/* Mark as Unread */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await api.markInboxRead(selectedMsg.id, false);
+                      setSelectedMsg(null);
+                      loadMessages(false);
+                      toast({ title: 'Marked as unread' });
+                    }}
+                    title="Mark as unread"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted rounded-full transition-colors"
+                  >
+                    <Mail className="h-4 w-4" />
+                  </button>
+
+                  {/* Add Label / Tag */}
+                  <button
+                    type="button"
+                    onClick={() => setShowDossier(!showDossier)}
+                    title="Prospect Intelligence"
+                    className="h-8 px-2 flex items-center gap-1.5 text-foreground/70 hover:text-foreground hover:bg-muted rounded-md text-xs transition-colors"
+                  >
+                    <Tag className="h-3.5 w-3.5" />
+                    <span className="hidden md:inline">Labels</span>
+                  </button>
+                </div>
+
+                {/* Right Action Icons & Thread Pager */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Lead Dossier Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setShowDossier(!showDossier)}
+                    className={`h-7 px-2 flex items-center gap-1 rounded text-[11px] font-semibold border transition-all ${
+                      showDossier
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background hover:bg-muted text-foreground/80 border-border/70'
+                    }`}
+                  >
+                    <User className="h-3 w-3" />
+                    <span className="hidden sm:inline">Lead Info</span>
+                  </button>
+
+                  {/* Star */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStar(selectedMsg)}
+                    title={selectedMsg.is_starred ? 'Unstar' : 'Star'}
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-amber-500 rounded-full hover:bg-muted transition-colors"
+                  >
+                    <Star className={`h-4 w-4 ${selectedMsg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} />
+                  </button>
+
+                  {/* Copy Email */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedMsg.sender_email);
+                      toast({ title: 'Email Copied', description: selectedMsg.sender_email });
+                    }}
+                    title="Copy prospect email"
+                    className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground rounded-full hover:bg-muted transition-colors hidden sm:flex"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
 
-                {/* Conversation Stream */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4" role="log" aria-label="Message history">
-                  {threadLoading ? (
-                    <div className="p-4 space-y-4">
-                      <Skeleton className="h-20 w-3/4 ml-auto rounded-2xl" />
-                      <Skeleton className="h-28 w-3/4 mr-auto rounded-2xl" />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Outreach Sequence Banner */}
-                      <div className="flex justify-center">
-                        <div className="px-3 py-1 rounded-full bg-muted border border-border/70 text-[10px] text-foreground/80 font-mono font-medium flex items-center gap-1.5 shadow-2xs">
-                          <Rocket className="h-3 w-3 text-primary" aria-hidden="true" />
-                          Outbound Sequence: {selectedMsg.contact_list || 'Direct Campaign'}
-                        </div>
-                      </div>
+              {/* Thread Header: Subject + Gmail Category Badge */}
+              <div className="px-4 sm:px-6 py-3 border-b border-border/50 bg-card/60 flex items-start justify-between gap-3 shrink-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="font-heading text-base sm:text-lg font-bold text-foreground tracking-tight break-words">
+                      {selectedMsg.subject || '(no subject)'}
+                    </h1>
+                    
+                    {/* Gmail Inbox Badge */}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-muted text-foreground/80 border border-border/60">
+                      Inbox
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedMsg(null)}
+                        className="hover:text-foreground text-muted-foreground ml-0.5"
+                        title="Close thread"
+                      >
+                        ×
+                      </button>
+                    </span>
 
-                      {/* 1. Outbound Sent Campaign History (Real sent email from queue) */}
-                      {outboundHistory.map((outbound, idx) => (
-                        <div key={`outbound-${outbound.id || idx}`} className="flex justify-end">
-                          <div className="max-w-2xl bg-card border border-border/80 p-4 rounded-2xl rounded-tr-xs text-xs space-y-2 shadow-2xs">
-                            <div className="flex justify-between items-center text-[10px] text-foreground/75 pb-1.5 border-b border-border/50">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-foreground">You (Outreach Step {outbound.step_number || 1})</span>
-                                <span className="font-mono text-[9px] bg-muted px-1 py-0.5 rounded font-semibold text-foreground/80">{outbound.sender_account_email || selectedMsg.recipient_email}</span>
+                    {/* Sentiment / Lead Tag */}
+                    {getSentimentBadge(selectedMsg.sentiment)}
+
+                    {selectedMsg.contact_list && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                        {selectedMsg.contact_list}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                    Conversation with <span className="font-semibold text-foreground">{selectedMsg.sender_email}</span>
+                    {selectedMsg.account_email && (
+                      <span> via <span className="font-mono text-primary">{selectedMsg.account_email}</span></span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Conversation Stream (Thread of Messages) */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4" role="log" aria-label="Gmail message thread">
+                {threadLoading ? (
+                  <div className="p-4 space-y-4">
+                    <Skeleton className="h-24 w-full rounded-xl" />
+                    <Skeleton className="h-32 w-full rounded-xl" />
+                  </div>
+                ) : (
+                  <>
+                    {/* 1. Initial Outbound Sent Outreach Message */}
+                    {outboundHistory.length > 0 ? (
+                      outboundHistory.map((outbound, idx) => (
+                        <div 
+                          key={`outbound-${outbound.id || idx}`}
+                          className="bg-card border border-border/80 rounded-xl shadow-2xs overflow-hidden transition-all hover:border-border"
+                        >
+                          {/* Message Header */}
+                          <div className="px-4 py-3 bg-muted/30 border-b border-border/40 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-full bg-[#635bff] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                Me
                               </div>
-                              <span className="font-mono font-medium">{new Date(outbound.sent_at || outbound.scheduled_at || Date.now()).toLocaleDateString()}</span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-xs text-foreground truncate">
+                                    You (Outreach Step {outbound.step_number || 1})
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground hidden sm:inline font-mono">
+                                    &lt;{outbound.sender_account_email || selectedMsg.recipient_email}&gt;
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground block truncate">
+                                  to {selectedMsg.sender_email}
+                                </span>
+                              </div>
                             </div>
-                            <p className="font-semibold text-foreground text-xs">{outbound.final_subject || selectedMsg.subject}</p>
+                            <div className="flex items-center gap-2 shrink-0 text-right">
+                              <span className="text-[11px] text-muted-foreground font-mono">
+                                {new Date(outbound.sent_at || outbound.scheduled_at || Date.now()).toLocaleDateString([], {
+                                  weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </span>
+                              <Star className="h-3.5 w-3.5 text-muted-foreground/40" />
+                            </div>
+                          </div>
+
+                          {/* Message Body */}
+                          <div className="p-4 sm:p-5 text-xs text-foreground leading-relaxed">
                             <HtmlEmailViewer html={outbound.final_body} text={outbound.final_body} />
                           </div>
                         </div>
-                      ))}
-
-                      {/* Fallback if no outbound history found in queue */}
-                      {outboundHistory.length === 0 && (
-                        <div className="flex justify-end">
-                          <div className="max-w-xl bg-card border border-border/70 p-3.5 rounded-2xl rounded-tr-xs text-xs space-y-1.5 shadow-2xs">
-                            <div className="flex justify-between items-center text-[10px] text-foreground/75 pb-1 border-b border-border/40">
-                              <span className="font-bold text-foreground">Initial Outreach Email</span>
-                              <span className="font-mono">{new Date(selectedMsg.created_at).toLocaleDateString()}</span>
+                      ))
+                    ) : (
+                      <div className="bg-card border border-border/80 rounded-xl shadow-2xs p-4 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground pb-2 border-b border-border/40">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-primary/20 text-primary font-bold text-xs flex items-center justify-center">
+                              Me
                             </div>
-                            <p className="text-foreground/80">
-                              Subject: {selectedMsg.subject}
-                            </p>
+                            <span className="font-bold text-foreground">Initial Outreach Email</span>
                           </div>
+                          <span className="font-mono">{new Date(selectedMsg.created_at).toLocaleDateString()}</span>
                         </div>
-                      )}
+                        <p className="text-foreground/90 font-medium">{selectedMsg.subject}</p>
+                      </div>
+                    )}
 
-                      {/* 2. Received Prospect & Back-and-Forth Thread Messages */}
-                      {threadMessages.map((msg, idx) => {
-                        const isFromMe = msg.sentiment === 'sent' || (msg.sender_email && msg.sender_email === selectedMsg.recipient_email);
-                        return isFromMe ? (
-                          /* My Reply Bubble */
-                          <div key={`msg-${msg.id || idx}`} className="flex justify-end">
-                            <div className="max-w-2xl bg-primary/10 border border-primary/25 p-4 rounded-2xl rounded-tr-xs text-xs space-y-2 shadow-2xs">
-                              <div className="flex justify-between items-center pb-1 border-b border-primary/20 text-[10px]">
-                                <span className="font-bold text-primary dark:text-primary-foreground">You (Sent Reply)</span>
-                                <span className="font-mono text-foreground/70 font-medium">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    {/* 2. Received & Threaded Messages */}
+                    {threadMessages.map((msg, idx) => {
+                      const isFromMe = msg.sentiment === 'sent' || (msg.sender_email && msg.sender_email === selectedMsg.recipient_email);
+                      return (
+                        <div 
+                          key={`thread-msg-${msg.id || idx}`}
+                          className={`border rounded-xl shadow-2xs overflow-hidden transition-all ${
+                            isFromMe 
+                              ? 'bg-primary/5 border-primary/20' 
+                              : 'bg-card border-border/80 hover:border-primary/40'
+                          }`}
+                        >
+                          {/* Message Header */}
+                          <div className="px-4 py-3 bg-muted/20 border-b border-border/40 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 shadow-xs ${
+                                isFromMe 
+                                  ? 'bg-[#635bff] text-white' 
+                                  : 'bg-emerald-600 text-white'
+                              }`}>
+                                {isFromMe ? 'Me' : getInitials(msg.sender_email)}
                               </div>
-                              <div className="text-foreground whitespace-pre-wrap leading-relaxed text-xs">
-                                {msg.body_text || msg.body_html?.replace(/<[^>]*>?/gm, '')}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          /* Prospect Received Reply Bubble */
-                          <div key={`msg-${msg.id || idx}`} className="flex justify-start">
-                            <div className="max-w-2xl bg-card border border-primary/25 p-4 rounded-2xl rounded-tl-xs text-xs space-y-2.5 shadow-2xs">
-                              <div className="flex justify-between items-center pb-1.5 border-b border-border/50">
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground font-bold flex items-center justify-center text-[10px] shadow-xs" aria-hidden="true">
-                                    {getInitials(msg.sender_email)}
-                                  </div>
-                                  <div>
-                                    <span className="font-bold text-foreground text-xs">{msg.sender_email}</span>
-                                    <span className="text-[10px] text-foreground/70 font-medium block">Prospect Response</span>
-                                  </div>
+                                  <span className="font-bold text-xs text-foreground truncate">
+                                    {isFromMe ? 'You (Sent Reply)' : msg.sender_email}
+                                  </span>
+                                  {!isFromMe && (
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                      Prospect
+                                    </span>
+                                  )}
                                 </div>
-                                <span className="text-[10px] text-foreground/70 font-mono font-medium">
-                                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                <span className="text-[10px] text-muted-foreground block truncate">
+                                  to {isFromMe ? selectedMsg.sender_email : (selectedMsg.recipient_email || 'me')}
                                 </span>
                               </div>
+                            </div>
 
-                              <HtmlEmailViewer html={msg.body_html} text={msg.body_text} />
-
-                              {/* Prospect URL if available */}
-                              {selectedMsg.store_url && (
-                                <div className="pt-2 border-t border-border/50 flex items-center gap-1.5 text-primary text-[11px]">
-                                  <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-                                  <a
-                                    href={selectedMsg.store_url.startsWith('http') ? selectedMsg.store_url : `https://${selectedMsg.store_url}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="hover:underline font-mono font-bold"
-                                  >
-                                    {selectedMsg.store_name || selectedMsg.store_url}
-                                  </a>
-                                </div>
-                              )}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[11px] text-muted-foreground font-mono">
+                                {new Date(msg.created_at).toLocaleDateString([], {
+                                  weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </span>
+                              <button 
+                                type="button"
+                                onClick={() => handleToggleStar(msg)}
+                                className="text-muted-foreground hover:text-amber-500"
+                              >
+                                <Star className={`h-3.5 w-3.5 ${msg.is_starred ? 'fill-amber-500 text-amber-500' : ''}`} />
+                              </button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </>
-                  )}
-                </div>
 
-                {/* Reply Composer: Collapsible on Demand */}
-                {!isComposerOpen ? (
-                  /* Collapsed Minimal Action Trigger Bar */
-                  <div className="p-2.5 bg-card/95 border-t border-border/70 flex items-center justify-between gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsComposerOpen(true);
-                        setTimeout(() => replyTextareaRef.current?.focus(), 50);
-                      }}
-                      aria-label={`Reply to ${selectedMsg.sender_email}`}
-                      className="flex-1 flex items-center justify-between px-3 py-1.5 rounded-lg bg-background border border-border/80 hover:border-primary text-left text-xs text-foreground/75 hover:text-foreground transition-all shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <CornerDownRight className="h-3.5 w-3.5 text-primary group-hover:translate-x-0.5 transition-transform shrink-0" aria-hidden="true" />
-                        <span className="truncate">
-                          Reply to <span className="font-semibold text-foreground">{selectedMsg.sender_email}</span>...
-                        </span>
-                      </div>
-                      <kbd className="hidden sm:inline font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border/60 text-foreground/70 shrink-0 ml-2">
-                        Press R
-                      </kbd>
-                    </button>
+                          {/* Message Body */}
+                          <div className="p-4 sm:p-5 text-xs text-foreground leading-relaxed">
+                            <HtmlEmailViewer html={msg.body_html} text={msg.body_text} />
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAIReplyDraft}
-                      disabled={draftingAI}
-                      aria-label="Generate AI reply draft"
-                      className="h-7.5 text-[11px] font-bold gap-1.5 text-primary border-primary/40 bg-primary/5 hover:bg-primary/10 shadow-2xs shrink-0 focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <Sparkles className={`h-3 w-3 ${draftingAI ? 'animate-spin' : ''}`} aria-hidden="true" />
-                      <span>{draftingAI ? 'Drafting...' : '1-Click AI Draft'}</span>
-                    </Button>
-                  </div>
-                ) : (
-                  /* Expanded Rich Editor */
-                  <div className="p-3 bg-card border-t border-border/70 space-y-2 shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-foreground flex items-center gap-1.5">
-                        <CornerDownRight className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                        Reply to <span className="font-mono text-primary font-semibold">{selectedMsg.sender_email}</span>
-                      </span>
-                      
-                      <div className="flex items-center gap-1.5">
-                        {/* 1-Click AI Reply Draft */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleAIReplyDraft}
-                          disabled={draftingAI}
-                          aria-label="Generate AI reply draft"
-                          className="h-6.5 text-[10px] gap-1 text-primary border-primary/40 bg-primary/5 hover:bg-primary/10 font-bold shadow-2xs focus-visible:ring-2 focus-visible:ring-primary"
-                        >
-                          <Sparkles className={`h-3 w-3 ${draftingAI ? 'animate-spin' : ''}`} aria-hidden="true" />
-                          {draftingAI ? 'Generating...' : 'AI Draft'}
-                        </Button>
+                            {/* Store Link if available */}
+                            {selectedMsg.store_url && (
+                              <div className="mt-3 pt-2 border-t border-border/40 flex items-center gap-1.5 text-primary text-[11px]">
+                                <Globe className="h-3.5 w-3.5" />
+                                <a
+                                  href={selectedMsg.store_url.startsWith('http') ? selectedMsg.store_url : `https://${selectedMsg.store_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="hover:underline font-mono font-bold"
+                                >
+                                  {selectedMsg.store_name || selectedMsg.store_url}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
 
-                        {/* Minimize / Collapse */}
+                    {/* Bottom Action Pill Buttons (Authentic Gmail Style) */}
+                    {!isComposerOpen && (
+                      <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                        {/* Reply Pill Button */}
                         <button
                           type="button"
-                          onClick={() => setIsComposerOpen(false)}
-                          aria-label="Collapse reply composer"
-                          className="min-h-[26px] min-w-[26px] flex items-center justify-center text-foreground/60 hover:text-foreground hover:bg-muted rounded focus-visible:ring-2 focus-visible:ring-primary"
-                          title="Collapse (Esc)"
+                          onClick={() => {
+                            setIsComposerOpen(true);
+                            setTimeout(() => replyTextareaRef.current?.focus(), 50);
+                          }}
+                          className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-border/80 bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-2xs hover:border-foreground/40 group"
                         >
-                          <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          <CornerDownRight className="h-3.5 w-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
+                          <span>Reply</span>
+                        </button>
+
+                        {/* Forward Pill Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsComposerOpen(true);
+                            setReplyText(`---------- Forwarded message ---------\nFrom: ${selectedMsg.sender_email}\nSubject: ${selectedMsg.subject}\n\n${selectedMsg.body_text || ''}`);
+                            setTimeout(() => replyTextareaRef.current?.focus(), 50);
+                          }}
+                          className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-border/80 bg-card hover:bg-muted text-xs font-semibold text-foreground/80 hover:text-foreground transition-all shadow-2xs"
+                        >
+                          <Send className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>Forward</span>
+                        </button>
+
+                        {/* 1-Click AI Reply */}
+                        <button
+                          type="button"
+                          onClick={handleAIReplyDraft}
+                          disabled={draftingAI}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 hover:bg-primary/15 text-xs font-bold text-primary transition-all shadow-2xs"
+                        >
+                          <Sparkles className={`h-3.5 w-3.5 ${draftingAI ? 'animate-spin' : ''}`} />
+                          <span>{draftingAI ? 'Generating...' : '✨ 1-Click AI Reply'}</span>
                         </button>
                       </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Inline Rich Reply Composer (Gmail Style) */}
+              {isComposerOpen && (
+                <div className="p-4 bg-card border-t border-border/70 space-y-3 shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-150 shadow-lg">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <CornerDownRight className="h-4 w-4 text-primary" />
+                      <span className="text-muted-foreground">Replying to:</span>
+                      <span className="font-semibold text-foreground font-mono bg-muted px-2 py-0.5 rounded text-[11px]">
+                        {selectedMsg.sender_email}
+                      </span>
                     </div>
 
-                    <Textarea
-                      ref={replyTextareaRef}
-                      rows={3}
-                      aria-label="Compose reply message"
-                      placeholder="Type your response to this prospect..."
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      className="text-xs bg-background resize-none focus-visible:ring-2 focus-visible:ring-primary leading-relaxed border-border/80"
-                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAIReplyDraft}
+                        disabled={draftingAI}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-bold transition-colors"
+                      >
+                        <Sparkles className={`h-3 w-3 ${draftingAI ? 'animate-spin' : ''}`} />
+                        <span>{draftingAI ? 'Drafting...' : 'AI Enhance'}</span>
+                      </button>
 
-                    <div className="flex justify-between items-center pt-0.5">
-                      <div className="flex items-center gap-1 text-foreground/70" role="toolbar" aria-label="Formatting tools">
-                        <button type="button" aria-label="Format bold" className="min-h-[26px] min-w-[26px] flex items-center justify-center hover:bg-muted rounded focus-visible:ring-2 focus-visible:ring-primary"><Bold className="h-3 w-3" aria-hidden="true" /></button>
-                        <button type="button" aria-label="Format italic" className="min-h-[26px] min-w-[26px] flex items-center justify-center hover:bg-muted rounded focus-visible:ring-2 focus-visible:ring-primary"><Italic className="h-3 w-3" aria-hidden="true" /></button>
-                        <button type="button" aria-label="Attach document or file" className="min-h-[26px] min-w-[26px] flex items-center justify-center hover:bg-muted rounded focus-visible:ring-2 focus-visible:ring-primary"><Paperclip className="h-3 w-3" aria-hidden="true" /></button>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setReplyText('');
-                            setIsComposerOpen(false);
-                          }}
-                          className="h-7 text-xs text-foreground/70 hover:text-foreground"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={handleSendReply}
-                          disabled={sendingReply || !replyText.trim()}
-                          size="sm"
-                          aria-label="Send response to prospect"
-                          className="h-7 text-xs font-bold gap-1.5 bg-primary text-primary-foreground shadow-2xs focus-visible:ring-2 focus-visible:ring-primary"
-                        >
-                          {sendingReply ? <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Send className="h-3 w-3" aria-hidden="true" />}
-                          Send Response
-                        </Button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsComposerOpen(false)}
+                        className="p-1 text-muted-foreground hover:text-foreground rounded"
+                        title="Close (Esc)"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
-                )}
+
+                  <Textarea
+                    ref={replyTextareaRef}
+                    rows={4}
+                    placeholder="Write your reply to this prospect..."
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    className="text-xs bg-background resize-none focus-visible:ring-2 focus-visible:ring-primary leading-relaxed border-border/80"
+                  />
+
+                  <div className="flex justify-between items-center pt-1">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <button type="button" className="p-1.5 hover:bg-muted rounded text-foreground/70"><Bold className="h-3.5 w-3.5" /></button>
+                      <button type="button" className="p-1.5 hover:bg-muted rounded text-foreground/70"><Italic className="h-3.5 w-3.5" /></button>
+                      <button type="button" className="p-1.5 hover:bg-muted rounded text-foreground/70"><Paperclip className="h-3.5 w-3.5" /></button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setReplyText('');
+                          setIsComposerOpen(false);
+                        }}
+                        className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Discard
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleSendReply}
+                        disabled={sendingReply || !replyText.trim()}
+                        size="sm"
+                        className="h-8 px-4 text-xs font-bold gap-1.5 bg-[#635bff] hover:bg-[#493ee5] text-white shadow-xs"
+                      >
+                        {sendingReply ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        Send Reply
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

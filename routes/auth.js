@@ -174,13 +174,13 @@ router.post('/signup', emailLimiter, async (req, res) => {
     const { sendVerificationEmail } = require('../utils/email');
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    const existing = await db.prepare('SELECT id, auth_provider, password_hash, role, name FROM users WHERE email = ?').get(normalizedEmail);
+    const existing = await db.prepare('SELECT id, auth_provider, password_hash, role, name FROM users WHERE LOWER(email) = LOWER(?)').get(normalizedEmail);
     if (existing) {
       // If user exists without a password (e.g. initial Google OAuth / admin row), allow setting password directly!
       if (!existing.password_hash) {
         const hashedPassword = hashPassword(password);
         await db.prepare(
-          'UPDATE users SET password_hash = ?, email_verified = true, name = COALESCE(NULLIF(name, \'\'), ?), auth_provider = \'email\' WHERE id = ?'
+          'UPDATE users SET password_hash = ?, email_verified = true, name = COALESCE(NULLIF(name, \'\'), ?), auth_provider = \'both\' WHERE id = ?'
         ).run(hashedPassword, String(name).trim() || 'Admin', existing.id);
 
         const token = jwt.sign(
@@ -311,7 +311,7 @@ router.post('/signin', async (req, res) => {
     const db = await getDb();
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
+    const user = await db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(normalizedEmail);
     
     // CHECK IF ACCOUNT IS LOCKED
     if (user && user.locked_until) {
@@ -335,11 +335,12 @@ router.post('/signin', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // If user has no password set yet (e.g. legacy or OAuth row), set it now!
+    // If user has no password set (created via Google OAuth), prompt to sign in with Google or reset password
     if (!user.password_hash) {
-      const newHash = hashPassword(password);
-      await db.prepare('UPDATE users SET password_hash = ?, email_verified = true, auth_provider = \'email\' WHERE id = ?').run(newHash, user.id);
-      user.password_hash = newHash;
+      return res.status(400).json({
+        error: "This account was created with Google OAuth and has no password set. Please use 'Sign in with Google' or use 'Forgot password' to create a password.",
+        useGoogle: true
+      });
     }
 
     const passwordMatch = await verifyPassword(password, user.password_hash || '');
@@ -590,10 +591,11 @@ router.post('/reset-password', async (req, res) => {
     const bcrypt = require('bcrypt');
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
-    // Update password and mark token as used
+    // Update password and mark token as used, ensuring provider is 'both' if previously Google-only
+    const newProvider = user.auth_provider === 'google' ? 'both' : (user.auth_provider || 'email');
     await db.prepare(
-      'UPDATE users SET password_hash = ? WHERE id = ?'
-    ).run(passwordHash, user.id);
+      'UPDATE users SET password_hash = ?, email_verified = true, auth_provider = ? WHERE id = ?'
+    ).run(passwordHash, newProvider, user.id);
 
     await db.prepare(
       'UPDATE password_reset_tokens SET used_at = ? WHERE id = ?'
@@ -732,23 +734,40 @@ router.get('/callback', async (req, res) => {
 
     // Upsert user in database — link accounts if email already exists
     const db = await getDb();
-    const existing = await db.prepare('SELECT id, auth_provider FROM users WHERE email = ?').get(email);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = await db.prepare('SELECT id, auth_provider, password_hash FROM users WHERE LOWER(email) = LOWER(?)').get(normalizedEmail);
 
+    let userId;
     if (existing) {
-      // LINK ACCOUNTS: if user registered via email, upgrade provider to 'both'
-      const newProvider = (existing.auth_provider === 'email') ? 'both' : 
-                          (existing.auth_provider === 'both') ? 'both' : 'google';
+      // LINK ACCOUNTS: if user already has a password or was registered with email, provider is 'both'
+      const hasPassword = !!(existing.password_hash && existing.password_hash.trim());
+      const newProvider = hasPassword ? 'both' : (existing.auth_provider || 'google');
       await db.prepare(
-        "UPDATE users SET name = ?, picture = ?, email_verified = true, auth_provider = ?, last_login = datetime('now') WHERE email = ?"
-      ).run(name, picture, newProvider, email);
+        "UPDATE users SET name = COALESCE(NULLIF(name, ''), ?), picture = COALESCE(NULLIF(picture, ''), ?), email_verified = true, auth_provider = ?, last_login = datetime('now') WHERE id = ?"
+      ).run(name, picture, newProvider, existing.id);
+      userId = existing.id;
     } else {
-      await db.prepare(
+      const res = await db.prepare(
         'INSERT INTO users (email, name, picture, role, email_verified, auth_provider) VALUES (?, ?, ?, ?, true, ?)'
-      ).run(email, name, picture, 'user', 'google');
+      ).run(normalizedEmail, name, picture, 'user', 'google');
+      userId = res.lastInsertRowid;
+
+      // Initialize default workspace for new Google OAuth users
+      try {
+        const wsResult = await db.prepare(
+          'INSERT INTO workspaces (name) VALUES (?)'
+        ).run(`${String(name).trim() || 'My'}'s Workspace`);
+        const workspaceId = wsResult.lastInsertRowid;
+        await db.prepare(
+          'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
+        ).run(workspaceId, userId, 'admin');
+      } catch (wsErr) {
+        logger.warn('Workspace creation skipped on Google signup:', wsErr.message);
+      }
     }
 
     // Fetch the full user row for the JWT payload
-    const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
     // Issue JWT
     const token = jwt.sign(
@@ -798,6 +817,8 @@ router.get('/me', async (req, res) => {
           name: user.name || name,
           role: user.role || role,
           picture: user.picture || '',
+          auth_provider: user.auth_provider || 'email',
+          has_password: !!(user.password_hash && user.password_hash.trim()),
         });
       }
     } catch (_) {}
@@ -883,7 +904,8 @@ router.post('/change-password', async (req, res) => {
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
+    const newProvider = user.auth_provider === 'google' ? 'both' : (user.auth_provider || 'email');
+    await db.prepare('UPDATE users SET password_hash = ?, auth_provider = ? WHERE id = ?').run(newHash, newProvider, user.id);
 
     res.json({ success: true, message: 'Password changed successfully.' });
   } catch (err) {

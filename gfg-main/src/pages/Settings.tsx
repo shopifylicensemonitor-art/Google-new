@@ -78,6 +78,10 @@ export default function Settings() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [authProvider, setAuthProvider] = useState<string>('email');
+  const [hasPassword, setHasPassword] = useState<boolean>(true);
+  const [requestingReset, setRequestingReset] = useState(false);
+  const [resetRequested, setResetRequested] = useState(false);
 
   // Notification state
   const [notifyLowQuota, setNotifyLowQuota] = useState(true);
@@ -101,6 +105,8 @@ export default function Settings() {
             setDefaultSenderEmail(user.email);
             setBillingEmail(user.email);
           }
+          setAuthProvider(user.auth_provider || 'email');
+          setHasPassword(user.has_password !== false);
         }
       } catch (err: any) {
         console.warn('Could not load user profile', err);
@@ -173,11 +179,11 @@ export default function Settings() {
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 6) {
+    if (newPassword.length < 8) {
       toast({
         variant: 'destructive',
         title: 'Password Too Short',
-        description: 'New password must be at least 6 characters long.'
+        description: 'New password must be at least 8 characters long.'
       });
       return;
     }
@@ -198,15 +204,19 @@ export default function Settings() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setHasPassword(true);
+      setAuthProvider('both');
       toast({
-        title: 'Password Changed Successfully',
-        description: 'Your account password has been updated.'
+        title: hasPassword ? 'Password Changed Successfully' : 'Password Created Successfully',
+        description: hasPassword 
+          ? 'Your account password has been updated.' 
+          : 'You can now sign in using either Google or your email and password.'
       });
     } catch (err: any) {
       toast({
         variant: 'destructive',
-        title: 'Password Change Failed',
-        description: err.message || 'Could not change password.'
+        title: hasPassword ? 'Password Change Failed' : 'Password Creation Failed',
+        description: err.message || 'Could not update password.'
       });
     } finally {
       setUpdatingPassword(false);
@@ -1009,87 +1019,215 @@ export default function Settings() {
             {/* Password Management */}
             <div className="bg-card rounded-xl border border-border/60 p-6 shadow-2xs space-y-5">
               <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
-                <Lock className="h-4 w-4 text-[#635bff]" /> Change Password
+                <Lock className="h-4 w-4 text-[#635bff]" />
+                {hasPassword ? 'Change Password' : 'Add Password to Account'}
               </h3>
 
-              <form onSubmit={handlePasswordChange} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">Current Password</label>
-                  <div className="relative">
-                    <Input
-                      type={showCurrentPassword ? "text" : "password"}
-                      placeholder="••••••••••••"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="h-10 text-xs bg-background pr-9"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={showCurrentPassword ? "Hide password" : "Show password"}
-                    >
-                      {showCurrentPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-foreground">New Password</label>
-                    <div className="relative">
-                      <Input
-                        type={showNewPassword ? "text" : "password"}
-                        placeholder="At least 8 characters"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="h-10 text-xs bg-background pr-9"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={showNewPassword ? "Hide password" : "Show password"}
-                      >
-                        {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
+              {/* Google-only users without a password: show direct password creator + email reset option */}
+              {(authProvider === 'google' && !hasPassword) ? (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 flex items-start gap-3">
+                    <Key className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-foreground">Add Password to your Google Account</p>
+                      <p className="text-xs text-muted-foreground">
+                        Your account was registered via Google Sign-In (<strong className="text-foreground font-mono">{profileEmail}</strong>).
+                        Set a password below to enable direct email &amp; password sign-in alongside Google.
+                      </p>
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-foreground">Confirm New Password</label>
-                    <div className="relative">
-                      <Input
-                        type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Repeat new password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="h-10 text-xs bg-background pr-9"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
-                <Button
-                  type="submit"
-                  disabled={updatingPassword}
-                  className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
-                >
-                  {updatingPassword ? (
-                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-white" />
-                  ) : (
-                    <Save className="h-4 w-4" />
+                  <form onSubmit={handlePasswordChange} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-foreground">Create Password</label>
+                        <div className="relative">
+                          <Input
+                            type={showNewPassword ? "text" : "password"}
+                            placeholder="At least 8 characters"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="h-10 text-xs bg-background pr-9"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={showNewPassword ? "Hide password" : "Show password"}
+                          >
+                            {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-foreground">Confirm Password</label>
+                        <div className="relative">
+                          <Input
+                            type={showConfirmPassword ? "text" : "password"}
+                            placeholder="Repeat password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="h-10 text-xs bg-background pr-9"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                          >
+                            {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <Button
+                        type="submit"
+                        disabled={updatingPassword}
+                        className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                      >
+                        {updatingPassword ? (
+                          <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-white" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        {updatingPassword ? 'Setting Password...' : 'Save & Enable Password'}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={async () => {
+                          if (!profileEmail) return;
+                          setRequestingReset(true);
+                          try {
+                            await api.forgotPassword(profileEmail);
+                            setResetRequested(true);
+                            toast({
+                              title: 'Reset Link Sent',
+                              description: `We sent a setup link to ${profileEmail}.`
+                            });
+                          } catch (err: any) {
+                            toast({
+                              variant: 'destructive',
+                              title: 'Request Failed',
+                              description: err.message || 'Could not send reset email.'
+                            });
+                          } finally {
+                            setRequestingReset(false);
+                          }
+                        }}
+                        disabled={requestingReset}
+                        className="h-9 px-4 text-xs font-semibold gap-1.5 border-border/60 text-muted-foreground hover:text-foreground"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        {requestingReset ? 'Sending...' : 'Or Send Email Reset Link'}
+                      </Button>
+                    </div>
+                  </form>
+
+                  {resetRequested && (
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 flex items-center gap-2.5">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <p className="text-xs text-muted-foreground">
+                        Password setup email sent to <strong className="text-foreground font-mono">{profileEmail}</strong>.
+                      </p>
+                    </div>
                   )}
-                  {updatingPassword ? 'Updating Password...' : 'Update Password'}
-                </Button>
-              </form>
+                </div>
+              ) : (
+                /* Normal password change form for users who already have a password */
+                <form onSubmit={handlePasswordChange} className="space-y-4">
+                  {hasPassword && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-foreground">Current Password</label>
+                      <div className="relative">
+                        <Input
+                          type={showCurrentPassword ? "text" : "password"}
+                          placeholder="••••••••••••"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          className="h-10 text-xs bg-background pr-9"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                        >
+                          {showCurrentPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!hasPassword && (
+                    <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3.5 flex items-start gap-2.5">
+                      <Key className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-muted-foreground">
+                        Your account was created via Google Sign-In. Set a password below to also enable email/password login.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-foreground">{hasPassword ? 'New Password' : 'Create Password'}</label>
+                      <div className="relative">
+                        <Input
+                          type={showNewPassword ? "text" : "password"}
+                          placeholder="At least 8 characters"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="h-10 text-xs bg-background pr-9"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={showNewPassword ? "Hide password" : "Show password"}
+                        >
+                          {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-foreground">Confirm {hasPassword ? 'New ' : ''}Password</label>
+                      <div className="relative">
+                        <Input
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Repeat new password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="h-10 text-xs bg-background pr-9"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={updatingPassword}
+                    className="h-9 px-5 text-xs font-bold bg-[#635bff] hover:bg-[#493ee5] text-white gap-2"
+                  >
+                    {updatingPassword ? (
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-white" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    {updatingPassword ? 'Updating Password...' : (hasPassword ? 'Update Password' : 'Set Password')}
+                  </Button>
+                </form>
+              )}
             </div>
 
             {/* Two-Factor Authentication */}

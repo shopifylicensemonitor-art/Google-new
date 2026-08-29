@@ -6,12 +6,12 @@ const nodemailer = require('nodemailer');
 const logger = require('../logger');
 
 function getTransporter() {
-  const host = process.env.SMTP_HOST;
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
 
-  if (host && user && pass) {
+  if (user && pass) {
     return nodemailer.createTransport({
       host,
       port,
@@ -23,11 +23,25 @@ function getTransporter() {
   return null;
 }
 
+function getFromAddress() {
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const explicit = process.env.SMTP_FROM || process.env.EMAIL_FROM;
+
+  if (explicit && explicit.includes('@')) {
+    if (explicit.includes('<')) return explicit;
+    return `"Peak Xender" <${explicit}>`;
+  }
+  if (user) {
+    return `"Peak Xender" <${user}>`;
+  }
+  return '"Peak Xender" <support@peakconix.site>';
+}
+
 /**
  * Send 6-digit email verification code & activation link.
  */
 async function sendVerificationEmail(toEmail, code, link) {
-  const fromAddress = process.env.SMTP_FROM || process.env.ADMIN_EMAIL || 'support@peakconix.site';
+  const fromAddress = getFromAddress();
   const transporter = getTransporter();
 
   const htmlContent = `
@@ -60,14 +74,14 @@ async function sendVerificationEmail(toEmail, code, link) {
 
   if (transporter) {
     try {
-      await transporter.sendMail({
-        from: `"Peak Xender" <${fromAddress}>`,
+      const info = await transporter.sendMail({
+        from: fromAddress,
         to: toEmail,
         subject: `Your Peak Xender Verification Code: ${code}`,
         text: `Your Peak Xender verification code is: ${code}. Or click: ${link}`,
         html: htmlContent,
       });
-      logger.info({ toEmail, code }, 'Verification email sent via SMTP');
+      logger.info({ toEmail, code, messageId: info?.messageId }, 'Verification email sent via SMTP');
       return true;
     } catch (err) {
       logger.warn({ err: err.message, toEmail }, 'SMTP delivery failed; logged verification code locally');
@@ -89,7 +103,7 @@ async function sendVerificationEmail(toEmail, code, link) {
  * Send password reset code & secure token link.
  */
 async function sendPasswordResetEmail(toEmail, code, link) {
-  const fromAddress = process.env.SMTP_FROM || process.env.ADMIN_EMAIL || 'support@peakconix.site';
+  const fromAddress = getFromAddress();
   const transporter = getTransporter();
 
   const htmlContent = `
@@ -121,14 +135,14 @@ async function sendPasswordResetEmail(toEmail, code, link) {
 
   if (transporter) {
     try {
-      await transporter.sendMail({
-        from: `"Peak Xender" <${fromAddress}>`,
+      const info = await transporter.sendMail({
+        from: fromAddress,
         to: toEmail,
         subject: `Reset your Peak Xender Password`,
         text: `Reset your Peak Xender password by visiting: ${link}`,
         html: htmlContent,
       });
-      logger.info({ toEmail }, 'Password reset email sent via SMTP');
+      logger.info({ toEmail, messageId: info?.messageId }, 'Password reset email sent via SMTP');
       return true;
     } catch (err) {
       logger.warn({ err: err.message, toEmail }, 'SMTP password reset delivery failed; logged link locally');

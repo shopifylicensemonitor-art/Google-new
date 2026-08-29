@@ -615,19 +615,26 @@ export default function Accounts({ requirePin }: AccountsProps) {
                       </div>
                     </div>
 
-                    {/* Column 2: Health Status */}
-                    <div className="col-span-1 md:col-span-2 flex items-center">
-                      {acct.status === 'active' ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold text-xs border border-emerald-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Healthy
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold text-xs border border-amber-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                          Paused
-                        </span>
-                      )}
+                    {/* Column 2: Deliverability & Health Status */}
+                    <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5">
+                        {acct.status === 'active' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold text-xs border border-emerald-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Healthy
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold text-xs border border-amber-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Paused
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground">
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 py-0.2 rounded border border-emerald-500/20">SPF</span>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 py-0.2 rounded border border-emerald-500/20">DKIM</span>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 py-0.2 rounded border border-emerald-500/20">DMARC</span>
+                      </div>
                     </div>
 
                     {/* Column 3: Sending Stats */}

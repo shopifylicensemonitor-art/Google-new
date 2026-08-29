@@ -35,12 +35,7 @@ function verifyJwtToken(token) {
  * while enabling the new auth flow.
  */
 function requireAuth(req, res, next) {
-  // Allow public access to OAuth callback and auth-url generation
-  if (req.path === '/callback' || req.path === '/auth-url') {
-    return next();
-  }
-
-  // Try JWT Bearer token
+  // Try JWT Bearer token first for all requests
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
@@ -57,6 +52,11 @@ function requireAuth(req, res, next) {
     } catch (err) {
       logger.debug({ err: err.message }, 'JWT verification failed in requireAuth');
     }
+  }
+
+  // Allow public access to OAuth callback (Google redirect)
+  if (req.path === '/callback' || req.path === '/accounts/callback' || req.path === '/auth/callback') {
+    return next();
   }
 
   // Allow PIN fallback only if ACCESS_PIN is explicitly set in non-production environments

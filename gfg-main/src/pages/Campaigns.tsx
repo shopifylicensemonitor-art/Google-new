@@ -17,6 +17,7 @@ import {
   UploadCloud, ListFilter, Check, ArrowRight, ArrowLeft, Users, Mail, Layers, X,
   Eye, Sparkles, Tag, SlidersHorizontal, MousePointerClick, RefreshCw, Copy, Globe, Calculator, Brain,
 } from 'lucide-react';
+import { SendTestEmailModal } from '@/components/SendTestEmailModal';
 
 interface CampaignsProps {
   requirePin?: (label: string, action: () => void) => void;
@@ -46,6 +47,45 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     mode: string;
   } | null>(null);
   const [triggeringWorker, setTriggeringWorker] = useState<boolean>(false);
+
+  // Deliverability Test Email Modal State
+  const [testModalOpen, setTestModalOpen] = useState<boolean>(false);
+  const [testTargetCampaign, setTestTargetCampaign] = useState<{
+    id?: number;
+    name?: string;
+    subject?: string;
+    body_html?: string;
+    body_plain?: string;
+    step_number?: number;
+  } | null>(null);
+
+  const handleOpenCampaignTestModal = (c?: Campaign | null) => {
+    if (c) {
+      setTestTargetCampaign({
+        id: c.id,
+        name: c.name,
+        subject: c.subject,
+        body_html: c.body_html,
+        body_plain: c.body_plain,
+      });
+    } else if (editingCampaign) {
+      setTestTargetCampaign({
+        id: editingCampaign.id,
+        name: editName || editingCampaign.name,
+        subject: editSubject || editingCampaign.subject,
+        body_html: editBodyHtml || editingCampaign.body_html,
+        body_plain: editBodyPlain || editingCampaign.body_plain,
+      });
+    } else {
+      setTestTargetCampaign({
+        name: name || 'Draft Campaign',
+        subject: subject || (subjectVariations?.[0]) || '',
+        body_html: formatType === 'html' ? bodyHtml || (bodyVariations?.[0]) || '' : '',
+        body_plain: formatType === 'plain' ? bodyPlain || (bodyVariations?.[0]) || '' : bodyPlain || '',
+      });
+    }
+    setTestModalOpen(true);
+  };
 
   // Audience & Filter State
   const [listTokens, setListTokens] = useState<string[]>([]);
@@ -1742,6 +1782,17 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                                   <Eye className="h-3.5 w-3.5 mr-1" />
                                   {showPreview ? 'Hide Preview' : 'Live HTML Preview'}
                                 </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleOpenCampaignTestModal()}
+                                  className="h-7 text-[10px] gap-1 font-bold border-[#635bff]/40 text-[#635bff] hover:bg-[#635bff]/10"
+                                  title="Send a live test email with this draft"
+                                >
+                                  <Send className="h-3 w-3" />
+                                  <span>Send Test</span>
+                                </Button>
                                 <VoiceToTextButton
                                   size="sm"
                                   label="Voice Input"
@@ -2883,6 +2934,16 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => handleOpenCampaignTestModal(c)}
+                            className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-[#635bff]/10 hover:text-[#635bff] border-border/40"
+                            title="Send a live test email to verify formatting and deliverability"
+                          >
+                            <Send className="h-3 w-3 text-[#635bff]" />
+                            <span>Test</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => handleOpenEdit(c)}
                             className="h-8 gap-1 rounded-lg text-xs font-semibold hover:bg-primary/10 hover:text-primary border-primary/20"
                           >
@@ -3738,18 +3799,43 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
-                <Button type="button" variant="outline" onClick={() => setEditingCampaign(null)} className="text-xs">
-                  Cancel
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-border">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenCampaignTestModal()}
+                  className="text-xs font-semibold gap-1.5 border-[#635bff]/40 text-[#635bff] hover:bg-[#635bff]/10 w-full sm:w-auto"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Send Test Email</span>
                 </Button>
-                <Button type="submit" disabled={savingEdit} className="text-xs font-semibold">
-                  {savingEdit ? 'Saving Updates...' : 'Save Campaign Changes'}
-                </Button>
+
+                <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                  <Button type="button" variant="outline" onClick={() => setEditingCampaign(null)} className="text-xs">
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={savingEdit} className="text-xs font-semibold">
+                    {savingEdit ? 'Saving Updates...' : 'Save Campaign Changes'}
+                  </Button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Campaign Deliverability Test Email Modal */}
+      <SendTestEmailModal
+        isOpen={testModalOpen}
+        onClose={() => setTestModalOpen(false)}
+        type="campaign"
+        campaignId={testTargetCampaign?.id}
+        campaignName={testTargetCampaign?.name}
+        subject={testTargetCampaign?.subject || ''}
+        bodyHtml={testTargetCampaign?.body_html || ''}
+        bodyPlain={testTargetCampaign?.body_plain || ''}
+        accounts={accounts}
+      />
     </AppShell>
   );
 }

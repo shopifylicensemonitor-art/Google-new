@@ -12,10 +12,11 @@ import {
   MoreVertical, Check, RefreshCw, X, Save, Clock, ArrowUpRight, Code,
   Wand2, Layers, Tag, Bold, Italic, Underline, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Link2, Unlink,
-  Undo, Redo, Eraser, Columns, Monitor, UserCheck
+  Undo, Redo, Eraser, Columns, Monitor, UserCheck, Send
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { SendTestEmailModal } from '@/components/SendTestEmailModal';
 
 interface TemplatesProps {
   requirePin?: (label: string, action: () => void) => void;
@@ -84,6 +85,16 @@ export default function Templates({ requirePin }: TemplatesProps) {
   const [showAiGenBox, setShowAiGenBox] = useState<boolean>(false);
   const [aiPrompt, setAiPrompt] = useState<string>('');
   const [aiStage, setAiStage] = useState<string>('initial');
+
+  // Test Email Modal State
+  const [testModalOpen, setTestModalOpen] = useState<boolean>(false);
+  const [testTargetTemplate, setTestTargetTemplate] = useState<{
+    id?: number;
+    name?: string;
+    subject?: string;
+    body_html?: string;
+    body_plain?: string;
+  } | null>(null);
 
   const visualEditorRef = useRef<HTMLDivElement | null>(null);
   const isInternalVisualEdit = useRef<boolean>(false);
@@ -378,7 +389,26 @@ export default function Templates({ requirePin }: TemplatesProps) {
       toast({ variant: 'destructive', title: 'Duplicate Failed', description: err.message });
     }
   };
-
+  const handleOpenTestModal = (t?: Template | null) => {
+    if (t) {
+      setTestTargetTemplate({
+        id: t.id,
+        name: t.name,
+        subject: t.subject,
+        body_html: t.body_html,
+        body_plain: t.body_plain
+      });
+    } else {
+      setTestTargetTemplate({
+        id: editingTemplate?.id,
+        name: name || 'Draft Template',
+        subject: subject,
+        body_html: bodyHtml,
+        body_plain: bodyPlain
+      });
+    }
+    setTestModalOpen(true);
+  };
   // Filter templates
   const filteredTemplates = templates.filter(t => {
     const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -421,6 +451,41 @@ export default function Templates({ requirePin }: TemplatesProps) {
             >
               <Plus className="h-4 w-4" /> New Template
             </Button>
+          </div>
+        </div>
+
+        {/* Top KPI / Metrics Ribbon */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-card border border-border/70 p-3.5 rounded-xl shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Templates Library</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl sm:text-2xl font-bold font-heading text-foreground">{templates.length}</span>
+              <span className="text-[11px] text-[#635bff] font-semibold">Active Ready</span>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border/70 p-3.5 rounded-xl shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Dynamic Personalization</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl sm:text-2xl font-bold font-heading text-emerald-600 dark:text-emerald-400">8+</span>
+              <span className="text-[11px] text-muted-foreground">Tags Supported</span>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border/70 p-3.5 rounded-xl shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Spintax Variations</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl sm:text-2xl font-bold font-heading text-amber-600 dark:text-amber-400">Multi-Option</span>
+              <span className="text-[11px] text-muted-foreground">Spam Defense</span>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border/70 p-3.5 rounded-xl shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Deliverability Preview</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl sm:text-2xl font-bold font-heading text-[#635bff]">1-Click</span>
+              <span className="text-[11px] text-muted-foreground">Live Inbox Test</span>
+            </div>
           </div>
         </div>
 
@@ -560,22 +625,33 @@ export default function Templates({ requirePin }: TemplatesProps) {
                     </p>
                   </div>
 
-                  {/* Card Footer */}
-                  <div className="flex items-center justify-between pt-3 border-t border-border/40 mt-auto">
-                    <div className="text-[11px] text-muted-foreground flex items-center gap-1 font-mono">
-                      <Clock className="h-3.5 w-3.5" />
-                      Updated {new Date(t.created_at).toLocaleDateString()}
-                    </div>
+                    {/* Card Footer */}
+                    <div className="flex items-center justify-between pt-3 border-t border-border/40 mt-auto">
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1 font-mono">
+                        <Clock className="h-3.5 w-3.5" />
+                        Updated {new Date(t.created_at).toLocaleDateString()}
+                      </div>
 
-                    <Button
-                      onClick={() => handleOpenEdit(t)}
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-3 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff]"
-                    >
-                      Use / Edit
-                    </Button>
-                  </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          onClick={() => handleOpenTestModal(t)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2.5 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff] gap-1"
+                          title="Send a live test email to verify formatting and deliverability"
+                        >
+                          <Send className="h-3 w-3 text-[#635bff]" /> Test Send
+                        </Button>
+                        <Button
+                          onClick={() => handleOpenEdit(t)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-3 text-xs font-bold border-border/60 hover:border-[#635bff] hover:text-[#635bff]"
+                        >
+                          Use / Edit
+                        </Button>
+                      </div>
+                    </div>
                 </div>
               );
             })}
@@ -988,24 +1064,49 @@ export default function Templates({ requirePin }: TemplatesProps) {
               </div>
             </div>
 
-            <DialogFooter className="flex gap-2 pt-3 border-t border-border/60 shrink-0">
+            <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-border/60 shrink-0">
               <Button
+                type="button"
                 variant="outline"
-                onClick={() => setShowModal(false)}
-                className="rounded-lg h-9 text-xs font-bold"
+                onClick={() => handleOpenTestModal()}
+                className="rounded-lg h-9 text-xs font-bold gap-1.5 border-[#635bff]/40 text-[#635bff] hover:bg-[#635bff]/10 w-full sm:w-auto"
+                title="Send a test email with the current draft content"
               >
-                Cancel
+                <Send className="h-3.5 w-3.5" />
+                <span>Send Test Email</span>
               </Button>
-              <Button
-                onClick={handleSave}
-                className="rounded-lg bg-[#635bff] hover:bg-[#493ee5] text-white h-9 px-5 text-xs font-bold gap-2"
-              >
-                <Save className="h-4 w-4" />
-                <span>Save Template</span>
-              </Button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowModal(false)}
+                  className="rounded-lg h-9 text-xs font-bold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  className="rounded-lg bg-[#635bff] hover:bg-[#493ee5] text-white h-9 px-5 text-xs font-bold gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>Save Template</span>
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Deliverability Test Email Modal */}
+        <SendTestEmailModal
+          isOpen={testModalOpen}
+          onClose={() => setTestModalOpen(false)}
+          type="template"
+          templateId={testTargetTemplate?.id}
+          templateName={testTargetTemplate?.name}
+          subject={testTargetTemplate?.subject || ''}
+          bodyHtml={testTargetTemplate?.body_html || ''}
+          bodyPlain={testTargetTemplate?.body_plain || ''}
+        />
       </div>
     </AppShell>
   );

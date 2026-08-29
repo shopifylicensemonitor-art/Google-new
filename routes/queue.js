@@ -12,7 +12,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
-const { getWorkerStatus, processNextItem } = require('../scheduler');
+const { getWorkerStatus, processNextItem, runDailyMaintenance } = require('../scheduler');
 
 /** Get server-side background worker health and status (user-scoped). */
 router.get('/worker/status', async (req, res) => {
@@ -29,6 +29,17 @@ router.post('/worker/trigger', async (req, res) => {
   try {
     const result = await processNextItem();
     res.json({ success: true, message: 'Worker dispatch tick completed.', processedCount: result?.processedCount || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Trigger 24-hour daily maintenance and quota reset sweep manually. */
+router.post('/maintenance/run', async (req, res) => {
+  try {
+    const force = req.body?.force === true;
+    const result = await runDailyMaintenance(null, force);
+    res.json({ success: true, message: '24-hour maintenance sweep completed.', ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1039,4 +1039,146 @@ router.post('/:id/recipients/status', async (req, res) => {
   }
 });
 
+/** Helper to execute campaign test email sending */
+async function executeCampaignTestSend(req, res, campaignIdOverride = null) {
+  const { to, subject, body_html, body_plain, account_id, campaign_id, step_number, variation_index, variables } = req.body;
+  const targetId = campaignIdOverride || campaign_id;
+
+  if (!to || !String(to).includes('@')) {
+    return res.status(400).json({ error: 'Valid recipient email address is required.' });
+  }
+
+  try {
+    const db = await getDb();
+    const { sendEmail, personalise, logEvent } = require('../scheduler');
+
+    let campaignSubject = subject;
+    let campaignBody = body_html || body_plain;
+    let campaign = null;
+
+    if (targetId) {
+      campaign = await db.prepare('SELECT * FROM campaigns WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(targetId, req.userId);
+      if (campaign) {
+        // If step_number specified, check for campaign step
+        if (step_number && Number(step_number) > 1) {
+          const step = await db.prepare('SELECT * FROM campaign_steps WHERE campaign_id = ? AND step_number = ?').get(targetId, Number(step_number));
+          if (step) {
+            campaignSubject = campaignSubject || step.subject;
+            campaignBody = campaignBody || step.body_html || step.body_plain;
+          }
+        }
+        
+        // Handle rotational variations if present
+        if (!campaignSubject && campaign.content_variations && campaign.content_mode === 'rotation') {
+          try {
+            const variations = typeof campaign.content_variations === 'string' ? JSON.parse(campaign.content_variations) : campaign.content_variations;
+            const idx = variation_index !== undefined ? Number(variation_index) : 0;
+            if (variations.subjects && Array.isArray(variations.subjects) && variations.subjects.length > 0) {
+              campaignSubject = variations.subjects[idx % variations.subjects.length];
+            }
+            if (variations.bodies && Array.isArray(variations.bodies) && variations.bodies.length > 0) {
+              campaignBody = variations.bodies[idx % variations.bodies.length];
+            }
+          } catch (_) {}
+        }
+
+        campaignSubject = campaignSubject || campaign.subject;
+        campaignBody = campaignBody || campaign.body_html || campaign.body_plain;
+      }
+    }
+
+    if (!campaignSubject) {
+      return res.status(400).json({ error: 'Campaign subject line is required.' });
+    }
+    if (!campaignBody) {
+      return res.status(400).json({ error: 'Campaign message body is required.' });
+    }
+
+    // Find account to send from
+    let account = null;
+    if (account_id) {
+      account = await db.prepare('SELECT * FROM accounts WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(account_id, req.userId);
+    }
+    
+    // Check campaign assigned accounts if no account explicitly picked
+    if (!account && targetId) {
+      const assignedAcc = await db.prepare(`
+        SELECT a.* FROM accounts a
+        JOIN campaign_accounts ca ON ca.account_id = a.id
+        WHERE ca.campaign_id = ? AND a.status = 'active'
+        LIMIT 1
+      `).get(targetId);
+      if (assignedAcc) account = assignedAcc;
+    }
+
+    if (!account) {
+      account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL) ORDER BY id ASC LIMIT 1").get(req.userId);
+    }
+    if (!account) {
+      account = await db.prepare("SELECT * FROM accounts WHERE (user_id = ? OR user_id IS NULL) ORDER BY id ASC LIMIT 1").get(req.userId);
+    }
+    if (!account) {
+      return res.status(400).json({ error: 'No connected sender accounts found. Please connect a Gmail or SMTP account in Connected Senders first.' });
+    }
+
+    // Prepare sample contact / persona variables
+    let sampleContactVars = {};
+    if (campaign && campaign.contact_list) {
+      const firstContact = await db.prepare('SELECT fields FROM contacts WHERE list_name = ? AND (user_id = ? OR user_id IS NULL) LIMIT 1').get(campaign.contact_list, req.userId);
+      if (firstContact && firstContact.fields) {
+        try {
+          sampleContactVars = typeof firstContact.fields === 'string' ? JSON.parse(firstContact.fields) : firstContact.fields;
+        } catch (_) {}
+      }
+    }
+
+    const sampleVars = {
+      first_name: 'Alex',
+      last_name: 'Rivera',
+      name: 'Alex Rivera',
+      store_name: 'Starlight Apparel',
+      store: 'Starlight Apparel',
+      company_name: 'Starlight Apparel',
+      company: 'Starlight Apparel',
+      email: to.trim(),
+      niche: 'Fashion & Apparel',
+      website: 'starlightapparel.com',
+      job_title: 'Head of Growth',
+      my_name: account.display_name || 'Team',
+      brand: account.display_name || 'Peak Outreach',
+      sender: account.display_name || 'Team',
+      ...sampleContactVars,
+      ...(typeof variables === 'object' && variables ? variables : {})
+    };
+
+    const finalSubject = personalise(campaignSubject, to.trim(), JSON.stringify(sampleVars), account.display_name);
+    let finalBody = personalise(campaignBody, to.trim(), JSON.stringify(sampleVars), account.display_name);
+
+    if (!finalBody.includes('<p>') && !finalBody.includes('<div>') && !finalBody.includes('<br')) {
+      finalBody = finalBody.split('\n').map(line => line ? `<p style="margin: 0 0 12px 0;">${line}</p>` : '<br/>').join('');
+    }
+
+    await sendEmail(account, to.trim(), finalSubject, finalBody, targetId || 0);
+
+    try {
+      await logEvent(db, targetId || null, account.id, to.trim(), 'test_sent', `Test email sent for campaign: ${finalSubject}`, null, req.userId);
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: `Test email successfully sent to ${to.trim()}`,
+      sender: account.email,
+      recipient: to.trim(),
+      subject: finalSubject,
+      sent_at: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Test email delivery failed: ${err.message}` });
+  }
+}
+
+/** Send a test email from campaign data or draft copy. */
+router.post('/send-test', (req, res) => executeCampaignTestSend(req, res));
+router.post('/:id/send-test', (req, res) => executeCampaignTestSend(req, res, req.params.id));
+
 module.exports = router;

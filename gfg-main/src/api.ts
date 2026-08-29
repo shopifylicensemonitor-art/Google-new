@@ -608,6 +608,27 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ email, status })
   }),
+  sendCampaignTestEmail: (data: {
+    campaign_id?: number;
+    subject?: string;
+    body_html?: string;
+    body_plain?: string;
+    to: string;
+    account_id?: number | null;
+    step_number?: number;
+    variation_index?: number;
+    variables?: Record<string, any>;
+  }) => apiFetch<{
+    success: boolean;
+    message: string;
+    sender: string;
+    recipient: string;
+    subject: string;
+    sent_at: string;
+  }>('/api/campaigns/send-test', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
 
   // Contacts
   getContactLists: () => apiFetch<ContactListInfo[]>('/api/contacts/lists'),
@@ -679,6 +700,25 @@ export const api = {
     body: JSON.stringify(data)
   }),
   deleteTemplate: (id: number) => apiFetch<{ success: boolean }>(`/api/templates/${id}`, { method: 'DELETE' }),
+  sendTemplateTestEmail: (data: {
+    template_id?: number;
+    subject?: string;
+    body_html?: string;
+    body_plain?: string;
+    to: string;
+    account_id?: number | null;
+    variables?: Record<string, any>;
+  }) => apiFetch<{
+    success: boolean;
+    message: string;
+    sender: string;
+    recipient: string;
+    subject: string;
+    sent_at: string;
+  }>('/api/templates/send-test', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
 
   // Device/IP state persistence
   getDeviceState: (deviceId: string) => apiFetch<{
@@ -709,7 +749,7 @@ export const api = {
 
   // Auth
   getLoginUrl: () => apiFetch<{ url: string }>('/api/auth/google-url'),
-  getCurrentUser: () => apiFetch<{ id: number; email: string; name: string; role: string; picture?: string }>('/api/auth/me'),
+  getCurrentUser: () => apiFetch<{ id: number; email: string; name: string; role: string; picture?: string; auth_provider?: string; has_password?: boolean }>('/api/auth/me'),
   updateProfile: (name: string, picture?: string) => apiFetch<{ success: boolean; message: string }>('/api/auth/profile', {
     method: 'POST',
     body: JSON.stringify({ name, picture: picture || '' }),
@@ -717,6 +757,10 @@ export const api = {
   changePassword: (data: { currentPassword?: string; newPassword: string }) => apiFetch<{ success: boolean; message: string }>('/api/auth/change-password', {
     method: 'POST',
     body: JSON.stringify(data),
+  }),
+  forgotPassword: (email: string) => apiFetch<{ success: boolean; message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   }),
   getSettings: () => apiFetch<{
     ADMIN_EMAIL: string;
