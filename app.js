@@ -190,30 +190,61 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       LIMIT 10
     `).all(uid);
 
-    const days = parseInt(req.query.days) || 7;
+    const hoursParam = req.query.hours ? parseInt(req.query.hours, 10) : null;
+    const daysParam = req.query.days ? parseInt(req.query.days, 10) : null;
+
+    const isHourly = hoursParam !== null && !isNaN(hoursParam) && hoursParam > 0;
+    const timeSpan = isHourly ? hoursParam : (daysParam && !isNaN(daysParam) && daysParam > 0 ? daysParam : 7);
+
     const d = new Date();
-    d.setDate(d.getDate() - days);
+    if (isHourly) {
+      d.setHours(d.getHours() - timeSpan);
+    } else {
+      d.setDate(d.getDate() - timeSpan);
+    }
     const startDate = d.toISOString();
+
     const logs = await db.prepare(
       "SELECT l.status, l.created_at FROM logs l LEFT JOIN campaigns c ON l.campaign_id = c.id WHERE (l.user_id = ? OR c.user_id = ?) AND l.created_at >= ?"
     ).all(uid, uid, startDate);
 
-    // Group logs by day
+    // Group logs by hour or day
     const chartData = {};
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const label = date.toISOString().split('T')[0];
-      chartData[label] = { date: label, sent: 0, failed: 0 };
-    }
-
-    logs.forEach(log => {
-      const day = new Date(log.created_at).toISOString().split('T')[0];
-      if (chartData[day]) {
-        if (log.status === 'sent') chartData[day].sent++;
-        if (log.status === 'failed' || log.status === 'error') chartData[day].failed++;
+    if (isHourly) {
+      for (let i = timeSpan - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setHours(date.getHours() - i, 0, 0, 0);
+        const isoKey = date.toISOString().slice(0, 13) + ':00';
+        const displayLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        chartData[isoKey] = { date: isoKey, label: displayLabel, sent: 0, failed: 0, opened: 0 };
       }
-    });
+
+      logs.forEach(log => {
+        const logDate = new Date(log.created_at);
+        const isoKey = logDate.toISOString().slice(0, 13) + ':00';
+        if (chartData[isoKey]) {
+          if (log.status === 'sent') chartData[isoKey].sent++;
+          if (log.status === 'opened') chartData[isoKey].opened++;
+          if (log.status === 'failed' || log.status === 'error') chartData[isoKey].failed++;
+        }
+      });
+    } else {
+      for (let i = timeSpan - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const label = date.toISOString().split('T')[0];
+        chartData[label] = { date: label, label, sent: 0, failed: 0, opened: 0 };
+      }
+
+      logs.forEach(log => {
+        const day = new Date(log.created_at).toISOString().split('T')[0];
+        if (chartData[day]) {
+          if (log.status === 'sent') chartData[day].sent++;
+          if (log.status === 'opened') chartData[day].opened++;
+          if (log.status === 'failed' || log.status === 'error') chartData[day].failed++;
+        }
+      });
+    }
 
     // Fetch recent logs
     const recent_logs = await db.prepare(`
@@ -225,7 +256,14 @@ app.get('/api/dashboard', generalLimiter, requireAuth, attachTenant, async (req,
       LIMIT 10
     `).all(uid, uid);
 
-    res.json({ stats, campaigns, queue, chartData: Object.values(chartData), recent_logs });
+    res.json({
+      stats,
+      campaigns,
+      queue,
+      chartData: Object.values(chartData),
+      timeframe: { isHourly, span: timeSpan },
+      recent_logs
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

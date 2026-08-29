@@ -1011,6 +1011,8 @@ ready = (async () => {
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE ai_config ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE ai_config ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Primary Key';");
+        await adapter.exec("ALTER TABLE ai_config ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;");
       } catch (_) {}
       try {
         await adapter.exec("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;");

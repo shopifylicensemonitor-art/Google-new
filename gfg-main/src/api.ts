@@ -192,10 +192,12 @@ export interface AIConfig {
 
 export interface AIProviderConfig {
   id?: number;
+  name?: string;
   provider: string;
   baseUrl: string;
   model: string;
   isActive: boolean;
+  priority?: number;
   hasKey: boolean;
   maskedApiKey: string;
   apiKey: string;

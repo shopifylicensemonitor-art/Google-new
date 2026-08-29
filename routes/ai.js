@@ -101,11 +101,40 @@ async function getActiveAIConfig(userId = null) {
   };
 }
 
-/** Helper: Call the configured AI completions endpoint or fallback to Gemini */
-async function callAI(messages, systemOverride = null, userId = null) {
-  const config = await getActiveAIConfig(userId);
+/** Helper: Fetch all active/fallback AI configurations from DB (user-scoped) */
+async function getAllAvailableAIConfigs(userId = null) {
+  const db = await getDb();
+  let rows = [];
+  if (userId) {
+    rows = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? OR user_id IS NULL ORDER BY is_active DESC, priority ASC, updated_at DESC, id DESC').all(userId);
+  } else {
+    rows = await db.prepare('SELECT * FROM ai_config WHERE user_id IS NULL ORDER BY is_active DESC, priority ASC, updated_at DESC, id DESC').all();
+  }
+  return (rows || []).map(row => ({
+    id: row.id,
+    name: row.name || `${row.provider.toUpperCase()} Key`,
+    provider: row.provider,
+    apiKey: decryptKey(row.api_key_encrypted),
+    baseUrl: (row.base_url || '').replace(/\/+$/, ''),
+    model: row.model,
+    isActive: row.is_active === 1,
+    priority: row.priority || 1,
+    updatedAt: row.updated_at
+  })).filter(c => Boolean(c.apiKey));
+}
 
-  // Fetch AI Rules & Knowledge Base context to append to system instructions
+/** Helper: Fetch active AI configuration from DB (user-scoped with fallback) */
+async function getActiveAIConfig(userId = null) {
+  const configs = await getAllAvailableAIConfigs(userId);
+  if (!configs || configs.length === 0) return null;
+  return configs.find(c => c.isActive) || configs[0] || null;
+}
+
+/** Helper: Call the configured AI completions endpoint with multi-key automatic failover */
+async function callAI(messages, systemOverride = null, userId = null) {
+  const configs = await getAllAvailableAIConfigs(userId);
+
+  // Fetch AI Rules & Master SOP / Knowledge Base context
   const db = await getDb();
   let rulesRows = [];
   if (userId) {
@@ -117,97 +146,111 @@ async function callAI(messages, systemOverride = null, userId = null) {
 
   let rulesContext = '';
   if (rulesRows && rulesRows.length > 0) {
-    rulesContext = '\n\n=== BRAND KNOWLEDGE BASE & OUTREACH RULES ===\n' +
+    rulesContext = '\n\n=== MASTER OUTREACH SOP & BRAND KNOWLEDGE BASE ===\n' +
       rulesRows.map(r => `[${r.rule_type.toUpperCase()}]: ${r.content}`).join('\n');
   }
 
-  const defaultSystem = 'You are Peak Xender AI, an elite cold email outreach assistant and high-converting copywriter.' + rulesContext;
-  const systemPrompt = systemOverride ? systemOverride + rulesContext : defaultSystem;
+  const defaultMasterSOP = 'You are Peak Xender AI, an elite cold email outreach assistant and high-converting copywriter. Follow standard B2B outreach SOP: high personalization, concise messaging under 100 words, direct value proposition, frictionless CTA.' + rulesContext;
+  const systemPrompt = systemOverride ? systemOverride + rulesContext : defaultMasterSOP;
 
-  // Try custom configured endpoint if available
-  if (config && config.apiKey) {
-    let baseUrl = (config.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-    if (!baseUrl.endsWith('/v1') && !baseUrl.includes('/v1/') && !baseUrl.endsWith('/chat/completions')) {
-      baseUrl = `${baseUrl}/v1`;
-    }
-    const endpointUrl = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-    const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
+  let lastError = null;
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-      ...(config.provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
-    };
+  // Try each configured key in order (Active key first, then other saved keys for failover)
+  if (configs && configs.length > 0) {
+    for (const config of configs) {
+      if (!config.apiKey) continue;
 
-    try {
-      const res = await fetch(endpointUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: config.model || 'openai/gpt-4o-mini',
-          messages: fullMessages,
-          temperature: 0.7,
-          max_tokens: 1500,
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content) return content.trim();
+      let baseUrl = (config.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+      if (!baseUrl.endsWith('/v1') && !baseUrl.includes('/v1/') && !baseUrl.endsWith('/chat/completions')) {
+        baseUrl = `${baseUrl}/v1`;
       }
-    } catch (err) {
-      logger.warn({ err: err.message }, 'Custom AI call failed, trying Gemini fallback');
+      const endpointUrl = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+      const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+        ...(config.provider === 'openrouter' ? { 'HTTP-Referer': 'https://send.peakconix.site', 'X-Title': 'Peak Xender' } : {})
+      };
+
+      try {
+        const res = await fetch(endpointUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: config.model || 'openai/gpt-4o-mini',
+            messages: fullMessages,
+            temperature: 0.7,
+            max_tokens: 1500,
+          }),
+          signal: AbortSignal.timeout(20000)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (content) return content.trim();
+        } else {
+          const errStatus = res.status;
+          const errText = await res.text();
+          logger.warn({ status: errStatus, provider: config.provider, keyName: config.name }, `AI key failed with status ${errStatus}, failing over...`);
+          lastError = new Error(`Provider ${config.provider} (${config.name}) returned HTTP ${errStatus}: ${errText.slice(0, 150)}`);
+        }
+      } catch (err) {
+        logger.warn({ err: err.message, provider: config.provider, keyName: config.name }, 'AI call error, failing over to next key...');
+        lastError = err;
+      }
     }
   }
 
-  // Fallback to Gemini via process.env.GEMINI_API_KEY
+  // Fallback to Gemini via process.env.GEMINI_API_KEY if configured
   if (genAI) {
-    const userPrompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-    const response = await genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-      }
-    });
-    if (response.text) return response.text.trim();
+    try {
+      const userPrompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+      const response = await genAI.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+        }
+      });
+      if (response.text) return response.text.trim();
+    } catch (geminiErr) {
+      logger.warn({ err: geminiErr.message }, 'Gemini fallback failed');
+      lastError = geminiErr;
+    }
   }
 
-  const hasMissingGemini = !process.env.GEMINI_API_KEY;
-  const hasCustomConfig = config && config.apiKey;
-  
-  if (hasMissingGemini && !hasCustomConfig) {
-    throw new Error('❌ AI Provider is not configured. Please:' +
-      '\n1. Get an API Key (OpenAI, Gemini, OpenRouter, Groq, DeepSeek, or Nvidia NIM)' +
-      '\n2. Configure and save your API Key under AI Settings' +
-      '\n\nWithout an AI provider, content generation features will not work.');
+  if (lastError) {
+    throw new Error(`AI generation failed across all configured keys. Last error: ${lastError.message}`);
   }
 
-  throw new Error('AI Provider is not configured yet. Please configure your API key in AI Settings or system environment.');
+  throw new Error('❌ AI Provider is not configured. Please add an API Key under AI Settings.');
 }
 
 // ---------------------------------------------------------------------------
-// Configuration Routes
+// Configuration Routes (Multi-Key Support)
 // ---------------------------------------------------------------------------
 
-/** GET /api/ai/configs — Retrieve all configured AI providers for current user */
+/** GET /api/ai/configs — Retrieve all configured AI keys for current user */
 router.get('/configs', async (req, res) => {
   try {
     const db = await getDb();
     const uid = req.userId;
-    const rows = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? OR user_id IS NULL ORDER BY is_active DESC, updated_at DESC, id DESC').all(uid);
+    const rows = await db.prepare('SELECT * FROM ai_config WHERE user_id = ? OR user_id IS NULL ORDER BY is_active DESC, id DESC').all(uid);
     const configs = (rows || []).map(row => {
       const decrypted = decryptKey(row.api_key_encrypted);
       return {
         id: row.id,
+        name: row.name || `${(row.provider || 'AI').toUpperCase()} Key`,
         provider: row.provider,
         baseUrl: row.base_url,
         model: row.model,
         isActive: row.is_active === 1,
+        priority: row.priority || 1,
         hasKey: Boolean(decrypted),
         maskedApiKey: maskKey(decrypted),
-        apiKey: decrypted, // plaintext key so user can view/copy under the model
+        apiKey: decrypted,
         updatedAt: row.updated_at
       };
     });
@@ -234,6 +277,8 @@ router.get('/config', async (req, res) => {
     }
     res.json({
       configured: true,
+      id: config.id,
+      name: config.name,
       provider: config.provider,
       baseUrl: config.baseUrl,
       model: config.model,
@@ -246,8 +291,10 @@ router.get('/config', async (req, res) => {
   }
 });
 
-/** POST /api/ai/config — Save/update AI provider config for current user */
+/** POST /api/ai/config — Save/update AI provider config key (Multi-Key support) */
 router.post('/config', async (req, res) => {
+  const keyId = req.body.id ? parseInt(req.body.id, 10) : null;
+  const keyName = (req.body.name || req.body.label || '').trim();
   const rawKey = req.body.apiKey || req.body.api_key;
   const rawUrl = req.body.baseUrl || req.body.base_url;
   const rawModel = req.body.model;
@@ -260,7 +307,10 @@ router.post('/config', async (req, res) => {
     const cleanBaseUrl = (rawUrl || '').trim().replace(/\/+$/, '') || 'https://openrouter.ai/api/v1';
     const cleanModel = (rawModel || '').trim() || 'openai/gpt-4o-mini';
 
-    const existing = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND (user_id = ? OR user_id IS NULL) ORDER BY user_id DESC LIMIT 1').get(provKey, uid);
+    let existing = null;
+    if (keyId) {
+      existing = await db.prepare('SELECT * FROM ai_config WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(keyId, uid);
+    }
 
     let encKey = '';
     if (rawKey && typeof rawKey === 'string' && rawKey.trim().length > 0) {
@@ -271,25 +321,30 @@ router.post('/config', async (req, res) => {
       return res.status(400).json({ error: `API Key is required for provider ${provKey}.` });
     }
 
+    const defaultName = keyName || `${provKey.toUpperCase()} Key #${Date.now().toString().slice(-4)}`;
+
     if (rawActive) {
-      // Set all other providers for this user to inactive
       await db.prepare('UPDATE ai_config SET is_active = 0 WHERE user_id = ?').run(uid);
     }
 
     const isActiveVal = rawActive ? 1 : (existing ? (existing.is_active || 0) : 0);
 
+    let savedId = keyId;
     if (existing && existing.user_id === uid) {
-      await db.prepare('UPDATE ai_config SET api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?')
-        .run(encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id, uid);
+      await db.prepare('UPDATE ai_config SET name = ?, provider = ?, api_key_encrypted = ?, base_url = ?, model = ?, is_active = ?, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?')
+        .run(defaultName, provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal, existing.id, uid);
     } else {
-      await db.prepare('INSERT INTO ai_config (provider, api_key_encrypted, base_url, model, is_active, user_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal, uid);
+      const result = await db.prepare('INSERT INTO ai_config (name, provider, api_key_encrypted, base_url, model, is_active, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(defaultName, provKey, encKey, cleanBaseUrl, cleanModel, isActiveVal, uid);
+      savedId = result.lastInsertRowid;
     }
 
-    logger.info({ provider: provKey, model: cleanModel, setActive, userId: uid }, 'AI configuration saved successfully');
+    logger.info({ id: savedId, name: defaultName, provider: provKey, model: cleanModel, userId: uid }, 'AI configuration saved');
     res.json({ 
       success: true, 
-      message: `${provKey.toUpperCase()} configuration saved successfully.`,
+      message: `"${defaultName}" (${provKey.toUpperCase()}) saved successfully.`,
+      id: savedId,
+      name: defaultName,
       provider: provKey,
       model: cleanModel,
       isActive: Boolean(isActiveVal)
@@ -300,37 +355,47 @@ router.post('/config', async (req, res) => {
   }
 });
 
-/** POST /api/ai/active — Switch active AI provider for current user */
+/** POST /api/ai/active — Switch active AI provider/key by ID or provider */
 router.post('/active', async (req, res) => {
-  const { provider } = req.body;
-  if (!provider) return res.status(400).json({ error: 'Provider is required.' });
-  const provKey = String(provider).trim().toLowerCase();
+  const { id, provider } = req.body;
   const uid = req.userId;
 
   try {
     const db = await getDb();
-    const target = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND user_id = ?').get(provKey, uid);
+    let target = null;
+    if (id) {
+      target = await db.prepare('SELECT * FROM ai_config WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(id, uid);
+    } else if (provider) {
+      const provKey = String(provider).trim().toLowerCase();
+      target = await db.prepare('SELECT * FROM ai_config WHERE provider = ? AND (user_id = ? OR user_id IS NULL) ORDER BY id DESC LIMIT 1').get(provKey, uid);
+    }
+
     if (!target) {
-      return res.status(404).json({ error: `No configuration found for provider "${provKey}". Please save an API key first.` });
+      return res.status(404).json({ error: 'Selected AI Key configuration not found.' });
     }
 
     await db.prepare('UPDATE ai_config SET is_active = 0 WHERE user_id = ?').run(uid);
     await db.prepare('UPDATE ai_config SET is_active = 1, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?').run(target.id, uid);
 
-    res.json({ success: true, message: `Activated ${provKey.toUpperCase()} as active AI provider.`, provider: provKey });
+    res.json({ success: true, message: `Activated "${target.name || target.provider.toUpperCase()}" as active AI model.`, activeId: target.id, provider: target.provider });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** DELETE /api/ai/config/:provider — Delete/clear configuration for a provider for current user */
-router.delete('/config/:provider', async (req, res) => {
-  const provKey = String(req.params.provider).trim().toLowerCase();
+/** DELETE /api/ai/config/:id — Delete specific AI key by ID or provider */
+router.delete('/config/:id', async (req, res) => {
+  const param = req.params.id;
   const uid = req.userId;
   try {
     const db = await getDb();
-    await db.prepare('DELETE FROM ai_config WHERE provider = ? AND user_id = ?').run(provKey, uid);
-    res.json({ success: true, message: `Configuration for ${provKey} removed.` });
+    const isNum = !isNaN(parseInt(param, 10));
+    if (isNum) {
+      await db.prepare('DELETE FROM ai_config WHERE id = ? AND user_id = ?').run(parseInt(param, 10), uid);
+    } else {
+      await db.prepare('DELETE FROM ai_config WHERE provider = ? AND user_id = ?').run(param.toLowerCase(), uid);
+    }
+    res.json({ success: true, message: 'AI Key configuration deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

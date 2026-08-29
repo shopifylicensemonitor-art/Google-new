@@ -164,26 +164,22 @@ router.get('/', async (req, res) => {
   try {
     const db = await getDb();
     const uid = req.userId;
-    const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
 
-    let accounts;
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      accounts = await db.prepare(`
-        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
-        FROM accounts
-        WHERE user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41)
-        ORDER BY id ASC
-      `).all(uid);
-    } else {
-      accounts = await db.prepare(`
-        SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
-               type, smtp_host, smtp_port, smtp_secure, created_at, user_id
-        FROM accounts
-        WHERE user_id = ? OR user_id IS NULL
-        ORDER BY id ASC
-      `).all(uid);
+    const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
+    const userEmail = (user?.email || '').toLowerCase().trim();
+    if (userEmail) {
+      try {
+        await db.prepare('UPDATE accounts SET user_id = ? WHERE (user_id IS NULL OR user_id = 0) AND LOWER(email) = ?').run(uid, userEmail);
+      } catch (_) {}
     }
+
+    const accounts = await db.prepare(`
+      SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
+             type, smtp_host, smtp_port, smtp_secure, created_at, user_id
+      FROM accounts
+      WHERE user_id = ? OR (user_id IS NULL AND LOWER(email) = ?)
+      ORDER BY id ASC
+    `).all(uid, userEmail);
 
     res.json(accounts || []);
   } catch (err) {
