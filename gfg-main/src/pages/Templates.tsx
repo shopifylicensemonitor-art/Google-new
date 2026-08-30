@@ -17,6 +17,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { SendTestEmailModal } from '@/components/SendTestEmailModal';
+import { SpamScoreMeter } from '@/components/SpamScoreMeter';
 
 interface TemplatesProps {
   requirePin?: (label: string, action: () => void) => void;
@@ -1062,6 +1063,9 @@ export default function Templates({ requirePin }: TemplatesProps) {
                   </div>
                 )}
               </div>
+
+              {/* Real-Time Deliverability & Spam Keyword Analysis */}
+              <SpamScoreMeter subject={subject} body={bodyHtml || bodyPlain} className="mt-2" />
             </div>
 
             <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-border/60 shrink-0">

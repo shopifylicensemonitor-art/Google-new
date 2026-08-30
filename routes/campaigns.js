@@ -107,35 +107,42 @@ async function getOwnedCampaign(db, id, userId, columns = '*') {
     .get(id, userId);
 }
 
-/** List the current user's campaigns. */
+/** List the current user's campaigns — summary columns only (body excluded for performance). */
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
     const campaigns = await db.prepare(`
-      SELECT c.*,
-             COALESCE(SUM(q.opens_count), 0) as total_opens,
-             COALESCE(SUM(q.clicks_count), 0) as total_clicks
+      SELECT c.id, c.name, c.subject, c.contact_list, c.status, c.delay_seconds,
+             c.start_time, c.end_time, c.timezone, c.total_contacts, c.sent_count,
+             c.failed_count, c.content_mode, c.format_type, c.timing_mode,
+             c.account_ids, c.created_at, c.user_id,
+             COALESCE(SUM(q.opens_count), 0)  AS total_opens,
+             COALESCE(SUM(q.clicks_count), 0) AS total_clicks
       FROM campaigns c
       LEFT JOIN queue q ON c.id = q.campaign_id
       WHERE c.user_id = ?
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `).all(req.userId);
+    // Cache for 10s — campaigns change with sends but list view doesn't need real-time
+    res.set('Cache-Control', 'private, max-age=10');
     res.json(campaigns);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** Get single campaign with stats. */
+/** Get single campaign with full body + stats. */
 router.get('/:id', async (req, res) => {
   try {
     const db = await getDb();
     const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
     if (!campaign) return res.status(404).json({ error: 'Not found.' });
 
-    // Attach steps
-    const steps = await db.prepare('SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_number ASC').all(req.params.id);
+    // Attach steps — specific columns
+    const steps = await db.prepare(
+      'SELECT id, campaign_id, step_number, subject, body_html, body_plain, delay_seconds, trigger_event FROM campaign_steps WHERE campaign_id = ? ORDER BY step_number ASC'
+    ).all(req.params.id);
     campaign.steps = steps || [];
 
     // Attach queue stats

@@ -386,11 +386,21 @@ function createSqliteAdapter() {
 // Shared Helpers
 // ============================================================================
 
-/** Flatten params so callers can do .run(a, b, c) or .run([a, b, c]). */
+/** Fully flatten params so callers can do .run(a, b, c), .run([a, b, c]), or mixed nested arrays. */
 function flattenParams(params) {
-  if (params.length === 0) return [];
-  if (params.length === 1 && Array.isArray(params[0])) return params[0];
-  return params;
+  if (!params || params.length === 0) return [];
+  const flat = [];
+  function recurse(item) {
+    if (Array.isArray(item)) {
+      for (let i = 0; i < item.length; i++) {
+        recurse(item[i]);
+      }
+    } else if (item !== undefined) {
+      flat.push(item);
+    }
+  }
+  recurse(params);
+  return flat;
 }
 
 // ============================================================================
@@ -1098,6 +1108,17 @@ ready = (async () => {
         await adapter.exec("ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_email_key;");
         await adapter.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_email ON accounts(user_id, email);");
       } catch (_) {}
+      // Atomic Queue Leasing & Worker fields (H-02, H-03)
+      try {
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;");
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS locked_by TEXT;");
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0;");
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS last_error TEXT;");
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;");
+        await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS workspace_id INTEGER;");
+        await adapter.exec("CREATE INDEX IF NOT EXISTS idx_queue_atomic_claim ON queue(status, scheduled_at, locked_at);");
+      } catch (_) {}
+
       try {
         await adapter.exec(INDEX_DDL);
       } catch (_) {}
@@ -1108,17 +1129,21 @@ ready = (async () => {
       console.log('PostgreSQL database initialised successfully.');
       return adapter;
     } catch (err) {
-      console.warn('PostgreSQL unavailable, falling back to SQLite:', err.message);
+      if (process.env.NODE_ENV === 'production') {
+        console.error('FATAL: PostgreSQL connection failed in production:', err.message);
+        throw new Error(`Production database connection failed: ${err.message}`);
+      }
+      console.warn('PostgreSQL unavailable, falling back to SQLite in development:', err.message);
     }
   }
 
-  // Fallback to SQLite if Postgres is disabled, unavailable, or misconfigured.
+  // Fallback to SQLite ONLY in development / test environments if DATABASE_URL is missing (H-06)
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: DATABASE_URL is required in production environment. SQLite fallback is strictly prohibited.');
+  }
+
   {
-    if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
-      console.warn('DATABASE_URL is not set. Production app is using SQLite fallback, so Supabase data will not be persisted there. Configure DATABASE_URL for real production persistence.');
-    } else {
-      console.log('Using local SQLite database...');
-    }
+    console.log('Using local SQLite database in development...');
     const { wrapped } = await createSqliteAdapter();
     await wrapped.exec(SQLITE_DDL);
     try {

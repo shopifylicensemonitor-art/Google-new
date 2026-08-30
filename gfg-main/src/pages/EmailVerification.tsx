@@ -158,6 +158,43 @@ export default function EmailVerification() {
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = digits.join('');
+    if (code.length === 6 && email.trim()) {
+      executeVerification(email.trim(), code);
+    } else {
+      setError('Please enter the full 6-digit verification code.');
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!email.trim() || resendLoading) return;
+    setResendLoading(true);
+    setError(null);
+    setResendSuccess(false);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to resend verification code.');
+      }
+
+      setResendSuccess(true);
+      setTimeout(() => setResendSuccess(false), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Could not resend verification code.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {

@@ -1,12 +1,14 @@
 /**
- * middleware/session.js — JWT session verification middleware.
+ * middleware/session.js — JWT session verification and workspace tenancy middleware.
  *
  * Checks for Bearer token in Authorization header.
- * Seamlessly verifies backend JWTs, Supabase Auth tokens, and Google tokens.
+ * Seamlessly verifies backend JWTs, Supabase Auth tokens, and Google OAuth tokens.
+ * Enforces cryptographic validation and resolves active workspace context.
  */
 
 const jwt = require('jsonwebtoken');
 const logger = require('../logger');
+const { getDb } = require('../db');
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
 const JWT_SECRETS = Array.from(new Set([
@@ -30,45 +32,60 @@ function verifyJwtToken(token) {
 }
 
 /**
- * Middleware that accepts EITHER a valid JWT Bearer token
- * OR the legacy PIN-based auth. This ensures backward compatibility
- * while enabling the new auth flow.
+ * Strict authentication middleware: Requires valid JWT Bearer token.
+ * Rejects all unauthenticated or forged requests.
  */
-function requireAuth(req, res, next) {
-  // Try JWT Bearer token first for all requests
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
       const decoded = verifyJwtToken(token);
+      const userId = decoded.id || decoded.sub;
+
       req.user = {
-        id: decoded.id || decoded.sub,
+        id: userId,
         email: decoded.email,
         name: decoded.name || (decoded.user_metadata && (decoded.user_metadata.full_name || decoded.user_metadata.name)) || '',
         role: decoded.role === 'authenticated' ? 'user' : (decoded.role || 'user'),
         ...decoded,
       };
+      req.userId = userId;
+
+      // Automatically attach or resolve user's primary workspace
+      try {
+        const db = await getDb();
+        let memberRecord = await db.prepare(
+          'SELECT workspace_id, role FROM workspace_members WHERE user_id = ? ORDER BY created_at ASC LIMIT 1'
+        ).get(userId);
+
+        if (memberRecord) {
+          req.workspaceId = memberRecord.workspace_id;
+          req.workspaceRole = memberRecord.role;
+        } else {
+          // Default fallback to user id for backward compatibility before migration
+          req.workspaceId = userId;
+          req.workspaceRole = 'owner';
+        }
+      } catch (dbErr) {
+        req.workspaceId = userId;
+        req.workspaceRole = 'owner';
+      }
+
       return next();
     } catch (err) {
       logger.debug({ err: err.message }, 'JWT verification failed in requireAuth');
+      return res.status(401).json({ error: 'Unauthorized. Invalid or expired token.' });
     }
   }
 
-  // Allow public access to OAuth callback (Google redirect)
+  // Allow public access to OAuth callbacks
   if (req.path === '/callback' || req.path === '/accounts/callback' || req.path === '/auth/callback') {
     return next();
   }
 
-  // Allow PIN fallback only if ACCESS_PIN is explicitly set in non-production environments
-  const configuredPin = process.env.ACCESS_PIN;
-  const providedPin = (req.query && req.query.pin) || req.headers['x-access-pin'];
-
-  if (process.env.NODE_ENV !== 'production' && configuredPin && providedPin && String(providedPin) === String(configuredPin)) {
-    req.user = { id: 'pin', email: 'local-pin', role: 'admin' };
-    return next();
-  }
-
-  return res.status(401).json({ error: 'Unauthorized. Provide a valid JWT token.' });
+  return res.status(401).json({ error: 'Unauthorized. Provide a valid Bearer token.' });
 }
 
 module.exports = { requireAuth, verifyJwtToken, JWT_SECRET };
+

@@ -673,18 +673,14 @@ router.post('/:id/reply', async (req, res) => {
     const msg = await db.prepare('SELECT * FROM inbox_messages WHERE id = ? AND (user_id = ? OR account_id IN (SELECT id FROM accounts WHERE user_id = ?))').get(req.params.id, req.userId, req.userId);
     if (!msg) return res.status(404).json({ error: 'Message not found.' });
 
-    // Get the account to send from
+    // Get the account that received the message
     let account = null;
     if (msg.account_id) {
-      account = await db.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active' AND user_id = ?").get(msg.account_id, req.userId);
+      account = await db.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active' AND (user_id = ? OR user_id IS NULL)").get(msg.account_id, req.userId);
     }
     
     if (!account) {
-      account = await db.prepare("SELECT * FROM accounts WHERE status = 'active' AND user_id = ? ORDER BY id ASC LIMIT 1").get(req.userId);
-    }
-
-    if (!account) {
-      return res.status(400).json({ error: 'No active sender account available to send reply.' });
+      return res.status(400).json({ error: 'The specific mailbox associated with this thread is disconnected or unauthorized.' });
     }
 
     // Compose reply subject and body

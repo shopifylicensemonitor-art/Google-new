@@ -27,6 +27,11 @@ function getFromAddress() {
   const user = process.env.SMTP_USER || process.env.GMAIL_USER;
   const explicit = process.env.SMTP_FROM || process.env.EMAIL_FROM;
 
+  // When sending via Gmail SMTP, from address MUST match the authenticated user or alias
+  if (user && user.includes('@gmail.com')) {
+    return `"Peak Xender" <${user}>`;
+  }
+
   if (explicit && explicit.includes('@')) {
     if (explicit.includes('<')) return explicit;
     return `"Peak Xender" <${explicit}>`;
@@ -34,7 +39,7 @@ function getFromAddress() {
   if (user) {
     return `"Peak Xender" <${user}>`;
   }
-  return '"Peak Xender" <support@peakconix.site>';
+  return '"Peak Xender" <shopifylicensemonitor@gmail.com>';
 }
 
 /**

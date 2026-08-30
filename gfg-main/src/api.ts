@@ -318,9 +318,27 @@ async function attemptTokenRefresh(): Promise<string | null> {
   return refreshPromise;
 }
 
-// Fast In-Memory SWR Cache for sub-50ms render speeds
-const apiMemoryCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL_MS = 15000; // 15s cache TTL
+// Fast In-Memory SWR Cache with per-endpoint TTLs
+const apiMemoryCache = new Map<string, { data: any; timestamp: number; total?: number }>();
+
+// Differentiated TTLs by route namespace (ms)
+const CACHE_TTL_MAP: Record<string, number> = {
+  campaigns:    10_000,  // 10s — live send status changes frequently
+  inbox:        10_000,  // 10s — new replies can arrive any time
+  queue:        10_000,  // 10s — queue state is highly volatile
+  contacts:     30_000,  // 30s — contact lists change on import/delete
+  accounts:     30_000,  // 30s — account status can change on reconnect
+  templates:    60_000,  // 60s — templates rarely change
+  ai:           60_000,  // 60s — AI config is near-static
+  domains:      60_000,  // 60s — DNS checks are slow, results stable
+  logs:         15_000,  // 15s — activity logs update with sends
+};
+const DEFAULT_CACHE_TTL = 15_000; // 15s fallback
+
+function getCacheTtl(endpoint: string): number {
+  const ns = endpoint.split('/')[2]; // e.g. '/api/contacts/...' → 'contacts'
+  return CACHE_TTL_MAP[ns] ?? DEFAULT_CACHE_TTL;
+}
 
 export function clearApiCache(prefix?: string) {
   if (!prefix) {
@@ -338,11 +356,12 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheKey = `${endpoint}`;
+  const ttl = getCacheTtl(endpoint);
 
-  // Serve instant cached data for GET requests if fresh
+  // Serve instant cached data for GET requests if still within TTL
   if (isGet && apiMemoryCache.has(cacheKey)) {
     const cached = apiMemoryCache.get(cacheKey)!;
-    if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    if (Date.now() - cached.timestamp < ttl) {
       // Return cached instantly and revalidate in background
       setTimeout(async () => {
         try {
@@ -354,9 +373,9 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     }
   }
 
-  // Mutating requests automatically invalidate cache
+  // Mutating requests automatically invalidate cache for the affected namespace
   if (!isGet) {
-    clearApiCache(endpoint.split('/')[2]); // Invalidate related namespace (e.g. 'ai', 'domains', 'accounts')
+    clearApiCache(endpoint.split('/')[2]);
   }
 
   const freshData = await executeFetch<T>(endpoint, options);

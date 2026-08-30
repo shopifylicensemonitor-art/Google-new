@@ -199,8 +199,9 @@ router.post('/signup', emailLimiter, async (req, res) => {
       return res.status(409).json({ error: 'Email already registered. Please sign in with your password or use forgot password.' });
     }
 
-    // GENERATE 6-DIGIT VERIFICATION CODE
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // GENERATE SECURE 6-DIGIT VERIFICATION CODE
+    const crypto = require('crypto');
+    const verificationCode = crypto.randomInt(100000, 1000000).toString();
     const codeExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const hashedPassword = hashPassword(password);
@@ -211,7 +212,7 @@ router.post('/signup', emailLimiter, async (req, res) => {
       String(name).trim(),
       hashedPassword,
       'user',
-      true, // Auto-verify on creation for immediate access
+      false, // Require email verification for secure signup
       verificationCode,
       codeExpires.toISOString(),
       'email'
@@ -231,26 +232,20 @@ router.post('/signup', emailLimiter, async (req, res) => {
       logger.warn('Workspace creation skipped (table may not exist):', wsErr.message);
     }
 
-    // SEND VERIFICATION EMAIL (non-fatal)
+    // SEND VERIFICATION EMAIL WITH OTP
     const verificationLink = `${FRONTEND_ORIGIN}/verify-email?code=${verificationCode}&email=${encodeURIComponent(normalizedEmail)}`;
     try {
       await sendVerificationEmail(normalizedEmail, verificationCode, verificationLink);
     } catch (emailErr) {
-      logger.error({ emailErr }, 'Email send failed, but account created');
+      logger.error({ emailErr }, 'Verification email dispatch error');
     }
 
-    const token = jwt.sign(
-      { id: userId, email: normalizedEmail, name: String(name).trim(), role: 'user' },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRY }
-    );
-
+    // Do NOT issue token on signup — user MUST verify 6-digit OTP first
     res.json({
       success: true,
-      token,
-      message: 'Account created successfully! Welcome to Peak Xender.',
+      requiresVerification: true,
       email: normalizedEmail,
-      user: { id: userId, email: normalizedEmail, name: String(name).trim(), role: 'user' }
+      message: 'Account created! A 6-digit verification code has been sent to your email.'
     });
   } catch (err) {
     logger.error({ err: err.message }, 'Signup error');
@@ -374,9 +369,29 @@ router.post('/signin', async (req, res) => {
       "UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login = datetime('now') WHERE id = ?"
     ).run(user.id);
 
-    // AUTO-VERIFY FOR WORKING ACCESS
+    // ENFORCE EMAIL VERIFICATION — BLOCK UNVERIFIED USERS
     if (!user.email_verified) {
-      await db.prepare('UPDATE users SET email_verified = true WHERE id = ?').run(user.id);
+      const crypto = require('crypto');
+      const freshCode = crypto.randomInt(100000, 1000000).toString();
+      const codeExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+
+      await db.prepare(
+        'UPDATE users SET verification_code = ?, verification_code_expires = ? WHERE id = ?'
+      ).run(freshCode, codeExpires.toISOString(), user.id);
+
+      const verificationLink = `${FRONTEND_ORIGIN}/verify-email?code=${freshCode}&email=${encodeURIComponent(user.email)}`;
+      try {
+        const { sendVerificationEmail } = require('../utils/email');
+        await sendVerificationEmail(user.email, freshCode, verificationLink);
+      } catch (emailErr) {
+        logger.error({ emailErr }, 'Verification code email dispatch error');
+      }
+
+      return res.status(403).json({
+        error: 'Please verify your email address before signing in. A fresh 6-digit verification code has been sent to your email.',
+        requiresVerification: true,
+        email: user.email
+      });
     }
 
     const token = jwt.sign(

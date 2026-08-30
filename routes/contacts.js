@@ -107,32 +107,42 @@ router.get('/history/:email', async (req, res) => {
     const db = await getDb();
     const email = req.params.email;
 
-    // Sent queue emails
+    // Sent queue emails — specific columns, capped at 50 most recent
     const queueSends = await db.prepare(`
-      SELECT q.*, c.name as campaign_name
+      SELECT q.id, q.campaign_id, q.recipient_email, q.status, q.sent_at,
+             q.error, q.step_number, q.opens_count, q.clicks_count,
+             c.name as campaign_name
       FROM queue q
       LEFT JOIN campaigns c ON q.campaign_id = c.id
       WHERE q.recipient_email = ? AND c.user_id = ?
       ORDER BY q.id DESC
+      LIMIT 50
     `).all(email, req.userId);
 
-    // Logs
+    // Logs — specific columns, capped at 20
     const logItems = await db.prepare(`
-      SELECT l.* FROM logs l
+      SELECT l.id, l.campaign_id, l.account_id, l.recipient_email,
+             l.status, l.message, l.created_at
+      FROM logs l
       LEFT JOIN campaigns c ON l.campaign_id = c.id
       LEFT JOIN accounts a ON l.account_id = a.id
       WHERE l.recipient_email = ? AND (c.user_id = ? OR a.user_id = ?)
       ORDER BY l.id DESC LIMIT 20
     `).all(email, req.userId, req.userId);
 
-    // Received inbox replies
+    // Received inbox replies — specific columns, capped at 20
     const replies = await db.prepare(`
-      SELECT m.* FROM inbox_messages m
+      SELECT m.id, m.account_id, m.sender_email, m.recipient_email,
+             m.subject, m.body_text, m.sentiment, m.is_read, m.created_at
+      FROM inbox_messages m
       LEFT JOIN accounts a ON m.account_id = a.id
-      WHERE (m.sender_email = ? OR m.recipient_email = ?) AND (m.user_id = ? OR a.user_id = ?)
+      WHERE (m.sender_email = ? OR m.recipient_email = ?)
+        AND (m.user_id = ? OR a.user_id = ?)
       ORDER BY m.id DESC
+      LIMIT 20
     `).all(email, email, req.userId, req.userId);
 
+    res.set('Cache-Control', 'private, max-age=15');
     res.json({
       sends: queueSends || [],
       logs: logItems || [],
@@ -143,40 +153,37 @@ router.get('/history/:email', async (req, res) => {
   }
 });
 
-/** Get all contacts in a specific list, with optional pagination and status indicators. */
+/** Get contacts in a specific list with server-side pagination and status indicators. */
 router.get('/:listName', async (req, res) => {
   try {
     const db = await getDb();
-    const limit = parseInt(req.query.limit, 10);
-    const offset = parseInt(req.query.offset, 10);
-    
-    let query = 'SELECT * FROM contacts WHERE list_name = ? AND user_id = ? ORDER BY id';
-    const params = [req.params.listName, req.userId];
-    
-    if (!isNaN(limit) && limit > 0) {
-      query += ' LIMIT ?';
-      params.push(limit);
-      if (!isNaN(offset) && offset >= 0) {
-        query += ' OFFSET ?';
-        params.push(offset);
-      }
-    }
 
-    const contacts = await db.prepare(query).all(params);
+    // Enforce a safe default page size; cap at 500 per request
+    const requestedLimit = parseInt(req.query.limit, 10);
+    const pageLimit = (!isNaN(requestedLimit) && requestedLimit > 0)
+      ? Math.min(requestedLimit, 500)
+      : 200;
+    const pageOffset = parseInt(req.query.offset, 10);
+    const offset = (!isNaN(pageOffset) && pageOffset >= 0) ? pageOffset : 0;
+
+    // Specific columns only — skip internal-only or unused fields in list view
+    const selectCols = 'id, list_name, email, fields, status, created_at';
+    const contacts = await db.prepare(
+      `SELECT ${selectCols} FROM contacts WHERE list_name = ? AND user_id = ? ORDER BY id LIMIT ? OFFSET ?`
+    ).all(req.params.listName, req.userId, pageLimit, offset);
+
+    // Cheap total count for frontend paginator
+    const countRow = await db.prepare(
+      'SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?'
+    ).get(req.params.listName, req.userId);
+    const total = countRow ? (countRow.total || 0) : 0;
 
     const parsedContacts = contacts.map(c => {
-      try {
-        c.fields = c.fields ? JSON.parse(c.fields) : {};
-      } catch (_) {
-        c.fields = {};
-      }
+      try { c.fields = c.fields ? JSON.parse(c.fields) : {}; } catch (_) { c.fields = {}; }
       return c;
     });
 
-    // Run background sync fire-and-forget to keep active campaign queues mapped
-    syncContactListsToActiveCampaigns(db).catch(() => {});
-
-    // Compute status indicators for retrieved contacts
+    // Compute status indicators from queue — only for the current page of emails
     const emails = parsedContacts.map(c => c.email).filter(Boolean);
     if (emails.length > 0) {
       const statusMap = new Map();
@@ -195,22 +202,12 @@ router.get('/:listName', async (req, res) => {
         for (const row of queueRows) {
           const emailLower = (row.recipient_email || '').toLowerCase();
           const existing = statusMap.get(emailLower);
-
           let rank = 0;
           let mappedStatus = 'pending';
-          if (row.status === 'sent') {
-            rank = 4;
-            mappedStatus = 'sent';
-          } else if (row.status === 'sending') {
-            rank = 3;
-            mappedStatus = 'sending';
-          } else if (row.status === 'pending') {
-            rank = 2;
-            mappedStatus = 'queued';
-          } else if (row.status === 'failed') {
-            rank = 1;
-            mappedStatus = 'failed';
-          }
+          if (row.status === 'sent')         { rank = 4; mappedStatus = 'sent'; }
+          else if (row.status === 'sending') { rank = 3; mappedStatus = 'sending'; }
+          else if (row.status === 'pending') { rank = 2; mappedStatus = 'queued'; }
+          else if (row.status === 'failed')  { rank = 1; mappedStatus = 'failed'; }
 
           if (!existing || rank > existing.rank) {
             statusMap.set(emailLower, {
@@ -226,17 +223,18 @@ router.get('/:listName', async (req, res) => {
 
       parsedContacts.forEach(c => {
         const info = statusMap.get((c.email || '').toLowerCase());
+        c.status = info ? info.status : 'pending';
         if (info) {
-          c.status = info.status;
           c.campaign_name = info.campaign_name;
           c.sent_at = info.sent_at;
           c.error = info.error;
-        } else {
-          c.status = 'pending';
         }
       });
     }
 
+    // Expose total for frontend paginator; cache for 30s (contacts change infrequently)
+    res.set('X-Total-Count', String(total));
+    res.set('Cache-Control', 'private, max-age=30');
     res.json(parsedContacts);
   } catch (err) {
     res.status(500).json({ error: err.message });
