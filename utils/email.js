@@ -7,17 +7,30 @@ const logger = require('../logger');
 
 function getTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = Number(process.env.SMTP_PORT) || 587;
+  const port = Number(process.env.SMTP_PORT) || 465;
   const user = process.env.SMTP_USER || process.env.GMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
 
   if (user && pass) {
+    // If using Gmail, use nodemailer's dedicated Gmail service transport (fast & highly reliable)
+    if (host.includes('gmail.com') || (user && user.includes('@gmail.com'))) {
+      return nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user, pass },
+        pool: true,
+        maxConnections: 3,
+        connectionTimeout: 10000,
+      });
+    }
+
+    // Generic SMTP for custom hosts
     return nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
       auth: { user, pass },
-      tls: { rejectUnauthorized: false }
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000,
     });
   }
   return null;

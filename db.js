@@ -69,7 +69,7 @@ function createPgAdapter() {
     if (
       /^INSERT\s/i.test(trimmed) &&
       !/RETURNING\s/i.test(trimmed) &&
-      !/INSERT\s+INTO\s+(campaign_recipients|settings|device_states)\b/i.test(trimmed)
+      !/INSERT\s+INTO\s+(campaign_recipients|settings|device_states|user_settings|workspace_members)\b/i.test(trimmed)
     ) {
       return trimmed.replace(/;?\s*$/, ' RETURNING id');
     }

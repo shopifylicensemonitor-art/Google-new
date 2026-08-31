@@ -68,8 +68,8 @@ async function claimBatch(db, batchSize = 10, workerId = WORKER_ID) {
   const leaseCutoff = new Date(Date.now() - DEFAULT_LEASE_MINUTES * 60 * 1000).toISOString();
 
   // PostgreSQL native atomic claim using transaction + row locking
-  try {
-    if (db._isPg && typeof db.transaction === 'function') {
+  if (db._isPg && typeof db.transaction === 'function') {
+    try {
       return await db.transaction(async (tx) => {
         // Find eligible pending or expired leased items
         const selectSql = `
@@ -90,18 +90,19 @@ async function claimBatch(db, batchSize = 10, workerId = WORKER_ID) {
         if (!candidateRows || candidateRows.length === 0) return [];
 
         const ids = candidateRows.map((r) => r.id);
-        const placeholders = ids.map((_, i) => `$${i + 3}`).join(',');
+        const updatePlaceholders = ids.map((_, i) => `$${i + 2}`).join(', ');
         const updateSql = `
           UPDATE queue
           SET status = 'processing',
               locked_at = NOW(),
               locked_by = $1,
               attempt_count = COALESCE(attempt_count, 0) + 1
-          WHERE id IN (${placeholders})
+          WHERE id IN (${updatePlaceholders})
         `;
         await tx.prepare(updateSql).run(workerId, ...ids);
 
         // Fetch full details of claimed rows
+        const detailPlaceholders = ids.map((_, i) => `$${i + 1}`).join(', ');
         const detailsSql = `
           SELECT q.*, c.status as campaign_status,
                  c.subject as c_subject, c.body_html as c_body_html, c.body_plain as c_body_plain,
@@ -111,13 +112,14 @@ async function claimBatch(db, batchSize = 10, workerId = WORKER_ID) {
                  c.user_id as campaign_user_id, c.workspace_id as campaign_workspace_id
           FROM queue q
           JOIN campaigns c ON q.campaign_id = c.id
-          WHERE q.id IN (${placeholders})
+          WHERE q.id IN (${detailPlaceholders})
         `;
         return await tx.prepare(detailsSql).all(...ids);
       })();
+    } catch (err) {
+      logger.error({ workerId, err: err.message }, 'PostgreSQL atomic queue claim failed');
+      throw err;
     }
-  } catch (err) {
-    logger.warn({ err: err.message }, 'PostgreSQL transaction claim failed, falling back to standard query');
   }
 
   // Fallback for development / SQLite
