@@ -29,7 +29,8 @@ function getTransporter() {
       port,
       secure: port === 465,
       auth: { user, pass },
-      tls: { rejectUnauthorized: false },
+      // Enforce TLS certificate verification for SMTP connections.
+      tls: { rejectUnauthorized: true },
       connectionTimeout: 10000,
     });
   }
@@ -37,22 +38,18 @@ function getTransporter() {
 }
 
 function getFromAddress() {
-  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
   const explicit = process.env.SMTP_FROM || process.env.EMAIL_FROM;
-
-  // When sending via Gmail SMTP, from address MUST match the authenticated user or alias
-  if (user && user.includes('@gmail.com')) {
-    return `"Peak Xender" <${user}>`;
-  }
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
 
   if (explicit && explicit.includes('@')) {
     if (explicit.includes('<')) return explicit;
     return `"Peak Xender" <${explicit}>`;
   }
+
   if (user) {
     return `"Peak Xender" <${user}>`;
   }
-  return '"Peak Xender" <shopifylicensemonitor@gmail.com>';
+  return '"Peak Xender" <noreply@peakconix.site>';
 }
 
 /**
@@ -95,23 +92,23 @@ async function sendVerificationEmail(toEmail, code, link) {
       const info = await transporter.sendMail({
         from: fromAddress,
         to: toEmail,
-        subject: `Your Peak Xender Verification Code: ${code}`,
-        text: `Your Peak Xender verification code is: ${code}. Or click: ${link}`,
+        subject: `Your Peak Xender Verification Code`,
+        text: `Your Peak Xender verification code was generated. Please check your inbox.`,
         html: htmlContent,
       });
-      logger.info({ toEmail, code, messageId: info?.messageId }, 'Verification email sent via SMTP');
+      // Do NOT log the verification code itself. Keep only non-sensitive metadata.
+      logger.info({ toEmail, messageId: info?.messageId }, 'Verification email sent via SMTP');
       return true;
     } catch (err) {
-      logger.warn({ err: err.message, toEmail }, 'SMTP delivery failed; logged verification code locally');
+      logger.warn({ err: err.message, toEmail }, 'SMTP delivery failed; verification code generated but not delivered');
     }
   }
 
-  // Fallback logging for local / unconfigured SMTP
-  logger.info({ toEmail, code, link }, 'VERIFICATION CODE GENERATED (Local/Fallback)');
+  // Fallback: DO NOT print the verification code to stdout or logs in cleartext.
+  logger.info({ toEmail, link }, 'VERIFICATION CODE GENERATED (Local/Fallback) - code NOT logged for security');
   console.log(`\n========================================`);
   console.log(`[PEAK XENDER EMAIL VERIFICATION]`);
   console.log(`To: ${toEmail}`);
-  console.log(`Verification Code: ${code}`);
   console.log(`Verification Link: ${link}`);
   console.log(`========================================\n`);
   return true;

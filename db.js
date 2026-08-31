@@ -989,6 +989,9 @@ ready = (async () => {
         await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;");
       } catch (_) {}
       try {
+        await adapter.exec("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';");
+      } catch (_) {}
+      try {
         await adapter.exec("ALTER TABLE queue ADD COLUMN IF NOT EXISTS step_number INTEGER DEFAULT 1;");
       } catch (_) {}
       try {
@@ -1156,6 +1159,9 @@ ready = (async () => {
       await wrapped.exec("ALTER TABLE contacts ADD COLUMN fields TEXT;");
     } catch (_) {}
     try {
+      await wrapped.exec("ALTER TABLE contacts ADD COLUMN status TEXT DEFAULT 'active';");
+    } catch (_) {}
+    try {
       await wrapped.exec("ALTER TABLE campaign_recipients ADD COLUMN status TEXT DEFAULT 'active';");
     } catch (_) {}
     try {
@@ -1268,6 +1274,12 @@ ready = (async () => {
     } catch (_) {}
     try {
       await wrapped.exec("ALTER TABLE ai_config ADD COLUMN is_active INTEGER DEFAULT 0;");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE ai_config ADD COLUMN name TEXT DEFAULT 'Primary Key';");
+    } catch (_) {}
+    try {
+      await wrapped.exec("ALTER TABLE ai_config ADD COLUMN priority INTEGER DEFAULT 1;");
     } catch (_) {}
     // Email/password authentication columns
     try {

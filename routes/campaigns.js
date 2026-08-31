@@ -329,7 +329,8 @@ router.put('/:id', async (req, res) => {
       'name', 'subject', 'body_html', 'body_plain', 'contact_list',
       'delay_seconds', 'start_time', 'end_time', 'content_variations', 'content_mode', 'ignore_window',
       'timezone', 'account_ids', 'target_limit', 'target_range_start', 'target_range_end', 'exclude_previously_contacted', 'custom_filters', 'format_type',
-      'timing_mode', 'min_delay', 'max_delay', 'cooldown_enabled', 'cooldown_batch_size', 'cooldown_duration_minutes'
+      'timing_mode', 'min_delay', 'max_delay', 'cooldown_enabled', 'cooldown_batch_size', 'cooldown_duration_minutes',
+      'domain_filter'
     ];
 
     const updates = [];
@@ -354,7 +355,6 @@ router.put('/:id', async (req, res) => {
       values.push(countRow ? countRow.total : 0);
     }
 
-    const fallbackContent = createDefaultCampaignContent(fields.subject, fields.body_html, fields.body_plain);
     const updateBoth = db.transaction(async (txDb) => {
       if (updates.length > 0) {
         values.push(req.params.id);
@@ -373,17 +373,14 @@ router.put('/:id', async (req, res) => {
         } catch (_) {}
       }
 
-      if (!fields.subject && !fields.body_html && !fields.body_plain) {
-        await txDb.prepare(`
-          UPDATE campaigns
-          SET subject = ?, body_html = ?, body_plain = ?
-          WHERE id = ?
-        `).run(fallbackContent.subject, fallbackContent.body_html, fallbackContent.body_plain, req.params.id);
-      } else if (!fields.subject || !fields.body_html || !fields.body_plain) {
+      // Only fill in missing fields from existing DB values — NEVER overwrite with placeholder defaults.
+      // This preserves empty body_html for plain-text campaigns and empty body_plain for HTML campaigns.
+      if (fields.subject !== undefined || fields.body_html !== undefined || fields.body_plain !== undefined) {
         const current = await txDb.prepare('SELECT subject, body_html, body_plain FROM campaigns WHERE id = ?').get(req.params.id);
-        const nextSubject = fields.subject || current?.subject || fallbackContent.subject;
-        const nextBodyHtml = fields.body_html || current?.body_html || fallbackContent.body_html;
-        const nextBodyPlain = fields.body_plain || current?.body_plain || fallbackContent.body_plain;
+        // Use the submitted value if present (even empty string), otherwise keep the current DB value
+        const nextSubject = fields.subject !== undefined ? fields.subject : (current?.subject || '');
+        const nextBodyHtml = fields.body_html !== undefined ? fields.body_html : (current?.body_html || '');
+        const nextBodyPlain = fields.body_plain !== undefined ? fields.body_plain : (current?.body_plain || '');
         await txDb.prepare(`
           UPDATE campaigns
           SET subject = ?, body_html = ?, body_plain = ?
@@ -621,18 +618,9 @@ router.post('/:id/launch', async (req, res) => {
     } catch (_) {}
 
     const uid = req.userId;
-    const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
-
-    let accounts;
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      accounts = await db.prepare(
-        "SELECT id, email, display_name FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41))"
-      ).all(uid);
-    } else {
-      accounts = await db.prepare(
-        "SELECT id, email, display_name FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL)"
-      ).all(uid);
-    }
+    let accounts = await db.prepare(
+      "SELECT id, email, display_name FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL)"
+    ).all(uid);
 
     if (selectedAccountIds.length > 0) {
       const filtered = accounts.filter(a => selectedAccountIds.includes(a.id));
@@ -645,17 +633,10 @@ router.post('/:id/launch', async (req, res) => {
       return res.status(400).json({ error: 'No active sender accounts available for this campaign. Connect or select at least one active sender account.' });
     }
 
-    // Get contacts for this campaign's list
-    let contacts;
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      contacts = await db.prepare(
-        'SELECT email, fields FROM contacts WHERE list_name = ? AND (user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41))'
-      ).all(campaign.contact_list, uid);
-    } else {
-      contacts = await db.prepare(
-        'SELECT email, fields FROM contacts WHERE list_name = ? AND (user_id = ? OR user_id IS NULL)'
-      ).all(campaign.contact_list, uid);
-    }
+    // Get contacts for this campaign's list. Access is scoped to the owning user.
+    let contacts = await db.prepare(
+      'SELECT email, fields FROM contacts WHERE list_name = ? AND (user_id = ? OR user_id IS NULL)'
+    ).all(campaign.contact_list, uid);
 
     // Apply Sent Memory deduplication if enabled
     const excludeContacted = req.body.exclude_previously_contacted !== undefined
@@ -671,6 +652,27 @@ router.post('/:id/launch', async (req, res) => {
       `).all(req.userId, req.userId);
       const sentEmailSet = new Set(previouslySentRows.map(r => (r.email || '').toLowerCase().trim()));
       contacts = contacts.filter(c => !sentEmailSet.has((c.email || '').toLowerCase().trim()));
+    }
+
+    // Apply Email Domain Filter (e.g. 'gmail', 'outlook', 'yahoo', or custom domain like 'company.com')
+    const domainFilter = req.body.domain_filter || campaign.domain_filter || '';
+    if (domainFilter && domainFilter !== 'all') {
+      const domainMap = {
+        'gmail': ['@gmail.com'],
+        'outlook': ['@outlook.com', '@hotmail.com', '@live.com', '@msn.com'],
+        'yahoo': ['@yahoo.com', '@ymail.com', '@yahoo.co.uk'],
+      };
+      const matchDomains = domainMap[domainFilter.toLowerCase()] || [];
+      if (matchDomains.length > 0) {
+        contacts = contacts.filter(c => {
+          const email = (c.email || '').toLowerCase();
+          return matchDomains.some(d => email.endsWith(d));
+        });
+      } else {
+        // Custom domain filter — user entered a specific domain like "company.com"
+        const customDomain = domainFilter.startsWith('@') ? domainFilter.toLowerCase() : `@${domainFilter.toLowerCase()}`;
+        contacts = contacts.filter(c => (c.email || '').toLowerCase().endsWith(customDomain));
+      }
     }
 
     let customFilters = [];

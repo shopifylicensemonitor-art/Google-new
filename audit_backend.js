@@ -24,25 +24,50 @@ server.listen(0, async () => {
   }
 
   try {
-    // 1. PIN Login
+    // 1. PIN Login / Local JWT bootstrap
+    const jwt = require('jsonwebtoken');
+    const { getDb } = require('./db');
+    const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
+
     let token = '';
-    await check('POST /api/auth/pin-login', async () => {
-      const res = await fetch(base + '/api/auth/pin-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: process.env.ACCESS_PIN || '123456' })
+
+    // If ACCESS_PIN is configured, use the PIN-login flow to obtain a token.
+    if (process.env.ACCESS_PIN) {
+      await check('POST /api/auth/pin-login', async () => {
+        const res = await fetch(base + '/api/auth/pin-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: process.env.ACCESS_PIN })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.token) throw new Error('Status ' + res.status + ': ' + (data.error || 'No token'));
+        token = data.token;
       });
-      const data = await res.json();
-      if (!res.ok || !data.token) throw new Error('Status ' + res.status + ': ' + (data.error || 'No token'));
-      token = data.token;
-    });
+    } else {
+      // No ACCESS_PIN: create or reuse a local audit user in the DB and sign a JWT so protected endpoints can be exercised.
+      await check('BOOTSTRAP local audit user & JWT', async () => {
+        const db = await getDb();
+        const auditEmail = 'audit@local';
+        let user = await db.prepare('SELECT id, email, name, role FROM users WHERE LOWER(email) = LOWER(?)').get(auditEmail);
+        if (!user) {
+          await db.prepare('INSERT INTO users (email, name, role, email_verified, created_at) VALUES (?, ?, ?, ?, datetime(\'now\'))').run(auditEmail, 'Audit User', 'user', 1);
+          user = await db.prepare('SELECT id, email, name, role FROM users WHERE LOWER(email) = LOWER(?)').get(auditEmail);
+        }
+        if (!user || !user.id) throw new Error('Failed to create or locate local audit user');
+        token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      });
+    }
 
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const auditEmail = 'audit_prospect_' + Date.now() + '@test.com';
 
     // 2. Health Check
     await check('GET /api/health', async () => {
       const res = await fetch(base + '/api/health');
-      if (!res.ok) throw new Error('Status ' + res.status);
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error('Status ' + res.status + ': ' + errorBody);
+      }
     });
 
     // 3. Auth Me
@@ -134,9 +159,12 @@ server.listen(0, async () => {
       const res = await fetch(base + '/api/contacts', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ list_name: 'test-audit-list', email: 'audit_prospect@test.com' })
+        body: JSON.stringify({ list_name: 'test-audit-list', email: auditEmail })
       });
-      if (!res.ok) throw new Error('Status ' + res.status);
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error('Status ' + res.status + ': ' + errorBody);
+      }
     });
 
     await check('GET /api/contacts/lists', async () => {
@@ -150,7 +178,7 @@ server.listen(0, async () => {
     });
 
     await check('GET /api/contacts/history/:email', async () => {
-      const res = await fetch(base + '/api/contacts/history/audit_prospect%40test.com', { headers });
+      const res = await fetch(base + '/api/contacts/history/' + encodeURIComponent(auditEmail), { headers });
       if (!res.ok) throw new Error('Status ' + res.status);
     });
 

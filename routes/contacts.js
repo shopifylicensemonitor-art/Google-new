@@ -300,7 +300,11 @@ router.post('/import-bulk', async (req, res) => {
     }
 
     // Trigger background sync to immediately enqueue new contacts for active campaigns
-    syncContactListsToActiveCampaigns(db).catch(() => {});
+    if (typeof syncContactListsToActiveCampaigns === 'function') {
+      Promise.resolve(syncContactListsToActiveCampaigns(db)).catch(err => {
+        console.warn('Contact list synchronization failed:', err.message);
+      });
+    }
 
     res.json({
       success: true,
@@ -633,7 +637,11 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     // Trigger background sync to immediately enqueue new contacts for active campaigns
-    syncContactListsToActiveCampaigns(db).catch(() => {});
+    if (typeof syncContactListsToActiveCampaigns === 'function') {
+      Promise.resolve(syncContactListsToActiveCampaigns(db)).catch(err => {
+        console.warn('Contact list synchronization failed:', err.message);
+      });
+    }
 
     res.json({
       success: true,
@@ -668,7 +676,11 @@ router.post('/', async (req, res) => {
     ).run(list_name, email, req.userId);
 
     // Trigger background sync
-    syncContactListsToActiveCampaigns(db).catch(() => {});
+    if (typeof syncContactListsToActiveCampaigns === 'function') {
+      Promise.resolve(syncContactListsToActiveCampaigns(db)).catch(err => {
+        console.warn('Contact list synchronization failed:', err.message);
+      });
+    }
 
     res.json({ success: true, id: result.lastInsertRowid });
   } catch (err) {
@@ -702,4 +714,3 @@ router.delete('/:listName/:id', async (req, res) => {
 });
 
 module.exports = router;
-

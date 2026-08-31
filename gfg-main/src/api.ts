@@ -124,6 +124,7 @@ export interface Campaign {
   cooldown_enabled?: number | boolean;
   cooldown_batch_size?: number;
   cooldown_duration_minutes?: number;
+  domain_filter?: string;
   created_at: string;
   queue_stats?: {
     pending?: number;

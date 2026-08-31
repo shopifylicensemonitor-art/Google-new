@@ -144,6 +144,13 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
   const [editTargetRangeStart, setEditTargetRangeStart] = useState<number>(0);
   const [editTargetRangeEnd, setEditTargetRangeEnd] = useState<number>(0);
   const [editExcludePreviouslyContacted, setEditExcludePreviouslyContacted] = useState<boolean>(false);
+  const [editDomainFilter, setEditDomainFilter] = useState<string>('all');
+  const [editTimingMode, setEditTimingMode] = useState<'smart' | 'fixed' | 'stealth' | 'burst' | 'custom'>('smart');
+  const [editMinDelay, setEditMinDelay] = useState<number>(30);
+  const [editMaxDelay, setEditMaxDelay] = useState<number>(90);
+  const [editCooldownEnabled, setEditCooldownEnabled] = useState<boolean>(true);
+  const [editCooldownBatchSize, setEditCooldownBatchSize] = useState<number>(15);
+  const [editCooldownDurationMinutes, setEditCooldownDurationMinutes] = useState<number>(5);
   const [editSubjectVariations, setEditSubjectVariations] = useState<string[]>(['']);
   const [editBodyVariations, setEditBodyVariations] = useState<string[]>(['']);
   const [editListTokens, setEditListTokens] = useState<string[]>([]);
@@ -466,6 +473,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
           exclude_previously_contacted: excludePreviouslyContacted ? 1 : 0,
           custom_filters: activeFilters.length > 0 ? activeFilters : undefined,
           format_type: formatType,
+          domain_filter: prospectDomainFilter !== 'all' ? prospectDomainFilter : '',
           timing_mode: timingMode,
           min_delay: minDelay,
           max_delay: maxDelay,
@@ -504,7 +512,8 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 target_limit: targetCount,
                 target_range_start: startRange,
                 target_range_end: endRange,
-                exclude_previously_contacted: excludePreviouslyContacted ? 1 : 0
+                exclude_previously_contacted: excludePreviouslyContacted ? 1 : 0,
+                domain_filter: prospectDomainFilter !== 'all' ? prospectDomainFilter : ''
               });
               if (launchRes && launchRes.processing_started === false) {
                 toast({
@@ -769,6 +778,13 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     setEditTargetRangeStart(rStart);
     setEditTargetRangeEnd(rEnd);
     setEditExcludePreviouslyContacted(Boolean(c.exclude_previously_contacted));
+    setEditDomainFilter(c.domain_filter || 'all');
+    setEditTimingMode((c.timing_mode as any) || 'smart');
+    setEditMinDelay(c.min_delay || 30);
+    setEditMaxDelay(c.max_delay || 90);
+    setEditCooldownEnabled(c.cooldown_enabled !== undefined ? Boolean(c.cooldown_enabled) : true);
+    setEditCooldownBatchSize(c.cooldown_batch_size || 15);
+    setEditCooldownDurationMinutes(c.cooldown_duration_minutes || 5);
     if (rStart > 0 && rEnd >= rStart) {
       setEditTargetLimitMode('range');
     } else if (tLim > 0) {
@@ -867,9 +883,16 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
         target_range_start: startRange,
         target_range_end: endRange,
         exclude_previously_contacted: editExcludePreviouslyContacted ? 1 : 0,
+        domain_filter: editDomainFilter !== 'all' ? editDomainFilter : '',
         custom_filters: activeFilters.length > 0 ? activeFilters : undefined,
         content_mode: editContentMode,
         content_variations: finalVariations,
+        timing_mode: editTimingMode,
+        min_delay: editMinDelay,
+        max_delay: editMaxDelay,
+        cooldown_enabled: editCooldownEnabled ? 1 : 0,
+        cooldown_batch_size: editCooldownBatchSize,
+        cooldown_duration_minutes: editCooldownDurationMinutes,
         steps: nextSteps,
       });
       toast({
@@ -3641,6 +3664,40 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
                 >
                   {editExcludePreviouslyContacted ? '✓ Active' : 'Off'}
                 </button>
+              </div>
+
+              {/* Domain Filter for Edit */}
+              <div className="p-2.5 rounded-xl bg-muted/20 border border-border/40 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[11px] font-bold text-foreground">Email Domain Filter</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">
+                    {editDomainFilter === 'all' ? 'All domains' : editDomainFilter}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {['all', 'gmail', 'outlook', 'yahoo'].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setEditDomainFilter(d)}
+                      className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                        editDomainFilter === d
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-muted text-muted-foreground border-border/40'
+                      }`}
+                    >
+                      {d === 'all' ? '🌐 All' : d === 'gmail' ? '📧 Gmail' : d === 'outlook' ? '📬 Outlook' : '📨 Yahoo'}
+                    </button>
+                  ))}
+                  <input
+                    type="text"
+                    placeholder="Custom domain…"
+                    value={!['all', 'gmail', 'outlook', 'yahoo'].includes(editDomainFilter) ? editDomainFilter : ''}
+                    onChange={e => setEditDomainFilter(e.target.value || 'all')}
+                    className="px-2 py-1 text-[10px] rounded border border-input bg-background w-28 font-mono"
+                  />
+                </div>
               </div>
 
               {/* Timezone and Window */}

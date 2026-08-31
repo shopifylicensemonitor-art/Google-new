@@ -413,12 +413,8 @@ router.get('/counts', async (req, res) => {
     const uid = req.userId;
     const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
 
-    let baseWhere = '(m.user_id = ? OR a.user_id = ?)';
-    let baseParams = [uid, uid];
-
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      baseWhere = '(m.user_id = ? OR a.user_id = ? OR m.user_id IS NULL OR a.user_id IS NULL OR m.user_id IN (1, 2, 3, 4, 5, 29, 41) OR a.user_id IN (1, 2, 3, 4, 5, 29, 41))';
-    }
+    const baseWhere = '(m.user_id = ? OR a.user_id = ?)';
+    const baseParams = [uid, uid];
 
     // Total counts
     const countsRow = await db.prepare(`
@@ -479,12 +475,8 @@ router.get('/', async (req, res) => {
     const { account_id, sentiment, starred, read, search, q, contact_list } = req.query;
     const searchTerm = (search || q || '').trim();
 
-    let baseCond = '(m.user_id = ? OR a.user_id = ?)';
-    let params = [uid, uid];
-
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      baseCond = '(m.user_id = ? OR a.user_id = ? OR m.user_id IS NULL OR a.user_id IS NULL OR m.user_id IN (1, 2, 3, 4, 5, 29, 41) OR a.user_id IN (1, 2, 3, 4, 5, 29, 41))';
-    }
+    const baseCond = '(m.user_id = ? OR a.user_id = ?)';
+    const params = [uid, uid];
 
     const conditions = [baseCond];
 
@@ -591,16 +583,9 @@ router.post('/sync', async (req, res) => {
     const uid = req.userId;
     const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
     
-    let accounts;
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      accounts = await db.prepare(
-        "SELECT * FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41))"
-      ).all(uid);
-    } else {
-      accounts = await db.prepare(
-        "SELECT * FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL)"
-      ).all(uid);
-    }
+    const accounts = await db.prepare(
+      "SELECT * FROM accounts WHERE status = 'active' AND (user_id = ? OR user_id IS NULL)"
+    ).all(uid);
     
     if (!accounts || accounts.length === 0) {
       return res.json({

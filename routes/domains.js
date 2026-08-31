@@ -194,16 +194,9 @@ router.get('/', async (req, res) => {
     const uid = req.userId;
     const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(uid);
 
-    let rows;
-    if (user && (user.role === 'admin' || user.role === 'superadmin' || uid <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-      rows = await db
-        .prepare('SELECT id, domain, status, spf_record, dkim_selector, dkim_public_key, dmarc_record, custom_tracking_domain, tracking_status, mx_verified, created_at FROM domains WHERE user_id = ? OR user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41) ORDER BY id DESC')
-        .all(uid);
-    } else {
-      rows = await db
-        .prepare('SELECT id, domain, status, spf_record, dkim_selector, dkim_public_key, dmarc_record, custom_tracking_domain, tracking_status, mx_verified, created_at FROM domains WHERE user_id = ? OR user_id IS NULL ORDER BY id DESC')
-        .all(uid);
-    }
+    const rows = await db
+      .prepare('SELECT id, domain, status, spf_record, dkim_selector, dkim_public_key, dmarc_record, custom_tracking_domain, tracking_status, mx_verified, created_at FROM domains WHERE user_id = ? OR user_id IS NULL ORDER BY id DESC')
+      .all(uid);
 
     const domains = (rows || []).map(row => ({
       ...row,

@@ -471,7 +471,12 @@ router.post('/refresh', async (req, res) => {
 /** PIN Login endpoint for direct access PIN authentication. */
 router.post('/pin-login', async (req, res) => {
   const { pin } = req.body;
-  const configuredPin = process.env.ACCESS_PIN || '123456';
+  const configuredPin = process.env.ACCESS_PIN;
+
+  // PIN login is explicitly opt-in — if not configured, disable this endpoint.
+  if (!configuredPin) {
+    return res.status(403).json({ error: 'PIN login is disabled on this instance.' });
+  }
 
   if (!pin || String(pin).trim() !== String(configuredPin).trim()) {
     return res.status(401).json({ error: 'Invalid access PIN.' });

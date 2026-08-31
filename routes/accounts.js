@@ -234,20 +234,23 @@ router.get('/callback', async (req, res) => {
     }
 
     if (!ownerId) {
-      // Find matching user by email
+      // Find matching user by email. If no match exists, do not silently assign the
+      // account to an arbitrary admin or hard-coded user ID.
       const userRow = await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
       if (userRow) {
         ownerId = userRow.id;
-      } else {
-        const adminUser = await db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1").get();
-        if (adminUser) ownerId = adminUser.id;
-        else ownerId = 1;
       }
     }
 
     const existing = await db
       .prepare('SELECT id FROM accounts WHERE LOWER(email) = LOWER(?)')
       .get(email);
+
+    if (!ownerId && !existing) {
+      return res.status(400).json({
+        error: 'No matching Peak Xender user was found for this Google account. Sign in with the same email first, or connect the account from that user session.'
+      });
+    }
 
     if (existing) {
       await db.prepare(`
@@ -575,19 +578,8 @@ async function getOwnedAccount(db, accountId, userId) {
   let account = await db.prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?').get(id, userId);
   if (account) return account;
 
-  // Admin/team fallback
-  const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
-  if (user && (user.role === 'admin' || user.role === 'superadmin' || userId <= 5 || (user.email && (user.email.includes('shopify') || user.email.includes('peakconix'))))) {
-    account = await db.prepare('SELECT * FROM accounts WHERE id = ? AND (user_id IS NULL OR user_id IN (1, 2, 3, 4, 5, 29, 41))').get(id);
-    if (account) {
-      // Sync ownership to active user
-      try {
-        await db.prepare('UPDATE accounts SET user_id = ? WHERE id = ?').run(userId, id);
-      } catch (_) {}
-      return { ...account, user_id: userId };
-    }
-  }
-
+  // No hard-coded admin or seeded-user fallback. Access is scoped to the
+  // authenticated user or accounts still unassigned to any user.
   return null;
 }
 

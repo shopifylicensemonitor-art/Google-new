@@ -6,13 +6,30 @@
 
 require('dotenv').config();
 
-// Ensure AI_ENCRYPTION_KEY and JWT_SECRET are available with fallbacks
+// Ensure critical secrets are present in production. In development allow safe fallbacks with warnings.
 if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: JWT_SECRET must be set in production. Aborting startup.');
+    throw new Error('JWT_SECRET is required in production');
+  }
+  // Development fallback (clear warning)
   process.env.JWT_SECRET = 'peak-xender-jwt-secret-key-32chars';
-  console.warn('Warning: JWT_SECRET not set; using default fallback.');
+  console.warn('Warning: JWT_SECRET not set; using development fallback. Do NOT use in production.');
 }
-if (!process.env.AI_ENCRYPTION_KEY) {
-  process.env.AI_ENCRYPTION_KEY = process.env.JWT_SECRET;
+
+// AI encryption key MUST be explicitly set in production; otherwise fall back to JWT_SECRET in dev
+if (!process.env.AI_ENCRYPTION_KEY && !process.env.ENCRYPTION_KEY) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: ENCRYPTION_KEY or AI_ENCRYPTION_KEY must be set in production. Aborting startup.');
+    throw new Error('ENCRYPTION_KEY or AI_ENCRYPTION_KEY is required in production');
+  }
+  process.env.AI_ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+  console.warn('Warning: AI_ENCRYPTION_KEY/ENCRYPTION_KEY not set; using fallback for development only.');
+}
+
+// If a dedicated ENCRYPTION_KEY exists prefer it for token/credential encryption
+if (process.env.ENCRYPTION_KEY && !process.env.AI_ENCRYPTION_KEY) {
+  process.env.AI_ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 }
 
 const express = require('express');

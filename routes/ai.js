@@ -60,7 +60,7 @@ function decryptKey(encKey) {
     const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]);
     return decrypted.toString('utf-8');
   } catch (err) {
-    logger.error({ err }, 'decryptKey failed');
+    logger.warn({ keyId: 'unavailable' }, 'Stored AI key could not be decrypted');
     return '';
   }
 }
@@ -272,7 +272,7 @@ router.get('/configs', async (req, res) => {
 router.get('/config', async (req, res) => {
   try {
     const config = await getActiveAIConfig(req.userId);
-    if (!config) {
+    if (!config || !config.apiKey) {
       return res.json({ configured: false });
     }
     res.json({
@@ -1203,5 +1203,4 @@ router.post('/tts', async (req, res) => {
 });
 
 module.exports = router;
-
 
