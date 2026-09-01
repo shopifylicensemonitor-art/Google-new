@@ -101,16 +101,18 @@ router.createDefaultCampaignContent = createDefaultCampaignContent;
 router.resolveLaunchRecipientPlan = resolveLaunchRecipientPlan;
 
 /** Fetch a campaign only when it belongs to the requesting user. */
-async function getOwnedCampaign(db, id, userId, columns = '*') {
+async function getOwnedCampaign(db, id, userId, columns = '*', workspaceId = null) {
+  const workspaceClause = workspaceId ? ' AND (workspace_id IS NULL OR workspace_id = ?)' : '';
   return db
-    .prepare(`SELECT ${columns} FROM campaigns WHERE id = ? AND user_id = ?`)
-    .get(id, userId);
+    .prepare(`SELECT ${columns} FROM campaigns WHERE id = ? AND user_id = ?${workspaceClause}`)
+    .get(id, userId, ...(workspaceId ? [workspaceId] : []));
 }
 
 /** List the current user's campaigns — summary columns only (body excluded for performance). */
 router.get('/', async (req, res) => {
   try {
     const db = await getDb();
+    const workspaceClause = req.workspaceId ? ' AND (c.workspace_id IS NULL OR c.workspace_id = ?)' : '';
     const campaigns = await db.prepare(`
       SELECT c.id, c.name, c.subject, c.contact_list, c.status, c.delay_seconds,
              c.start_time, c.end_time, c.timezone, c.total_contacts, c.sent_count,
@@ -120,10 +122,10 @@ router.get('/', async (req, res) => {
              COALESCE(SUM(q.clicks_count), 0) AS total_clicks
       FROM campaigns c
       LEFT JOIN queue q ON c.id = q.campaign_id
-      WHERE c.user_id = ?
+      WHERE c.user_id = ?${workspaceClause}
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `).all(req.userId);
+    `).all(req.userId, ...(req.workspaceId ? [req.workspaceId] : []));
     // Cache for 10s — campaigns change with sends but list view doesn't need real-time
     res.set('Cache-Control', 'private, max-age=10');
     res.json(campaigns);
@@ -136,7 +138,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = await getDb();
-    const campaign = await getOwnedCampaign(db, req.params.id, req.userId);
+    const campaign = await getOwnedCampaign(db, req.params.id, req.userId, '*', req.workspaceId);
     if (!campaign) return res.status(404).json({ error: 'Not found.' });
 
     // Attach steps — specific columns

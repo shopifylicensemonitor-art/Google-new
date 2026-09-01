@@ -172,7 +172,7 @@ export function SendTestEmailModal({
     // Save test recipient to localStorage for convenience
     try {
       localStorage.setItem('peak_last_test_email', recipient.trim());
-    } catch (_) {}
+    } catch (error) { void error; }
 
     try {
       let res;

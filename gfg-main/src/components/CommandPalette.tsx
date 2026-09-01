@@ -1,190 +1,106 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
-import {
-  Search,
-  LayoutDashboard,
-  Send,
-  Users,
-  Inbox,
-  Mail,
-  FileText,
-  Terminal,
-  Sparkles,
-  Settings,
-  Plus,
-  RotateCw,
-  X,
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Command, Search, Sparkles, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-interface CommandItem {
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+export interface CommandPaletteItem {
   id: string;
-  category: 'Navigation' | 'Quick Actions';
   title: string;
   description?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  action: () => void;
+  category?: string;
   keywords?: string;
+  icon?: LucideIcon;
+  action?: () => void;
 }
 
-export function CommandPalette() {
-  const [isOpen, setIsOpen] = useState(false);
+export interface CommandPaletteProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  items?: CommandPaletteItem[];
+  renderTrigger?: (openPalette: () => void) => ReactNode;
+  title?: string;
+  emptyMessage?: string;
+  className?: string;
+}
+
+const defaultItems: CommandPaletteItem[] = [
+  {
+    id: 'overview',
+    category: 'Navigation',
+    title: 'Overview',
+    description: 'Jump to the main workspace summary',
+    icon: Sparkles,
+    keywords: 'home dashboard summary metrics',
+  },
+  {
+    id: 'search',
+    category: 'Navigation',
+    title: 'Search and filter',
+    description: 'Find records across the workspace',
+    icon: Search,
+    keywords: 'lookup find records filters',
+  },
+  {
+    id: 'new-rule',
+    category: 'Quick Actions',
+    title: 'Create new rule',
+    description: 'Open the rule builder in a new draft',
+    icon: Command,
+    keywords: 'rule automation trigger workflow',
+  },
+];
+
+export function CommandPalette({
+  open,
+  onOpenChange,
+  items = defaultItems,
+  renderTrigger,
+  title = 'Command palette',
+  emptyMessage = 'No matching commands',
+  className,
+}: CommandPaletteProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
 
-  const handleNavigate = (path: string) => {
-    navigate(path);
-    setIsOpen(false);
+  const isOpen = open ?? internalOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (typeof open === 'boolean') {
+      onOpenChange?.(nextOpen);
+      return;
+    }
+
+    setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
   };
 
-  const commands: CommandItem[] = [
-    // Navigation
-    {
-      id: 'nav-dashboard',
-      category: 'Navigation',
-      title: 'Dashboard Overview',
-      description: 'View real-time outreach metrics & charts',
-      icon: LayoutDashboard,
-      action: () => handleNavigate('/dashboard'),
-      keywords: 'home stats analytics graphs',
-    },
-    {
-      id: 'nav-campaigns',
-      category: 'Navigation',
-      title: 'Outreach Campaigns',
-      description: 'Manage drip sequences & batch sends',
-      icon: Send,
-      action: () => handleNavigate('/campaigns'),
-      keywords: 'sequences emails blast steps',
-    },
-    {
-      id: 'nav-contacts',
-      category: 'Navigation',
-      title: 'Prospect Contacts & Leads',
-      description: 'Manage CSV contact lists & lead dossiers',
-      icon: Users,
-      action: () => handleNavigate('/contacts'),
-      keywords: 'leads prospects csv lists',
-    },
-    {
-      id: 'nav-inbox',
-      category: 'Navigation',
-      title: 'Two-Way Inbox & Replies',
-      description: 'Read sentiment-tagged prospect responses',
-      icon: Inbox,
-      action: () => handleNavigate('/inbox'),
-      keywords: 'replies conversations leads unread hot',
-    },
-    {
-      id: 'nav-accounts',
-      category: 'Navigation',
-      title: 'Sender Accounts (Pool)',
-      description: 'Connect Google OAuth & custom SMTP senders',
-      icon: Mail,
-      action: () => handleNavigate('/accounts'),
-      keywords: 'mailboxes smtp oauth rotating senders',
-    },
-    {
-      id: 'nav-templates',
-      category: 'Navigation',
-      title: 'Email Templates',
-      description: 'Craft converting cold email templates',
-      icon: FileText,
-      action: () => handleNavigate('/templates'),
-      keywords: 'templates html draft copy',
-    },
-    {
-      id: 'nav-logs',
-      category: 'Navigation',
-      title: 'Audit & Dispatch Logs',
-      description: 'Inspect live email delivery transaction receipts',
-      icon: Terminal,
-      action: () => handleNavigate('/logs'),
-      keywords: 'errors audit transactions csv',
-    },
-    {
-      id: 'nav-ai',
-      category: 'Navigation',
-      title: 'AI Generator & Knowledge Rules',
-      description: 'Configure OpenRouter/Gemini & brand tone',
-      icon: Sparkles,
-      action: () => handleNavigate('/ai-settings'),
-      keywords: 'openai gemini deepseek copy rules',
-    },
-    {
-      id: 'nav-settings',
-      category: 'Navigation',
-      title: 'System & Tracking Settings',
-      description: 'Adjust cooldowns, batch size & suppression',
-      icon: Settings,
-      action: () => handleNavigate('/settings'),
-      keywords: 'config suppression dnc delay batch',
-    },
-    // Quick Actions
-    {
-      id: 'act-new-campaign',
-      category: 'Quick Actions',
-      title: 'Create New Campaign Wizard',
-      description: 'Launch a targeted multi-step sequence',
-      icon: Plus,
-      action: () => handleNavigate('/campaigns?new=true'),
-      keywords: 'create add new blast launch',
-    },
-    {
-      id: 'act-import-csv',
-      category: 'Quick Actions',
-      title: 'Import CSV Prospect Leads',
-      description: 'Upload and parse prospect contact files',
-      icon: Zap,
-      action: () => handleNavigate('/contacts?import=true'),
-      keywords: 'upload csv contacts import excel',
-    },
-    {
-      id: 'act-sync-inbox',
-      category: 'Quick Actions',
-      title: 'Sync Mailbox Inboxes',
-      description: 'Fetch new prospect replies across all senders',
-      icon: RotateCw,
-      action: () => handleNavigate('/inbox?sync=true'),
-      keywords: 'sync refresh fetch replies check',
-    },
-    {
-      id: 'act-dns-check',
-      category: 'Quick Actions',
-      title: 'Sender DNS Health Check',
-      description: 'Validate SPF, DKIM, DMARC on mailboxes',
-      icon: ShieldCheck,
-      action: () => handleNavigate('/accounts?check_dns=true'),
-      keywords: 'dns spf dkim dmarc mx deliverability',
-    },
-  ];
+  const filteredCommands = useMemo(() => {
+    if (!query.trim()) {
+      return items;
+    }
 
-  // Filter commands by query
-  const filteredCommands = commands.filter((cmd) => {
-    if (!query.trim()) return true;
-    const q = query.toLowerCase().trim();
-    return (
-      cmd.title.toLowerCase().includes(q) ||
-      (cmd.description && cmd.description.toLowerCase().includes(q)) ||
-      (cmd.keywords && cmd.keywords.toLowerCase().includes(q)) ||
-      cmd.category.toLowerCase().includes(q)
-    );
-  });
+    const normalized = query.toLowerCase().trim();
+    return items.filter((item) => {
+      const haystack = [item.title, item.description ?? '', item.category ?? '', item.keywords ?? ''].join(' ').toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [items, query]);
 
-  // Listen for Ctrl+K or Cmd+K
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsOpen((prev) => !prev);
-      } else if (e.key === 'Escape' && isOpen) {
-        e.preventDefault();
-        setIsOpen(false);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen(!isOpen);
+      }
+
+      if (event.key === 'Escape' && isOpen) {
+        event.preventDefault();
+        setOpen(false);
       }
     };
 
@@ -192,7 +108,6 @@ export function CommandPalette() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Focus input on open
   useEffect(() => {
     if (isOpen) {
       setQuery('');
@@ -201,124 +116,134 @@ export function CommandPalette() {
     }
   }, [isOpen]);
 
-  // Handle arrow key navigation in command list
-  const handleInputKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex((prev) => (prev + 1) % Math.max(1, filteredCommands.length));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (filteredCommands[selectedIndex]) {
-        filteredCommands[selectedIndex].action();
+  const handleCommandSelect = (command: CommandPaletteItem) => {
+    command.action?.();
+    setOpen(false);
+  };
+
+  const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedIndex((current) => (current + 1) % Math.max(1, filteredCommands.length));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedIndex((current) => (current - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const selectedCommand = filteredCommands[selectedIndex];
+      if (selectedCommand) {
+        handleCommandSelect(selectedCommand);
       }
     }
   };
 
-  if (!isOpen) return null;
+  return (
+    <>
+      {renderTrigger ? renderTrigger(() => setOpen(true)) : null}
 
-  return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div
-        className="w-full max-w-xl bg-card border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-150 text-card-foreground"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Search Bar Header */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/60 bg-muted/20">
-          <Search className="h-5 w-5 text-muted-foreground shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedIndex(0);
-            }}
-            onKeyDown={handleInputKeyDown}
-            placeholder="Type a command, page name, or search..."
-            className="w-full bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-          />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground bg-muted border border-border rounded">
-            ESC
-          </kbd>
-        </div>
+      {isOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[99999] flex items-start justify-center bg-black/60 px-4 pt-20 backdrop-blur-sm sm:pt-28">
+              <div
+                className={cn(
+                  'w-full max-w-xl overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+                  className,
+                )}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center gap-3 border-b border-border/60 bg-muted/30 px-4 py-3.5">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                  <input
+                    ref={inputRef}
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setSelectedIndex(0);
+                    }}
+                    onKeyDown={handleInputKeyDown}
+                    className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+                    placeholder="Search commands, filters, and actions..."
+                    aria-label={title}
+                  />
 
-        {/* Command List */}
-        <div className="max-h-80 overflow-y-auto p-2 divide-y divide-border/20">
-          {filteredCommands.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">
-              No matching commands or pages found for "{query}".
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {filteredCommands.map((cmd, idx) => {
-                const isSelected = idx === selectedIndex;
-                const Icon = cmd.icon;
-                return (
-                  <div
-                    key={cmd.id}
-                    onClick={() => cmd.action()}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'text-foreground hover:bg-muted/40'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`p-2 rounded-lg shrink-0 ${
-                          isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-semibold truncate">{cmd.title}</span>
-                        {cmd.description && (
-                          <span className="text-[11px] text-muted-foreground truncate">{cmd.description}</span>
-                        )}
-                      </div>
-                    </div>
+                  {query ? (
+                    <button
+                      type="button"
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => setQuery('')}
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
 
-                    <div className="flex items-center gap-1.5 shrink-0 text-muted-foreground">
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hidden sm:inline">
-                        {cmd.category}
-                      </span>
-                      <ArrowRight className={`h-3.5 w-3.5 transition-transform ${isSelected ? 'translate-x-0.5 text-primary' : 'opacity-40'}`} />
-                    </div>
+                  <kbd className="hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground sm:inline-flex">
+                    ESC
+                  </kbd>
+                </div>
+
+                <div className="max-h-[420px] space-y-1 overflow-y-auto p-2">
+                  {!filteredCommands.length ? (
+                    <div className="px-3 py-8 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+                  ) : (
+                    filteredCommands.map((command, index) => {
+                      const Icon = command.icon ?? Sparkles;
+                      const isSelected = index === selectedIndex;
+
+                      return (
+                        <button
+                          key={command.id}
+                          type="button"
+                          onMouseEnter={() => setSelectedIndex(index)}
+                          onClick={() => handleCommandSelect(command)}
+                          className={cn(
+                            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            isSelected ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-accent/50',
+                          )}
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{command.title}</div>
+                              {command.description ? <div className="truncate text-xs text-muted-foreground">{command.description}</div> : null}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            {command.category ? (
+                              <span className="hidden rounded-full border border-border/80 bg-muted/40 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground sm:inline-flex">
+                                {command.category}
+                              </span>
+                            ) : null}
+                            <ArrowRight className={cn('h-3.5 w-3.5', isSelected ? 'text-primary' : 'opacity-60')} />
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold">↑</kbd>
+                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold">↓</kbd>
+                    <span>Navigate</span>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Footer shortcuts */}
-        <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t border-border/40 text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-3">
-            <span>
-              <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-semibold">↑</kbd>{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-semibold">↓</kbd> to navigate
-            </span>
-            <span>
-              <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-semibold">↵</kbd> to select
-            </span>
-          </div>
-          <span>Peak Xender Quick Action</span>
-        </div>
-      </div>
-    </div>,
-    document.body
+                  <div className="flex items-center gap-2">
+                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold">↵</kbd>
+                    <span>Select</span>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
+
+export default CommandPalette;

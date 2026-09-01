@@ -61,7 +61,7 @@ export function UsageSummaryChart({ data, isHourly = false }: UsageSummaryChartP
                   return format(parseISO(str), 'HH:mm');
                 }
                 return format(parseISO(str), 'MMM d');
-              } catch (_) {
+              } catch (error) { void error;
                 return str;
               }
             }}
@@ -86,7 +86,7 @@ export function UsageSummaryChart({ data, isHourly = false }: UsageSummaryChartP
                 } else {
                   displayTime = format(parseISO(label), 'EEEE, MMM d, yyyy');
                 }
-              } catch (_) {}
+              } catch (error) { void error; }
 
               return (
                 <div className="bg-popover/95 backdrop-blur-md border border-border/80 shadow-xl rounded-xl p-3 text-xs space-y-1.5 min-w-[170px] animate-in fade-in zoom-in-95 duration-100">

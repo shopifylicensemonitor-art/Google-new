@@ -34,13 +34,15 @@ router.post('/sync', async (req, res) => {
 router.get('/lists', async (req, res) => {
   try {
     const db = await getDb();
+    const workspaceClause = req.workspaceId ? ' AND (workspace_id IS NULL OR workspace_id = ?)' : '';
+    const params = req.workspaceId ? [req.userId, req.workspaceId] : [req.userId];
     const lists = await db.prepare(`
       SELECT list_name, COUNT(*) as count
       FROM contacts
-      WHERE user_id = ?
+      WHERE user_id = ?${workspaceClause}
       GROUP BY list_name
       ORDER BY list_name
-    `).all(req.userId);
+    `).all(...params);
     res.json(lists);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -168,14 +170,15 @@ router.get('/:listName', async (req, res) => {
 
     // Specific columns only — skip internal-only or unused fields in list view
     const selectCols = 'id, list_name, email, fields, status, created_at';
+    const workspaceClause = req.workspaceId ? ' AND (workspace_id IS NULL OR workspace_id = ?)' : '';
     const contacts = await db.prepare(
-      `SELECT ${selectCols} FROM contacts WHERE list_name = ? AND user_id = ? ORDER BY id LIMIT ? OFFSET ?`
-    ).all(req.params.listName, req.userId, pageLimit, offset);
+      `SELECT ${selectCols} FROM contacts WHERE list_name = ? AND user_id = ?${workspaceClause} ORDER BY id LIMIT ? OFFSET ?`
+    ).all(req.params.listName, req.userId, ...(req.workspaceId ? [req.workspaceId] : []), pageLimit, offset);
 
     // Cheap total count for frontend paginator
     const countRow = await db.prepare(
-      'SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?'
-    ).get(req.params.listName, req.userId);
+      `SELECT COUNT(*) as total FROM contacts WHERE list_name = ? AND user_id = ?${workspaceClause}`
+    ).get(req.params.listName, req.userId, ...(req.workspaceId ? [req.workspaceId] : []));
     const total = countRow ? (countRow.total || 0) : 0;
 
     const parsedContacts = contacts.map(c => {

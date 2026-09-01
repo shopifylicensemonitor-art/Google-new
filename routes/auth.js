@@ -15,6 +15,7 @@ const { google } = require('googleapis');
 const { getDb } = require('../db');
 const logger = require('../logger');
 const { verifyJwtToken } = require('../middleware/session');
+const { ensureUserWorkspace } = require('../middleware/workspace');
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
 const JWT_SECRETS = Array.from(new Set([
@@ -219,17 +220,10 @@ router.post('/signup', emailLimiter, async (req, res) => {
     );
 
     const userId = result.lastInsertRowid;
-    // Create workspace for user (non-fatal if table doesn't exist)
     try {
-      const wsResult = await db.prepare(
-        'INSERT INTO workspaces (name) VALUES (?)'
-      ).run(`${String(name).trim() || 'My'}'s Workspace`);
-      const workspaceId = wsResult.lastInsertRowid;
-      await db.prepare(
-        'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
-      ).run(workspaceId, userId, 'admin');
+      await ensureUserWorkspace(db, userId, `${String(name).trim() || 'My'}'s Workspace`);
     } catch (wsErr) {
-      logger.warn('Workspace creation skipped (table may not exist):', wsErr.message);
+      logger.warn('Workspace creation skipped:', wsErr.message);
     }
 
     // SEND VERIFICATION EMAIL WITH OTP
@@ -400,6 +394,10 @@ router.post('/signin', async (req, res) => {
       { expiresIn: JWT_EXPIRY }
     );
 
+    try {
+      await ensureUserWorkspace(db, user.id, `${(user.name || user.email || 'My').split('@')[0]}'s Workspace`);
+    } catch (_) {}
+
     // PHASE 4: Issue refresh token (30 days expiry)
     const crypto = require('crypto');
     const refreshToken = crypto.randomBytes(32).toString('hex');
@@ -484,21 +482,19 @@ router.post('/pin-login', async (req, res) => {
 
   try {
     const db = await getDb();
-    let adminUser = await db.prepare("SELECT * FROM users WHERE email = 'admin@peakxender.local'").get();
-    
-    if (!adminUser) {
-      try {
-        const result = await db.prepare(
-          "INSERT INTO users (email, name, role, email_verified, auth_provider) VALUES ('admin@peakxender.local', 'Admin', 'admin', true, 'pin')"
-        ).run();
-        adminUser = { id: result.lastInsertRowid || 1, email: 'admin@peakxender.local', name: 'Admin', role: 'admin' };
-      } catch (_) {
-        adminUser = { id: 1, email: 'admin@peakxender.local', name: 'Admin', role: 'admin' };
-      }
+    const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const candidateUser = adminEmail
+      ? await db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(adminEmail)
+      : null;
+
+    if (!candidateUser) {
+      return res.status(403).json({
+        error: 'PIN login requires an existing admin user. Create or configure the admin account before enabling PIN access.'
+      });
     }
 
     const token = jwt.sign(
-      { id: adminUser.id, email: adminUser.email, name: adminUser.name || 'Admin', role: 'admin' },
+      { id: candidateUser.id, email: candidateUser.email, name: candidateUser.name || 'Admin', role: candidateUser.role || 'admin' },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -507,7 +503,7 @@ router.post('/pin-login', async (req, res) => {
       success: true,
       token,
       message: 'PIN verified successfully.',
-      user: { id: adminUser.id, email: adminUser.email, name: adminUser.name || 'Admin', role: 'admin' }
+      user: { id: candidateUser.id, email: candidateUser.email, name: candidateUser.name || 'Admin', role: candidateUser.role || 'admin' }
     });
   } catch (err) {
     logger.error({ err }, 'PIN login error');
@@ -772,15 +768,8 @@ router.get('/callback', async (req, res) => {
       ).run(normalizedEmail, name, picture, 'user', 'google');
       userId = res.lastInsertRowid;
 
-      // Initialize default workspace for new Google OAuth users
       try {
-        const wsResult = await db.prepare(
-          'INSERT INTO workspaces (name) VALUES (?)'
-        ).run(`${String(name).trim() || 'My'}'s Workspace`);
-        const workspaceId = wsResult.lastInsertRowid;
-        await db.prepare(
-          'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)'
-        ).run(workspaceId, userId, 'admin');
+        await ensureUserWorkspace(db, userId, `${String(name).trim() || 'My'}'s Workspace`);
       } catch (wsErr) {
         logger.warn('Workspace creation skipped on Google signup:', wsErr.message);
       }
@@ -831,6 +820,9 @@ router.get('/me', async (req, res) => {
         user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
       }
       if (user) {
+        try {
+          await ensureUserWorkspace(db, user.id, `${(user.name || user.email || 'My').split('@')[0]}'s Workspace`);
+        } catch (_) {}
         return res.json({
           id: user.id,
           email: user.email,

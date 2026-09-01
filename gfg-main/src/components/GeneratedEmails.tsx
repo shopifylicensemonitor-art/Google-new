@@ -1264,7 +1264,7 @@ export function GeneratedEmails({
                         title: 'Default App Permission Prompted',
                         description: 'Please click "Allow" in your browser header to set default email handling.'
                       });
-                    } catch (_) {
+                    } catch (error) { void error;
                       // Fallback handled below
                     }
                   }
@@ -1280,7 +1280,7 @@ export function GeneratedEmails({
                           description: 'Delivery updates and campaign alerts are now active.'
                         });
                       }
-                    } catch (_) {
+                    } catch (error) { void error;
                       // Ignore notification request failure
                     }
                   }

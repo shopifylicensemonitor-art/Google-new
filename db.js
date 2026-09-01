@@ -596,6 +596,61 @@ const SQLITE_DDL = `
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS workspace_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(workspace_id, key),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS user_column_prefs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    workspace_id INTEGER,
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    hidden INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, workspace_id, table_name, column_name),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS saved_filters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    workspace_id INTEGER,
+    name TEXT NOT NULL,
+    entity TEXT NOT NULL DEFAULT 'campaigns',
+    filter_json TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, workspace_id, name, entity),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS delegation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER,
+    user_id INTEGER NOT NULL,
+    actor_user_id INTEGER,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id INTEGER,
+    payload TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS ai_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL DEFAULT 'openrouter',
@@ -654,6 +709,24 @@ const SQLITE_DDL = `
     tracking_status TEXT DEFAULT 'pending',
     mx_verified INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS feature_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    enabled INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS feature_flag_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature_flag_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    enabled INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(feature_flag_id, user_id),
+    FOREIGN KEY (feature_flag_id) REFERENCES feature_flags(id) ON DELETE CASCADE
   );
 `;
 
@@ -869,6 +942,53 @@ const PG_DDL = `
     PRIMARY KEY (user_id, key)
   );
 
+  CREATE TABLE IF NOT EXISTS workspace_settings (
+    id SERIAL PRIMARY KEY,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(workspace_id, key)
+  );
+
+  CREATE TABLE IF NOT EXISTS user_column_prefs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    hidden BOOLEAN DEFAULT FALSE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, workspace_id, table_name, column_name)
+  );
+
+  CREATE TABLE IF NOT EXISTS saved_filters (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    entity TEXT NOT NULL DEFAULT 'campaigns',
+    filter_json TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, workspace_id, name, entity)
+  );
+
+  CREATE TABLE IF NOT EXISTS delegation_log (
+    id SERIAL PRIMARY KEY,
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id INTEGER,
+    payload TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS ai_config (
     id SERIAL PRIMARY KEY,
     provider TEXT NOT NULL DEFAULT 'openrouter',
@@ -903,6 +1023,23 @@ const PG_DDL = `
     tracking_status TEXT DEFAULT 'pending',
     mx_verified INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS feature_flags (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    enabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS feature_flag_overrides (
+    id SERIAL PRIMARY KEY,
+    feature_flag_id INTEGER NOT NULL REFERENCES feature_flags(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    enabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(feature_flag_id, user_id)
   );
 `;
 
@@ -1094,6 +1231,59 @@ ready = (async () => {
             role TEXT DEFAULT 'member',
             created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(workspace_id, user_id)
+          );
+        `);
+      } catch (_) {}
+      try {
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS workspace_settings (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            key TEXT NOT NULL,
+            value TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(workspace_id, key)
+          );
+        `);
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS user_column_prefs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+            table_name TEXT NOT NULL,
+            column_name TEXT NOT NULL,
+            hidden BOOLEAN DEFAULT FALSE,
+            sort_order INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, workspace_id, table_name, column_name)
+          );
+        `);
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS saved_filters (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            entity TEXT NOT NULL DEFAULT 'campaigns',
+            filter_json TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, workspace_id, name, entity)
+          );
+        `);
+        await adapter.exec(`
+          CREATE TABLE IF NOT EXISTS delegation_log (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            action TEXT NOT NULL,
+            target_type TEXT,
+            target_id INTEGER,
+            payload TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
           );
         `);
       } catch (_) {}
@@ -1351,6 +1541,67 @@ ready = (async () => {
           UNIQUE(workspace_id, user_id),
           FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+      `);
+    } catch (_) {}
+    try {
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS workspace_settings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          workspace_id INTEGER NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(workspace_id, key),
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        );
+      `);
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS user_column_prefs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          workspace_id INTEGER,
+          table_name TEXT NOT NULL,
+          column_name TEXT NOT NULL,
+          hidden INTEGER DEFAULT 0,
+          sort_order INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(user_id, workspace_id, table_name, column_name),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        );
+      `);
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS saved_filters (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          workspace_id INTEGER,
+          name TEXT NOT NULL,
+          entity TEXT NOT NULL DEFAULT 'campaigns',
+          filter_json TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(user_id, workspace_id, name, entity),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        );
+      `);
+      await wrapped.exec(`
+        CREATE TABLE IF NOT EXISTS delegation_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          workspace_id INTEGER,
+          user_id INTEGER NOT NULL,
+          actor_user_id INTEGER,
+          action TEXT NOT NULL,
+          target_type TEXT,
+          target_id INTEGER,
+          payload TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
         );
       `);
     } catch (_) {}

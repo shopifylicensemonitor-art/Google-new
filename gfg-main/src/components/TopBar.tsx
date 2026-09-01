@@ -213,7 +213,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const handleClearNotifications = async () => {
     try {
       await api.clearAllNotifications();
-    } catch (_) {}
+    } catch (error) { void error; }
     setRecentLogs([]);
     setUnreadCount(0);
     toast({ title: 'Cleared', description: 'All notifications cleared.' });
@@ -223,7 +223,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     e.stopPropagation();
     try {
       await api.deleteNotification(id);
-    } catch (_) {}
+    } catch (error) { void error; }
     setRecentLogs(prev => prev.filter(l => l.id !== id));
     setUnreadCount(prev => Math.max(0, prev - 1));
   };

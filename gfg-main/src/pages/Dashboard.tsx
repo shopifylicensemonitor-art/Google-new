@@ -113,7 +113,7 @@ export default function Dashboard() {
           const parsed = JSON.parse(storedUser);
           if (parsed.name) setUserName(parsed.name.split(' ')[0]);
         }
-      } catch (_) {}
+      } catch (error) { void error; }
     });
   }, []);
 

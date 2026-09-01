@@ -9,6 +9,7 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../logger');
 const { getDb } = require('../db');
+const { getFeatureFlagsForUser } = require('./features');
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET || 'peakxender-dev-secret-change-me';
 const JWT_SECRETS = Array.from(new Set([
@@ -51,6 +52,11 @@ async function requireAuth(req, res, next) {
         ...decoded,
       };
       req.userId = userId;
+
+      const featureFlags = await getFeatureFlagsForUser(userId);
+      req.featureFlags = featureFlags;
+      req.features = featureFlags;
+      req.isFeatureEnabled = (flagName) => Boolean(featureFlags[String(flagName).trim().toLowerCase().replace(/\s+/g, '-')]);
 
       // Automatically attach or resolve user's primary workspace
       try {

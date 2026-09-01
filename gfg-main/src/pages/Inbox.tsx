@@ -32,6 +32,7 @@ function sanitizeEmailHtml(rawHtml: string): string {
 function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
   const [viewRaw, setViewRaw] = useState(false);
   const hasHtml = Boolean(html && html.trim().length > 0 && /<[a-z][\s\S]*>/i.test(html));
+  const safeHtml = React.useMemo(() => sanitizeEmailHtml(html || text || ''), [html, text]);
 
   if (!hasHtml) {
     return (
@@ -40,8 +41,6 @@ function HtmlEmailViewer({ html, text }: { html?: string; text?: string }) {
       </div>
     );
   }
-
-  const safeHtml = React.useMemo(() => sanitizeEmailHtml(html || text || ''), [html, text]);
 
   return (
     <div className="space-y-1.5 w-full">
@@ -133,7 +132,7 @@ export default function Inbox() {
       ]);
       setAccounts(accs);
       if (cnts) setCounts(cnts);
-    } catch (_) {}
+    } catch (error) { void error; }
   };
 
   // Load Messages based on filters
@@ -275,7 +274,7 @@ export default function Inbox() {
     try {
       await api.deleteInboxMessage(id);
       api.getInboxCounts().then(c => setCounts(c)).catch(() => {});
-    } catch (_) {}
+    } catch (error) { void error; }
   };
 
 

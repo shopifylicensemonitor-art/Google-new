@@ -1,0 +1,59 @@
+.threePaneRoot {
+  width: 100%;
+  min-height: 620px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mobileDrawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 40;
+  width: min(84vw, 300px);
+  transform: translateX(0);
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.mobileDrawerClosed {
+  transform: translateX(-105%);
+}
+
+.mobileBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.desktopGrid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 360px) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.tabletGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 0.75rem;
+}
+
+.mobileSinglePane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pane {
+  min-height: 0;
+  transition: transform 220ms ease, opacity 220ms ease, width 220ms ease;
+}
+
+.sidebarCollapsed {
+  width: 82px;
+}
+
+@media (max-width: 639px) {
+  .threePaneRoot {
+    min-height: 100vh;
+  }
+}

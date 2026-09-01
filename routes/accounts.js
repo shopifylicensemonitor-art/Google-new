@@ -173,13 +173,14 @@ router.get('/', async (req, res) => {
       } catch (_) {}
     }
 
+    const workspaceClause = req.workspaceId ? ' AND (workspace_id IS NULL OR workspace_id = ?)' : '';
     const accounts = await db.prepare(`
       SELECT id, email, status, daily_sent, daily_limit, last_reset, display_name,
              type, smtp_host, smtp_port, smtp_secure, created_at, user_id
       FROM accounts
-      WHERE user_id = ? OR (user_id IS NULL AND LOWER(email) = ?)
+      WHERE user_id = ?${workspaceClause} OR (user_id IS NULL AND LOWER(email) = ?)
       ORDER BY id ASC
-    `).all(uid, userEmail);
+    `).all(uid, ...(req.workspaceId ? [req.workspaceId] : []), userEmail);
 
     res.json(accounts || []);
   } catch (err) {
@@ -192,11 +193,16 @@ router.post('/auth-url', (req, res) => {
   try {
     const customRedirectUri = req.body?.redirect_uri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/accounts/callback';
     const oauth2 = getOAuth2Client(customRedirectUri);
+    const owningUserId = req.userId ?? req.user?.id;
+    if (!owningUserId) {
+      return res.status(401).json({ error: 'Authentication required before connecting a Google account.' });
+    }
+
     const url = oauth2.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       // Carry the owning user through the OAuth round-trip (the callback is public).
-      state: signOwnerState(req.userId || req.user?.id || 1),
+      state: signOwnerState(owningUserId),
       scope: [
         'https://www.googleapis.com/auth/gmail.modify',
         'https://www.googleapis.com/auth/gmail.send',

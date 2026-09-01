@@ -84,7 +84,7 @@ export default function Accounts({ requirePin }: AccountsProps) {
       try {
         const codeStatus = await api.getResetCodeStatus();
         setResetCodeConfigured(codeStatus.configured);
-      } catch (_) {}
+      } catch (error) { void error; }
     } catch (e: any) {
       toast({
         variant: 'destructive',

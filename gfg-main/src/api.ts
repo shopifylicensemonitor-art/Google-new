@@ -368,7 +368,9 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
         try {
           const freshData = await executeFetch<T>(endpoint, options);
           apiMemoryCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
-        } catch (_) {}
+        } catch (error) {
+          void error;
+        }
       }, 0);
       return cached.data as T;
     }
@@ -429,7 +431,9 @@ async function executeFetch<T>(endpoint: string, options: RequestInit = {}): Pro
       if (errBody.message || errBody.error) {
         errMsg = errBody.message || errBody.error;
       }
-    } catch (_) {}
+    } catch (error) {
+      void error;
+    }
     throw new Error(errMsg);
   }
   
@@ -440,7 +444,9 @@ async function executeFetch<T>(endpoint: string, options: RequestInit = {}): Pro
       if (errBody.message || errBody.error) {
         errMsg = errBody.message || errBody.error;
       }
-    } catch (_) {}
+    } catch (error) {
+      void error;
+    }
     throw new Error(errMsg);
   }
 

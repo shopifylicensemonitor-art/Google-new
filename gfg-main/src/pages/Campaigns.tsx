@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import CampaignsNew from './CampaignsNew';
 import { api, type Campaign, type CampaignRecipient, type Contact, type ContactListInfo, type LogItem, type Template, type Account } from '../api';
 import { AppShell } from '@/components/AppShell';
 import { SEO } from '@/components/SEO';
@@ -31,6 +32,7 @@ const speedOptions = [
 
 export default function Campaigns({ requirePin }: CampaignsProps) {
   const { batterySaver } = useUI();
+  const shouldUseThreePaneLayout = typeof window !== 'undefined' && localStorage.getItem('peak-xender-three-pane-enabled') === 'true';
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [lists, setLists] = useState<ContactListInfo[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -758,7 +760,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
       try {
         const raw = typeof c.account_ids === 'string' ? JSON.parse(c.account_ids) : c.account_ids;
         if (Array.isArray(raw)) accIds = raw.map(Number);
-      } catch (_) {}
+      } catch (error) { void error; }
     }
     setEditSelectedAccountIds(accIds);
 
@@ -767,7 +769,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
       try {
         const raw = typeof c.custom_filters === 'string' ? JSON.parse(c.custom_filters) : c.custom_filters;
         if (Array.isArray(raw)) parsedFilters = raw;
-      } catch (_) {}
+      } catch (error) { void error; }
     }
     setEditCustomFilterRules(parsedFilters);
 
@@ -808,7 +810,7 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
           if (Array.isArray(parsed.subjects)) parsedSubjList = parsed.subjects;
           if (Array.isArray(parsed.bodies)) parsedBodyList = parsed.bodies;
         }
-      } catch (_) {}
+      } catch (error) { void error; }
     }
     if (parsedVariations.length === 0) {
       parsedVariations = [{ subject: c.subject || '', body_html: c.body_html || '' }];
@@ -963,6 +965,9 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     return b.id - a.id;
   });
 
+  if (shouldUseThreePaneLayout) {
+    return <CampaignsNew />;
+  }
   return (
     <AppShell>
       <SEO
@@ -3896,3 +3901,4 @@ export default function Campaigns({ requirePin }: CampaignsProps) {
     </AppShell>
   );
 }
+

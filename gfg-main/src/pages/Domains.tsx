@@ -107,7 +107,7 @@ export default function Domains({ requirePin }: DomainsProps) {
     try {
       const res = await api.getDomainMailboxes(domainId);
       setDomainMailboxes(prev => ({ ...prev, [domainId]: res.mailboxes || [] }));
-    } catch (_) {}
+    } catch (error) { void error; }
     finally {
       setLoadingMailboxes(prev => ({ ...prev, [domainId]: false }));
     }

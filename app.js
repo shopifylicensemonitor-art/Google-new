@@ -38,6 +38,8 @@ const path = require('path');
 const { getDb } = require('./db');
 const { requireAuth } = require('./middleware/session');
 const { attachTenant } = require('./middleware/tenant');
+const { attachWorkspaceContext, requireWorkspaceAccess } = require('./middleware/workspace');
+const { initializeFeatureFlags } = require('./middleware/features');
 const logger = require('./logger');
 const rateLimit = require('express-rate-limit');
 
@@ -130,20 +132,30 @@ app.use(express.static(path.join(__dirname, 'gfg-main', 'dist')));
 // API Routes
 // ---------------------------------------------------------------------------
 
+initializeFeatureFlags().catch((err) => {
+  console.warn('Feature flag initialization failed on startup:', err.message);
+});
+
 // Auth routes are PUBLIC
 app.use('/api/auth', strictLimiter, require('./routes/auth'));
 
+// Feature flags require auth
+app.use('/api/features', generalLimiter, requireAuth, attachTenant, require('./routes/features'));
+
+app.use('/api/workspaces', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, require('./routes/workspaces'));
+
 // Protected routes (JWT or PIN)
-app.use('/api/accounts', generalLimiter, requireAuth, attachTenant, require('./routes/accounts'));
-app.use('/api/campaigns', generalLimiter, requireAuth, attachTenant, require('./routes/campaigns'));
-app.use('/api/contacts', generalLimiter, requireAuth, attachTenant, require('./routes/contacts'));
-app.use('/api/queue', generalLimiter, requireAuth, attachTenant, require('./routes/queue'));
-app.use('/api/templates', generalLimiter, requireAuth, attachTenant, require('./routes/templates'));
-app.use('/api/ai', generalLimiter, requireAuth, attachTenant, require('./routes/ai'));
-app.use('/api/inbox', generalLimiter, requireAuth, attachTenant, require('./routes/inbox'));
-app.use('/api/suppression', generalLimiter, requireAuth, attachTenant, require('./routes/suppression'));
-app.use('/api/notifications', generalLimiter, requireAuth, attachTenant, require('./routes/notifications'));
-app.use('/api/domains', generalLimiter, requireAuth, attachTenant, require('./routes/domains'));
+app.use('/api/accounts', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/accounts'));
+app.use('/api/campaigns', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/campaigns'));
+app.use('/api/contacts', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/contacts'));
+app.use('/api/queue', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/queue'));
+app.use('/api/templates', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/templates'));
+app.use('/api/ai', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/ai'));
+app.use('/api/inbox', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/inbox'));
+app.use('/api/suppression', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/suppression'));
+app.use('/api/notifications', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/notifications'));
+app.use('/api/domains', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/domains'));
+app.use('/api/rules', generalLimiter, requireAuth, attachTenant, attachWorkspaceContext, requireWorkspaceAccess, require('./routes/rules'));
 
 // Tracking & Unsubscribe routes are PUBLIC
 app.use('/api/track', require('./routes/tracking'));

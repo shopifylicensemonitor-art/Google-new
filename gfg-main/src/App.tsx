@@ -9,6 +9,7 @@ import { initCapacitor, isNativePlatform } from "./lib/capacitor";
 import { navigateToRoute } from "./lib/router";
 import clarity from "@microsoft/clarity";
 import { UIProvider } from "./context/UIContext";
+import { FeaturesProvider } from "./context/FeaturesContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CommandPalette } from "@/components/CommandPalette";
 
@@ -53,6 +54,7 @@ const EmailVerification = lazyWithRetry(() => import("./pages/EmailVerification"
 // Peak Xender Integrated Pages
 const Accounts = lazyWithRetry(() => import("./pages/Accounts"));
 const Campaigns = lazyWithRetry(() => import("./pages/Campaigns"));
+const CampaignsNew = lazyWithRetry(() => import("./pages/CampaignsNew"));
 const Templates = lazyWithRetry(() => import("./pages/Templates"));
 const Contacts = lazyWithRetry(() => import("./pages/Contacts"));
 const Logs = lazyWithRetry(() => import("./pages/Logs"));
@@ -131,6 +133,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 const routePreloaders = {
   Dashboard: () => import("./pages/Dashboard"),
   Campaigns: () => import("./pages/Campaigns"),
+  CampaignsNew: () => import("./pages/CampaignsNew"),
   Templates: () => import("./pages/Templates"),
   AISettings: () => import("./pages/AISettings"),
   Domains: () => import("./pages/Domains"),
@@ -151,7 +154,9 @@ function preloadAllRoutesOnIdle() {
     Object.values(routePreloaders).forEach(loader => {
       try {
         loader();
-      } catch (_) {}
+      } catch (error) {
+        void error;
+      }
     });
   });
 }
@@ -185,7 +190,8 @@ const App = () => {
   }, []);
 
   return (
-    <UIProvider>
+    <FeaturesProvider>
+      <UIProvider>
       <TooltipProvider>
         <Toaster />
 
@@ -252,6 +258,14 @@ const App = () => {
                 } 
               />
               <Route 
+                path="/campaigns-new" 
+                element={
+                  <ProtectedRoute>
+                    <CampaignsNew />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
                 path="/templates" 
                 element={
                   <ProtectedRoute>
@@ -314,7 +328,8 @@ const App = () => {
         </ErrorBoundary>
       </Router>
       </TooltipProvider>
-    </UIProvider>
+      </UIProvider>
+    </FeaturesProvider>
   );
 };
 

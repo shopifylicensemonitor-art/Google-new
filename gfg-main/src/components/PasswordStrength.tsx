@@ -32,7 +32,7 @@ export default function PasswordStrength({ password, showRequirements = true }: 
       },
       {
         label: 'One special character (!@#$%^&*)',
-        met: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+        met: /[!@#$%^&*()_+\-={};':"\\|,.<>/?]/.test(password),
       },
     ];
   }, [password]);

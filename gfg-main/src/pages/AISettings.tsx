@@ -544,8 +544,7 @@ export default function AISettings() {
       if (res.success && res.results) {
         setValidationResults(res.results);
       }
-    } catch (_) {
-    } finally {
+    } catch (error) { void error; } finally {
       setValidatingAll(false);
     }
   };

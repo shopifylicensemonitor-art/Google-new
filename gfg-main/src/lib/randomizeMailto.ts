@@ -317,7 +317,7 @@ export function dispatchEmailClient({
       try {
         // Direct navigation to Android Intent launches Gmail app directly
         window.location.href = androidGmailIntent;
-      } catch (_) {
+      } catch (error) { void error;
         window.location.href = mailtoUrl;
       }
 
@@ -325,7 +325,7 @@ export function dispatchEmailClient({
       setTimeout(() => {
         try {
           window.location.href = mailtoUrl;
-        } catch (_) {
+        } catch (error) { void error;
           window.open(`https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`, '_blank');
         }
       }, 600);
@@ -351,7 +351,7 @@ export function dispatchEmailClient({
 
   try {
     window.location.href = mailtoUrl;
-  } catch (_) {
+  } catch (error) { void error;
     const a = document.createElement('a');
     a.href = mailtoUrl;
     a.style.display = 'none';
